@@ -124,3 +124,35 @@
 [`apps/web/src/app/app/integrations/Integrations.tsx`](../apps/web/src/app/app/integrations/Integrations.tsx)
 
 <img src="screenshots/d-app-integrations.webp" alt="CRM · 자동화" width="900">
+
+## 명함 디자인 스튜디오 — 오리지널 템플릿 50종 (X-008)
+
+같은 명함을 8개 템플릿으로 게스트 수신 화면에서 본 모습입니다. 실제 기업 명함·로고를 복제하지 않은 오리지널 디자인이며, 50종 모두 글자 대비(WCAG AA)를 자동 검사합니다.
+
+<table>
+<tr>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-noir-gold-foil.webp" alt="누아르 골드 포일" width="200"><br><b>누아르 골드 포일</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-swiss-grid.webp" alt="스위스 그리드" width="200"><br><b>스위스 그리드</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-dancheong-band.webp" alt="단청 띠" width="200"><br><b>단청 띠</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-holo-prism.webp" alt="홀로 프리즘" width="200"><br><b>홀로 프리즘</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+</tr>
+<tr>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-marble-veil.webp" alt="마블 베일" width="200"><br><b>마블 베일</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-hanji-fiber.webp" alt="한지 결 (세로)" width="200"><br><b>한지 결 (세로)</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-blueprint.webp" alt="블루프린트" width="200"><br><b>블루프린트</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-tpl-pastel-lavender.webp" alt="파스텔 라벤더" width="200"><br><b>파스텔 라벤더</b><br><a href="../packages/domain/src/cardTemplates.ts"><code>cardTemplates.ts</code></a></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="25%" valign="top"><img src="screenshots/m-app-templates.webp" alt="템플릿 갤러리 · 추천" width="200"><br><b>템플릿 갤러리 · 추천</b><br><a href="../apps/web/src/app/app/me/templates/TemplatesClient.tsx"><code>TemplatesClient.tsx</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-app-share.webp" alt="공유 도구 — 메일 서명·가상 배경·지갑·포스터" width="200"><br><b>공유 도구 — 메일 서명·가상 배경·지갑·포스터</b><br><a href="../apps/web/src/app/app/me/share"><code>me/share</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-app-brief.webp" alt="미팅 전 30초 브리핑" width="200"><br><b>미팅 전 30초 브리핑</b><br><a href="../apps/web/src/app/app/brief"><code>app/brief</code></a></td>
+<td width="25%" valign="top"><img src="screenshots/m-app-reconnect.webp" alt="관계 재연결 (초안만)" width="200"><br><b>관계 재연결 (초안만)</b><br><a href="../apps/web/src/app/app/reconnect"><code>app/reconnect</code></a></td>
+</tr>
+</table>
+
+### 템플릿 갤러리 (데스크톱)
+
+<img src="screenshots/d-app-templates.webp" alt="템플릿 갤러리" width="900">

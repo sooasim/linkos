@@ -5,7 +5,9 @@ import { closePool, q, tx } from "./lib/db";
 import { emit, log } from "./lib/platform";
 import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
+import { notify, processPushQueue } from "./modules/push";
 import { processDeletions } from "./modules/security";
+import { enqueueWebhookDeliveries, processWebhookDeliveries } from "./modules/webhooks";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -16,9 +18,13 @@ export async function relayOutbox(batch = 100): Promise<number> {
     );
     for (const ev of rows.rows) {
       try {
+        await c.query("SAVEPOINT ev");
         await dispatch(c, ev.event_type, ev.payload);
+        await enqueueWebhookDeliveries(c, ev); // F-123: fan out to the owner's subscribed webhooks
+        await c.query("RELEASE SAVEPOINT ev");
         await c.query("UPDATE outbox_events SET published_at=now() WHERE id=$1", [ev.id]);
       } catch (e) {
+        await c.query("ROLLBACK TO SAVEPOINT ev");
         await c.query("UPDATE outbox_events SET attempts=attempts+1, last_error=$2 WHERE id=$1", [ev.id, (e as Error).message.slice(0, 300)]);
       }
     }
@@ -27,6 +33,7 @@ export async function relayOutbox(batch = 100): Promise<number> {
 }
 
 async function dispatch(c: import("pg").PoolClient, type: string, payload: any) {
+  // NOTE: every query here must use the relay transaction client `c`
   switch (type) {
     case "contact.updated": {
       // integration-service: if the owner has an active Google account, enqueue a versioned idempotent sync job
@@ -34,10 +41,27 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
         `INSERT INTO sync_jobs (integration_account_id, job_type, payload, idempotency_key)
          SELECT a.id, 'google.contact.upsert', jsonb_build_object('contactId', ct.id), 'contact:' || ct.id || ':v' || ct.version
          FROM contacts ct JOIN integration_accounts a ON a.user_id = ct.owner_user_id AND a.provider='google' AND a.status='active'
+           AND 'https://www.googleapis.com/auth/contacts' = ANY(a.scopes)
          WHERE ct.id = $1
          ON CONFLICT (integration_account_id, idempotency_key) DO NOTHING`,
         [payload.contact_id],
       );
+      // CRM accounts: only records already pushed (mapped) follow local edits; etag/If-Match guards stop silent overwrites
+      await c.query(
+        `INSERT INTO sync_jobs (integration_account_id, job_type, payload, idempotency_key, provider)
+         SELECT a.id, 'crm.' || em.entity_type || '.upsert', jsonb_build_object('contactId', ct.id), em.entity_type || ':' || ct.id || ':v' || ct.version, a.provider
+         FROM contacts ct JOIN external_mappings em ON em.local_id = ct.id AND em.entity_type IN ('contact','lead')
+         JOIN integration_accounts a ON a.id = em.integration_account_id AND a.user_id = ct.owner_user_id AND a.status='active' AND a.provider <> 'google'
+         WHERE ct.id = $1
+         ON CONFLICT (integration_account_id, idempotency_key) DO NOTHING`,
+        [payload.contact_id],
+      );
+      break;
+    }
+    case "followup.due": {
+      // F-110: Web Push to the owner's devices (delivered by processPushQueue)
+      const f = await c.query<{ title: string; contact_id: string | null }>("SELECT title, contact_id FROM followups WHERE id=$1", [payload.followup_id]);
+      if (f.rows[0]) await notify(c, payload.user_id, { kind: "followup.due", title: "후속 할 일", body: f.rows[0].title, url: f.rows[0].contact_id ? `/app/people/${f.rows[0].contact_id}` : "/app", dedupeKey: `followup:${payload.followup_id}` });
       break;
     }
     case "exchange.completed":
@@ -80,9 +104,11 @@ export async function tick() {
   const n = await relayOutbox();
   await processReminders();
   const s = await processSyncJobs();
+  const p = await processPushQueue();
+  const w = await processWebhookDeliveries();
   const d = await processDeletions();
   await expireSessions();
-  return { relayed: n, synced: s, deleted: d };
+  return { relayed: n, synced: s, deleted: d, pushed: p, webhooks: w };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -94,7 +120,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     while (!stopping) {
       try {
         const r = await tick();
-        if (r.relayed || r.synced || r.deleted) log("info", "worker.tick", r);
+        if (r.relayed || r.synced || r.deleted || r.pushed || r.webhooks) log("info", "worker.tick", r);
       } catch (e) {
         log("error", "worker.tick_failed", { error: (e as Error).message });
       }

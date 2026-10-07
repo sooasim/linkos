@@ -15,3 +15,8 @@ export * as security from "./modules/security";
 export * as analytics from "./modules/analytics";
 export * as assist from "./modules/assist";
 export { llmEnabled } from "./lib/llm";
+export * as comms from "./modules/comms";
+export * as calendar from "./modules/calendar";
+export * as crm from "./modules/crm";
+export * as push from "./modules/push";
+export * as webhooks from "./modules/webhooks";

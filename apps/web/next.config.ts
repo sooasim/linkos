@@ -33,7 +33,7 @@ const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
   transpilePackages: ["@linkos/domain", "@linkos/api"],
-  serverExternalPackages: ["pg", "exceljs", "nodemailer"],
+  serverExternalPackages: ["pg", "exceljs", "nodemailer", "sharp", "@aws-sdk/client-s3"],
   poweredByHeader: false,
   async headers() {
     return [

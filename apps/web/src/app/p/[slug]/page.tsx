@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { Logo } from "@/components/Icon";
 import { ActionCtas } from "@/components/ActionCtas";
 import { LivingCard } from "@/components/LivingCard";
+import { ProfileMediaGallery } from "@/components/ProfileMedia";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
 
@@ -61,6 +62,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
           )}
           <LivingCard card={c} />
         </div>
+        <ProfileMediaGallery profileId={c.id} />
         {c.hiddenFields > 0 && <RequestAccess profileId={c.id} signedIn={!!userId} />}
         <ActionCtas profileId={c.id} ownerName={c.name} actions={actions} />
       </div>

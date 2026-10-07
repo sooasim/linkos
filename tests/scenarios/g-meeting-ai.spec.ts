@@ -30,11 +30,21 @@ test("S-075 참여자 동의가 빠지면 여전히 차단", async () => {
   expect((await u.api.post(`/api/v1/meetings/${m.id}/recordings`, { data: {} })).status()).toBe(409);
 });
 
-test("S-076 동의 완료 후에는 게이트 통과(저장소 미설정이면 503으로 정직하게 알림)", async () => {
+test("S-076 동의 완료 후에는 게이트 통과 → 녹음 생성, 파트 업로드(암호화 저장), 종료", async () => {
   const { u, m } = await meetingFor();
   await u.api.post(`/api/v1/meetings/${m.id}/consent`, { data: { ownerConsent: true, participantsAcknowledged: true } });
-  const r = await u.api.post(`/api/v1/meetings/${m.id}/recordings`, { data: {} });
-  expect(r.status()).toBe(503);
+  const r = await u.api.post(`/api/v1/meetings/${m.id}/recordings`, { data: { mimeType: "audio/webm" } });
+  expect(r.status()).toBe(201);
+  const rec = await r.json();
+  expect(rec.status).toBe("recording");
+  const part = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(64, 1)]);
+  const up = await u.api.put(`/api/v1/meetings/${m.id}/recordings/${rec.id}/parts/0?offsetMs=0`, { data: part, headers: { "content-type": "audio/webm" } });
+  expect(up.status()).toBe(201);
+  // a non-audio payload is rejected by magic-byte validation (F-172)
+  const bad = await u.api.put(`/api/v1/meetings/${m.id}/recordings/${rec.id}/parts/1?offsetMs=50000`, { data: Buffer.from("<html>not audio</html>!!"), headers: { "content-type": "audio/webm" } });
+  expect(bad.status()).toBe(415);
+  const fin = await (await u.api.post(`/api/v1/meetings/${m.id}/recordings/${rec.id}/finalize`, { data: { durationSeconds: 3 } })).json();
+  expect(["stored", "transcribing"]).toContain(fin.status);
 });
 
 test("S-077 30초 브리핑: 마지막 만남·미완료 To-do", async () => {

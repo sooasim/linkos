@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { AiLabel, PageHeader } from "@/components/Page";
+import { RoomFiles } from "@/components/RoomFiles";
 import { api, relTime } from "@/lib/client";
 
 // F-158 Room 요약 (진행 상태 / 결정 / 미완료 작업) — suggestion only
@@ -48,6 +49,7 @@ export function Room({ id }: { id: string }) {
         <button className="btn btn-signal shrink-0" onClick={() => api(`/rooms/${id}`, { method: "PATCH", body: { status: "won" } }).then(load)}>성사</button>
       </section>
       <RoomSummary id={id} initial={r.summary ?? null} />
+      <RoomFiles roomId={id} onChange={load} />
       <ul className="mt-6 space-y-3">
         {r.messages.map((m: any) => (
           <li key={m.id} className="surface p-4">

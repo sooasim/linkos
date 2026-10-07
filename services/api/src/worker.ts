@@ -10,6 +10,8 @@ import { processDeletions } from "./modules/security";
 import { processRetention } from "./modules/enterprise";
 import { processReferralRewards } from "./modules/referral";
 import { processStrengths } from "./modules/network";
+import { purgeExpiredObjects } from "./modules/files";
+import { processTranscriptions } from "./modules/recording";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -95,13 +97,16 @@ export async function tick() {
   await processReminders();
   const s = await processSyncJobs();
   const d = await processDeletions();
+  // F-082/F-083 transcription of uploaded recording parts, F-019 retention purge of stored originals
+  const t = await processTranscriptions().catch((e) => (log("warn", "worker.stt_failed", { error: (e as Error).message }), 0));
+  const p = await purgeExpiredObjects().catch(() => 0);
   await expireSessions();
   const retained = await processRetention(); // F-136
   const strengths = await processStrengths(); // F-074
   const rewards = await processReferralRewards(); // F-197 (no-op unless REFERRAL_REWARDS_ENABLED=1)
   await q("DELETE FROM webauthn_challenges WHERE expires_at < now() - interval '1 day'");
   await q("DELETE FROM sso_login_states WHERE expires_at < now() - interval '1 day'");
-  return { relayed: n, synced: s, deleted: d, retained, strengths, rewards };
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged: p, retained, strengths, rewards };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -113,7 +118,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     while (!stopping) {
       try {
         const r = await tick();
-        if (r.relayed || r.synced || r.deleted) log("info", "worker.tick", r);
+        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged) log("info", "worker.tick", r);
       } catch (e) {
         log("error", "worker.tick_failed", { error: (e as Error).message });
       }

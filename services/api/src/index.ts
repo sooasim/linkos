@@ -30,3 +30,7 @@ export * as inbox from "./modules/inbox";
 export * as booth from "./modules/booth";
 export { track, recordCost, subjectKey } from "./lib/metering";
 export * as tracing from "./lib/tracing";
+export * as files from "./modules/files";
+export * as recording from "./modules/recording";
+export { sttProvider } from "./lib/stt";
+export { storageDriver } from "./lib/storage";

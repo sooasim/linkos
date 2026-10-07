@@ -2,17 +2,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { BadgeLeadScanner } from "@/components/BadgeLeadScanner";
 import { AiLabel, Avatar, Empty, PageHeader } from "@/components/Page";
 import { api } from "@/lib/client";
 
 export function EventDetail({ id }: { id: string }) {
   const [e, setE] = useState<any>(null);
   const [m, setM] = useState<any>(null);
+  const reload = () => api(`/events/${id}`).then(setE).catch(() => undefined);
   useEffect(() => {
-    api(`/events/${id}`).then(setE);
+    reload();
     api(`/events/${id}/matches`).then(setM).catch(() => setM({ results: [] }));
-  }, [id]);
-  if (!e) return <div className="surface h-40 animate-pulse" />;
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // F-150: the badge scanner works even when the event could not be loaded (offline at the venue)
+  if (!e) return <div className="space-y-4"><div className="surface h-40 animate-pulse" /><BadgeLeadScanner eventId={id} onSaved={reload} /></div>;
   return (
     <div>
       <PageHeader back="/app/events" eyebrow={e.venue ?? "Event"} title={e.name} />
@@ -41,6 +44,9 @@ export function EventDetail({ id }: { id: string }) {
             ))}
           </ul>
         )}
+      </section>
+      <section className="mt-8">
+        <BadgeLeadScanner eventId={id} onSaved={reload} />
       </section>
       <section className="mt-8">
         <h2 className="mb-3 text-[18px] font-semibold">이 행사에서 받은 명함</h2>

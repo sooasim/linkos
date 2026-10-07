@@ -16,3 +16,6 @@ playwright-report/
 # agent worktrees and local scratch scripts
 .claude/worktrees/
 apps/web/.*.mjs
+
+# local encrypted object storage (OBJECT_STORAGE_LOCAL_DIR default)
+.data/

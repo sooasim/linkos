@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { AiLabel, PageHeader } from "@/components/Page";
 import { api, fmtDate } from "@/lib/client";
+import { MeetingRecorder } from "./MeetingRecorder";
+import { TranscriptPanel } from "./TranscriptPanel";
 
-type Action = { id?: string; description: string; dueAt?: string | null; contactId?: string | null; status: "open" | "done" };
+type Action = { id?: string; description: string; dueAt?: string | null; contactId?: string | null; status: "open" | "done"; sourceSegmentIds?: string[] };
 
 function Lines({ label, items, onChange, placeholder }: { label: string; items: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   return (
@@ -47,6 +49,7 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState("");
   const [extract, setExtract] = useState<any>(null);
+  const [recKey, setRecKey] = useState(0);
 
   useEffect(() => {
     api<{ contacts: any[] }>("/contacts?limit=200").then((r) => setContacts(r.contacts)).catch(() => undefined);
@@ -71,13 +74,6 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
   const setRecordingConsent = async () => {
     const r = await api<{ consentStatus: string; reason: string | null }>(`/meetings/${meeting.id}/consent`, { body: { ownerConsent: consent.owner, participantsAcknowledged: consent.participants, policy: "all_party" } });
     setConsent({ ...consent, status: r.consentStatus, msg: r.consentStatus === "granted" ? "동의가 기록되었습니다." : "모든 참여자의 동의가 필요합니다." });
-  };
-  const startRecording = async () => {
-    try {
-      await api(`/meetings/${meeting.id}/recordings`, { body: {} });
-    } catch (e) {
-      setConsent({ ...consent, msg: (e as Error).message });
-    }
   };
 
   return (
@@ -227,12 +223,24 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
               <p className="text-[14px] text-[var(--fg-mute)]">녹음은 모든 참여자의 동의가 기록된 뒤에만 시작할 수 있습니다.</p>
               <label className="flex items-center gap-3 text-[14.5px]"><input type="checkbox" className="size-5" checked={consent.owner} onChange={(e) => setConsent({ ...consent, owner: e.target.checked })} />녹음·전사에 동의합니다</label>
               <label className="flex items-center gap-3 text-[14.5px]"><input type="checkbox" className="size-5" checked={consent.participants} onChange={(e) => setConsent({ ...consent, participants: e.target.checked })} />모든 참여자에게 녹음 사실을 알리고 동의를 받았습니다</label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-start gap-2">
                 <button className="btn btn-ghost" onClick={setRecordingConsent}>동의 기록</button>
-                <button className="btn btn-ink" onClick={startRecording} disabled={consent.status !== "granted"}>녹음 시작</button>
+                <MeetingRecorder meetingId={meeting.id} consentGranted={consent.status === "granted"} onFinished={() => setRecKey((k) => k + 1)} />
               </div>
               {consent.msg && <p role="status" className="text-[13.5px]">{consent.msg}</p>}
+              <p className="text-[12.5px] text-[var(--fg-mute)]">녹음은 약 50초 단위로 암호화 저장되고, 전사가 끝나면 화자별 문장과 To-do 제안이 아래에 나타납니다.</p>
             </section>
+
+            <TranscriptPanel
+              meetingId={meeting.id}
+              refreshKey={recKey}
+              confirmed={m.actionItems}
+              onAccepted={(a) => setM((cur) => ({ ...cur, actionItems: [...cur.actionItems, { id: a.id, description: a.description, dueAt: a.dueAt, status: "open", contactId: cur.participantContactIds[0] ?? null, sourceSegmentIds: a.sourceSegmentIds }] }))}
+              onApplyDecision={(kind, text) =>
+                setM((cur) => (kind === "decision" ? { ...cur, decisions: cur.decisions.includes(text) ? cur.decisions : [...cur.decisions, text] } : { ...cur, promises: [...cur.promises, { text, by: "me" as const }] }))
+              }
+              onUseTranscript={(text) => setNotes(text)}
+            />
           </>
         )}
       </div>

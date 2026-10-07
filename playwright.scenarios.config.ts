@@ -19,6 +19,8 @@ export default defineConfig({
       RATE_LIMIT_DISABLED: "1",
       APP_ORIGIN: `http://localhost:${port}`,
       DATABASE_URL: process.env.DATABASE_URL ?? "postgres://linkos:linkos@localhost:5432/linkos",
+      // encrypted object storage (F-019) needs a key-encryption key in production mode
+      CREDENTIALS_KEY: process.env.CREDENTIALS_KEY ?? Buffer.alloc(32, 9).toString("base64"),
     },
   },
 });

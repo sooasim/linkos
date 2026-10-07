@@ -14,13 +14,14 @@ import {
   scoreVariants,
   selectVariant,
 } from "@linkos/domain";
+import { isValidGlyph, resolveGlyph } from "@linkos/domain/cardDesign";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, forbidden, notFound, unauthorized } from "../lib/errors";
 import { structured } from "../lib/llm";
 import { track } from "../lib/metering";
 import { type Ctx, audit, emit, rateLimit } from "../lib/platform";
-import { type FullProfile, type PublicCard, loadProfile } from "./card";
+import { type FullProfile, type PublicCard, glyphRef, loadProfile } from "./card";
 import { notify } from "./inbox";
 import { upsertCompany } from "./relationship";
 
@@ -282,11 +283,13 @@ export async function resolveLivingUpdate(ctx: Ctx, id: string, input: z.infer<t
 }
 
 // ---------- F-036 Action Card ----------
+// F-036 + F-021: each CTA may carry an icon/emoji from the banks ("i:<id>" | "e:<emoji>"), validated on save.
+const ctaIcon = glyphRef.refine(isValidGlyph, "unknown icon or emoji").nullish();
 export const actionCtasInput = z.object({
-  booking: z.object({ enabled: z.boolean(), url: z.string().url().max(300).refine((u) => /^https:\/\//.test(u), "https only").nullish() }).default({ enabled: false }),
-  quote: z.object({ enabled: z.boolean() }).default({ enabled: false }),
-  proposal: z.object({ enabled: z.boolean() }).default({ enabled: false }),
-  nda: z.object({ enabled: z.boolean() }).default({ enabled: false }),
+  booking: z.object({ enabled: z.boolean(), url: z.string().url().max(300).refine((u) => /^https:\/\//.test(u), "https only").nullish(), icon: ctaIcon }).default({ enabled: false }),
+  quote: z.object({ enabled: z.boolean(), icon: ctaIcon }).default({ enabled: false }),
+  proposal: z.object({ enabled: z.boolean(), icon: ctaIcon }).default({ enabled: false }),
+  nda: z.object({ enabled: z.boolean(), icon: ctaIcon }).default({ enabled: false }),
 });
 export type ActionCtas = z.infer<typeof actionCtasInput>;
 
@@ -301,7 +304,7 @@ export async function setActionCtas(ctx: Ctx, profileId: string, input: ActionCt
 function publicCtas(raw: Partial<ActionCtas> | null | undefined) {
   const r = actionCtasInput.safeParse(raw ?? {});
   const v = r.success ? r.data : actionCtasInput.parse({});
-  return ACTION_KINDS.filter((k) => v[k].enabled).map((k) => ({ kind: k, label: ACTION_LABEL_KO[k], url: k === "booking" ? (v.booking.url ?? null) : null }));
+  return ACTION_KINDS.filter((k) => v[k].enabled).map((k) => ({ kind: k, label: ACTION_LABEL_KO[k], url: k === "booking" ? (v.booking.url ?? null) : null, glyph: resolveGlyph(v[k].icon) }));
 }
 
 /** Public: which CTAs a card shows (by profile id or slug). */

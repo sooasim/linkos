@@ -15,3 +15,7 @@ export * as security from "./modules/security";
 export * as analytics from "./modules/analytics";
 export * as assist from "./modules/assist";
 export { llmEnabled } from "./lib/llm";
+export * as files from "./modules/files";
+export * as recording from "./modules/recording";
+export { sttProvider } from "./lib/stt";
+export { storageDriver } from "./lib/storage";

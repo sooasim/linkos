@@ -6,6 +6,8 @@ import { emit, log } from "./lib/platform";
 import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
 import { processDeletions } from "./modules/security";
+import { purgeExpiredObjects } from "./modules/files";
+import { processTranscriptions } from "./modules/recording";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -81,8 +83,11 @@ export async function tick() {
   await processReminders();
   const s = await processSyncJobs();
   const d = await processDeletions();
+  // F-082/F-083 transcription of uploaded recording parts, F-019 retention purge of stored originals
+  const t = await processTranscriptions().catch((e) => (log("warn", "worker.stt_failed", { error: (e as Error).message }), 0));
+  const p = await purgeExpiredObjects().catch(() => 0);
   await expireSessions();
-  return { relayed: n, synced: s, deleted: d };
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged: p };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -94,7 +99,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     while (!stopping) {
       try {
         const r = await tick();
-        if (r.relayed || r.synced || r.deleted) log("info", "worker.tick", r);
+        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged) log("info", "worker.tick", r);
       } catch (e) {
         log("error", "worker.tick_failed", { error: (e as Error).message });
       }

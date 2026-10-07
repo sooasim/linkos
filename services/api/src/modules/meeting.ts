@@ -2,10 +2,11 @@
 import { canStartRecording } from "@linkos/domain";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
-import { ApiError, notFound, unauthorized, unavailable } from "../lib/errors";
+import { notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
 import { recordConsents } from "./identity";
 import { primaryProfileId, loadProfile } from "./card";
+import { startRecording } from "./recording";
 import { textSimilarity } from "@linkos/domain";
 
 export const meetingInput = z.object({
@@ -61,7 +62,7 @@ export async function saveMeeting(ctx: Ctx, input: MeetingInput, meetingId?: str
     const keep: string[] = [];
     for (const a of input.actionItems) {
       if (a.id) {
-        await c.query("UPDATE action_items SET description=$3, due_at=$4, contact_id=$5, status=$6 WHERE id=$1 AND meeting_id=$2", [a.id, id, a.description, a.dueAt ?? null, a.contactId ?? null, a.status]);
+        await c.query("UPDATE action_items SET description=$3, due_at=$4, contact_id=$5, status=$6 WHERE id=$1 AND meeting_id=$2 AND status <> 'suggested'", [a.id, id, a.description, a.dueAt ?? null, a.contactId ?? null, a.status]);
         keep.push(a.id);
       } else {
         const r = await one<{ id: string }>(
@@ -72,7 +73,8 @@ export async function saveMeeting(ctx: Ctx, input: MeetingInput, meetingId?: str
         keep.push(r!.id);
       }
     }
-    await c.query("DELETE FROM action_items WHERE meeting_id=$1 AND NOT (id = ANY($2::uuid[]))", [id, keep]);
+    // AI suggestions (status 'suggested') are confirmed separately and never dropped by a card save
+    await c.query("DELETE FROM action_items WHERE meeting_id=$1 AND status <> 'suggested' AND NOT (id = ANY($2::uuid[]))", [id, keep]);
     if (keep.length) await emit(c, "meeting.actions.extracted", "meeting", id!, { meeting_id: id!, action_item_ids: keep });
     await audit(c, ctx, meetingId ? "meeting.updated" : "meeting.created", "meeting", id!);
     return getMeeting(userId, id!, c);
@@ -87,8 +89,10 @@ export async function getMeeting(userId: string, id: string, db: Db = pool()) {
     [id],
     db,
   );
-  const actions = await q<any>("SELECT id, description, due_at, status, contact_id FROM action_items WHERE meeting_id=$1 ORDER BY due_at NULLS LAST, id", [id], db);
-  const recordings = await q<any>("SELECT id, status, duration_seconds, created_at FROM recordings WHERE meeting_id=$1", [id], db);
+  const allActions = await q<any>("SELECT id, description, due_at, status, contact_id, source_segment_ids, provenance, due_hint FROM action_items WHERE meeting_id=$1 ORDER BY due_at NULLS LAST, created_at, id", [id], db);
+  const actions = allActions.filter((a) => a.status !== "suggested");
+  const suggested = allActions.filter((a) => a.status === "suggested");
+  const recordings = await q<any>("SELECT id, status, duration_seconds, part_count, language, error, created_at FROM recordings WHERE meeting_id=$1 ORDER BY created_at", [id], db);
   return {
     id: m.id,
     title: m.title,
@@ -102,7 +106,10 @@ export async function getMeeting(userId: string, id: string, db: Db = pool()) {
     decisions: m.summary?.decisions ?? [],
     promises: m.summary?.promises ?? [],
     participants: participants.map((p) => ({ id: p.id, fullName: p.full_name, company: p.company })),
-    actionItems: actions.map((a) => ({ id: a.id, description: a.description, dueAt: a.due_at, status: a.status, contactId: a.contact_id })),
+    actionItems: actions.map((a) => ({ id: a.id, description: a.description, dueAt: a.due_at, status: a.status, contactId: a.contact_id, provenance: a.provenance, sourceSegmentIds: (a.source_segment_ids ?? []).map(String) })),
+    // F-084~F-086: AI/rule suggestions from the transcript, each with evidence segment ids (AI 추론 · 확인 필요)
+    suggestedActions: suggested.map((a) => ({ id: a.id, description: a.description, dueHint: a.due_hint, provenance: a.provenance, sourceSegmentIds: (a.source_segment_ids ?? []).map(String) })),
+    ai: m.summary?.ai ?? null,
     recordings,
     createdAt: m.created_at,
   };
@@ -131,14 +138,9 @@ export async function setRecordingConsent(ctx: Ctx, meetingId: string, body: { o
   });
 }
 
-/** POST /meetings/{id}/recordings — blocked without consent; audio storage requires an object-storage adapter. */
-export async function createRecording(ctx: Ctx, meetingId: string) {
-  if (!ctx.userId) throw unauthorized();
-  const m = await one<{ consent_status: string }>("SELECT consent_status FROM meetings WHERE id=$1 AND owner_user_id=$2", [meetingId, ctx.userId]);
-  if (!m) throw notFound("meeting");
-  if (m.consent_status !== "granted") throw new ApiError(409, "recording_consent_required", "녹음 동의가 기록되지 않아 녹음을 시작할 수 없습니다.");
-  if (!process.env.OBJECT_STORAGE_BUCKET) throw unavailable("storage_not_configured", "녹음 파일 저장소(S3 호환)가 설정되지 않았습니다.");
-  throw unavailable("stt_not_configured", "전사(STT) 워커가 아직 연결되지 않았습니다.");
+/** POST /meetings/{id}/recordings — blocked without consent (F-081); parts are uploaded to encrypted storage. */
+export async function createRecording(ctx: Ctx, meetingId: string, input: { mimeType?: string } = {}) {
+  return startRecording(ctx, meetingId, input);
 }
 
 /** GET /meetings/{id}/brief — 30초 Pre-meeting Brief. Deterministic, sourced from the user's own data (provenance listed). */

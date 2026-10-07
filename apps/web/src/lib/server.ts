@@ -149,6 +149,14 @@ export function withAnon(res: NextResponse, a: { id: string; fresh: boolean }) {
   return res;
 }
 
+/** Request context for handlers that cannot use route() (e.g. the SAML ACS, which receives a cross-site form POST). */
+export function requestCtx(req: NextRequest): Ctx {
+  return { userId: null, ip: clientIp(req.headers), userAgent: req.headers.get("user-agent") ?? "", requestId: randomUUID() };
+}
+
+/** F-008: SameSite=None cookie that binds a SAML login to the browser that started it (only over https). */
+export const SAML_BINDING_COOKIE = "lk_saml_bind";
+
 export function safeNext(next: string | null | undefined, fallback = "/app"): string {
   if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return fallback;
   return next;

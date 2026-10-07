@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { api, relTime } from "@/lib/client";
 import type { OrgInfo } from "../activeOrg";
+import { SamlSettings } from "./SamlSettings";
 
 function Section({ title, icon, children, note }: { title: string; icon: Parameters<typeof Icon>[0]["name"]; children: React.ReactNode; note?: string }) {
   return (
@@ -155,7 +156,7 @@ export function OrgSettings({ org }: { org: OrgInfo }) {
         <button className="btn btn-ink" onClick={() => run(() => api(`/orgs/${id}/retention`, { method: "PUT", body: ret }))}>보존 정책 저장</button>
       </Section>
 
-      <Section title="SSO (OIDC) · SCIM" icon="lock" note="SAML은 아직 지원하지 않습니다. 인증된 회사 도메인 이메일만 SSO로 로그인할 수 있어요.">
+      <Section title="SSO (OIDC) · SCIM" icon="lock" note="인증된 회사 도메인 이메일만 SSO로 로그인할 수 있어요. SAML 2.0은 아래에서 설정합니다(둘 다 켜면 OIDC가 우선).">
         {sso && (
           <dl className="grid gap-1 text-[12.5px] text-[var(--fg-mute)]">
             <div>Redirect URI: <code>{sso.redirectUri}</code></div>
@@ -176,10 +177,18 @@ export function OrgSettings({ org }: { org: OrgInfo }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-ink" onClick={() => run(() => api(`/orgs/${id}/sso`, { method: "PUT", body: { ...ssoForm, clientSecret: ssoForm.clientSecret || null } }))}>SSO 저장</button>
-          {sso?.configured && <button className="btn btn-ghost" onClick={() => run(async () => setScimToken((await api<{ token: string }>(`/orgs/${id}/sso/scim-token`, { body: {} })).token), "새 SCIM 토큰을 발급했어요(이전 토큰은 무효).")}>SCIM 토큰 {sso.scimEnabled ? "재발급" : "발급"}</button>}
+          {(sso?.configured || sso?.saml?.configured) && <button className="btn btn-ghost" onClick={() => run(async () => setScimToken((await api<{ token: string }>(`/orgs/${id}/sso/scim-token`, { body: {} })).token), "새 SCIM 토큰을 발급했어요(이전 토큰은 무효).")}>SCIM 토큰 {sso.scimEnabled ? "재발급" : "발급"}</button>}
         </div>
         {scimToken && <p className="break-all rounded-2xl border border-dashed border-[var(--line)] p-3 text-[12.5px]"><b>지금 한 번만 표시:</b> <code>{scimToken}</code></p>}
       </Section>
+
+      <SamlSettings
+        orgId={id}
+        domains={domains}
+        ssoRequired={Boolean(sso?.ssoRequired)}
+        ssoAvailable={Boolean((sso?.configured && sso?.enabled) || sso?.saml?.enabled)}
+        run={run}
+      />
 
       <Section title="API 키" icon="code" note="서버-서버 통합용. 키는 해시로만 저장되고 발급 시 한 번만 보여집니다. GET /api/v1/ext/contacts · /api/v1/ext/leads (Authorization: Bearer)">
         <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); run(async () => setNewKey((await api<{ key: string }>(`/orgs/${id}/api-keys`, { body: keyForm })).key), "API 키를 발급했어요."); }}>

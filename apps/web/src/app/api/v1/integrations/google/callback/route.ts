@@ -19,7 +19,7 @@ export const GET = route(async ({ req, ctx }) => {
   try {
     const result = await tx(async (c) => {
       const { user: u, isNew } = await identity.upsertUserByEmail(c, user.email.toLowerCase(), consents, user.name, "google", user.sub);
-      const token = await identity.createSession(c, u.id, ctx);
+      const token = await identity.createSession(c, u.id, ctx, null, "web", "google");
       return { token, isNew };
     });
     const res = NextResponse.redirect(`${origin}${safeNext(req.cookies.get("lk_next")?.value)}`);
@@ -27,6 +27,11 @@ export const GET = route(async ({ req, ctx }) => {
     return setSession(res, result.token);
   } catch (e) {
     if ((e as { code?: string }).code === "consent_required") return NextResponse.redirect(`${origin}/login?consent=google`);
+    // F-008 sso_required: this company account must use the company IdP → continue there (no PII in the URL)
+    if ((e as { code?: string }).code === "sso_required") {
+      const ssoUrl = (e as { details?: { ssoUrl?: string } }).details?.ssoUrl;
+      if (ssoUrl) return NextResponse.redirect(`${origin}${ssoUrl}&next=${encodeURIComponent(safeNext(req.cookies.get("lk_next")?.value))}`);
+    }
     throw e;
   }
 }, { auth: false });

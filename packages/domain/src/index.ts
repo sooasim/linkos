@@ -11,3 +11,4 @@ export * from "./redact";
 export * from "./events";
 export * from "./introduction";
 export * from "./vcard";
+export * from "./i18n";

@@ -195,7 +195,7 @@ const M = {
   "F-174": ["I", "manifest, sw.js", "", "", "", ""],
   "F-175": ["T", "all", "", "", `${E2E}, ${S("S-095~S-098")}`, "iPhone SE / Android 360 / iPad / 데스크톱"],
   "F-176": ["P", "", "", "", S("S-099,S-100"), "키보드·포커스·모션감소 자동테스트. 전체 axe 감사 미실시"],
-  "F-177": ["P", "", "", "", "", "한국어 UI. 다국어 리소스 분리 미구현"],
+  "F-177": ["T", "/x/[token] 언어 선택", "", "packages/domain/src/i18n.ts (ko/en/ja 리소스, pickLocale)", `${UT}, ${E2E}`, "게스트 수신·링크 상태 화면 ko/en/ja(Accept-Language·?lang·쿠키). 앱 내부 화면은 한국어 — 리소스 분리 구조로 확장"],
   "F-178": ["N", "", "", "", "", ""],
   "F-179": ["P", "", "", "Idempotency-Key, sync_jobs", S("S-026,S-027"), ""],
   "F-180": ["I", "", "/metrics, /health", "platform.recordRequest (Prometheus)", "", "라우트별 지연 히스토그램·오류 카운터. 분산 트레이싱 미구현"],

@@ -29,6 +29,12 @@ function burst(x: number, y: number) {
   setTimeout(() => layer.remove(), 1800);
 }
 
+/** Celebrate a completed action (exchange done, claim done) — no-op under reduced motion. */
+export function celebrate(x = window.innerWidth / 2, y = window.innerHeight * 0.35) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  burst(x, y);
+}
+
 export function Fx() {
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

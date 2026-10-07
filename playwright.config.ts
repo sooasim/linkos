@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
+  use: { locale: "ko-KR", baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
   projects: [
     { name: "mobile-safari-size", use: { ...devices["iPhone 13"], browserName: "chromium" } },
     { name: "desktop-chrome", use: { ...devices["Desktop Chrome"] } },

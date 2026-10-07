@@ -8,7 +8,7 @@ export default defineConfig({
   fullyParallel: true,
   workers: process.env.CI ? 2 : 4,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
-  use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
+  use: { locale: "ko-KR", baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
   webServer: {
     command: `pnpm --filter @linkos/web start -p ${port}`,
     url: `http://localhost:${port}/api/v1/health`,

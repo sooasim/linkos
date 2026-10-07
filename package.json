@@ -22,7 +22,9 @@
     "loadtest": "node scripts/loadtest.mjs",
     "restore-drill": "bash scripts/restore-drill.sh",
     "dr:backup": "bash scripts/dr/dr-backup-copy.sh",
-    "dr:verify": "bash scripts/dr/dr-restore-verify.sh"
+    "dr:verify": "bash scripts/dr/dr-restore-verify.sh",
+    "qa": "pnpm --filter @linkos/domain exec vitest run test/qa && pnpm --filter @linkos/api exec vitest run test/qa-api.integration.test.ts",
+    "matrix": "playwright test -c playwright.matrix.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

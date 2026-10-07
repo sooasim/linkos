@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   CARD_MESSAGES,
   CONSENT_TYPES,
+  SCANNER_MESSAGES,
   CRM_OBJECTS,
   CRM_PROVIDERS,
   DEFAULT_MAPPINGS,
@@ -93,6 +94,13 @@ describe("QA · message catalogs are complete and placeholder-consistent", () =>
     expect(placeholders(v!)).toEqual(placeholders(CARD_MESSAGES.ko[key]));
   });
   it("every supported locale has a card catalog", () => expect(cardLocales.sort()).toEqual([...LOCALES].sort()));
+  const scannerKeys = Object.keys(SCANNER_MESSAGES.ko) as (keyof (typeof SCANNER_MESSAGES)["ko"])[];
+  it.each(product({ locale: LOCALES, key: scannerKeys }))("scanner $locale.$key", ({ locale, key }) => {
+    const v = SCANNER_MESSAGES[locale][key];
+    expect(v.trim().length).toBeGreaterThan(0);
+    expect(placeholders(v)).toEqual(placeholders(SCANNER_MESSAGES.ko[key]));
+    if (locale !== "ko") expect(v, `${locale}.${key} is untranslated Korean`).not.toMatch(/[가-힣]/); // BUG-14 regression
+  });
   it.each(cases(100, 1823, (r) => ({ t: r.pick(["{a}{b}", "{a} {zz}", "{{a}}", "{a", "a}", "{0}", "{}", "{constructor}", "{toString}"]), v: { a: r.pick(["$&", "$1", "x"]), b: 2 } })))("fmt #$i never throws, unknown keys kept", ({ c }) => {
     const out = fmt(c.t, c.v);
     expect(typeof out).toBe("string");

@@ -82,6 +82,7 @@ const ko = {
   rateLimitedB: "짧은 시간에 너무 많은 요청이 있었습니다.",
   errorT: "문제가 생겼어요",
   errorB: "잠시 후 다시 시도해 주세요.",
+  networkError: "인터넷에 연결되어 있지 않아요. 연결을 확인한 뒤 다시 보내 주세요.",
   receiveByCode: "코드로 받기",
   learnMore: "LINKOS 알아보기",
 };
@@ -137,6 +138,7 @@ const en: GuestMessages = {
   rateLimitedB: "Too many requests in a short time.",
   errorT: "Something went wrong",
   errorB: "Please try again in a moment.",
+  networkError: "You're offline. Check your connection and send again.",
   receiveByCode: "Receive by code",
   learnMore: "About LINKOS",
 };
@@ -191,11 +193,82 @@ const ja: GuestMessages = {
   rateLimitedB: "短時間にリクエストが多すぎます。",
   errorT: "問題が発生しました",
   errorB: "しばらくしてから再度お試しください。",
+  networkError: "インターネットに接続されていません。接続を確認してもう一度送信してください。",
   receiveByCode: "コードで受け取る",
   learnMore: "LINKOS について",
 };
 
 export const GUEST_MESSAGES: Record<Locale, GuestMessages> = { ko, en, ja };
+
+// Card scanner (shared component). The guest landing is shown to foreign recipients before signup (F-177), so the
+// capture step must follow the negotiated locale too — not only the landing copy around it.
+const scannerKo = {
+  findingEdges: "테두리 찾는 중",
+  perspectiveDone: "원근 보정 완료",
+  enhancing: "이미지 보정 중",
+  readFailedCard: "글자를 읽지 못했어요. 밝은 곳에서 명함이 화면을 가득 채우도록 다시 촬영하거나 직접 입력하세요.",
+  readFailedBadge: "배지 글자를 읽지 못했어요. 이름이 잘 보이도록 가까이에서 다시 촬영하거나 직접 입력하세요.",
+  nounCard: "종이 명함",
+  nounBadge: "행사 배지",
+  pickPhoto: "{noun} 사진 선택",
+  captured: "촬영한 {noun}",
+  retake: "다시 촬영",
+  shoot: "{noun} 촬영",
+  hint: "테두리·기울기는 자동으로 보정되고, 사진은 이 기기에서만 분석됩니다",
+  corrected: "테두리를 찾아 원근·기울기를 보정했어요",
+  notCorrected: "테두리를 찾지 못해 원본 그대로 인식했어요",
+  ocrLanguage: "인식 언어",
+  autoFix: "자동 보정",
+  on: "켜짐",
+  off: "꺼짐",
+  manual: "직접 입력할게요",
+};
+export type ScannerMessages = typeof scannerKo;
+export const SCANNER_MESSAGES: Record<Locale, ScannerMessages> = {
+  ko: scannerKo,
+  en: {
+    findingEdges: "Finding the card edges",
+    perspectiveDone: "Perspective corrected",
+    enhancing: "Enhancing the image",
+    readFailedCard: "We couldn't read the text. Retake the photo in good light with the card filling the screen, or enter it manually.",
+    readFailedBadge: "We couldn't read the badge. Move closer so the name is clearly visible, or enter it manually.",
+    nounCard: "business card",
+    nounBadge: "event badge",
+    pickPhoto: "Choose a {noun} photo",
+    captured: "Captured {noun}",
+    retake: "Retake",
+    shoot: "Scan {noun}",
+    hint: "Edges and tilt are corrected automatically; the photo is analyzed only on this device",
+    corrected: "Found the edges and corrected perspective and tilt",
+    notCorrected: "No edges found — recognized the original photo",
+    ocrLanguage: "Recognition language",
+    autoFix: "Auto-correct",
+    on: "on",
+    off: "off",
+    manual: "Enter it manually",
+  },
+  ja: {
+    findingEdges: "輪郭を検出中",
+    perspectiveDone: "遠近補正完了",
+    enhancing: "画像を補正中",
+    readFailedCard: "文字を読み取れませんでした。明るい場所で名刺が画面いっぱいになるよう撮り直すか、手入力してください。",
+    readFailedBadge: "バッジの文字を読み取れませんでした。名前がはっきり見えるよう近づいて撮り直すか、手入力してください。",
+    nounCard: "名刺",
+    nounBadge: "イベントバッジ",
+    pickPhoto: "{noun}の写真を選択",
+    captured: "撮影した{noun}",
+    retake: "撮り直す",
+    shoot: "{noun}を撮影",
+    hint: "輪郭と傾きは自動で補正され、写真はこの端末内だけで解析されます",
+    corrected: "輪郭を検出して遠近と傾きを補正しました",
+    notCorrected: "輪郭が見つからないため元の写真で認識しました",
+    ocrLanguage: "認識言語",
+    autoFix: "自動補正",
+    on: "オン",
+    off: "オフ",
+    manual: "手入力する",
+  },
+};
 export const LOCALE_NAMES: Record<Locale, string> = { ko: "한국어", en: "English", ja: "日本語" };
 
 // Living Card labels (shared card component; guest landing passes the negotiated locale)

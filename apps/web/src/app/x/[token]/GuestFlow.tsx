@@ -164,7 +164,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
               {fmt(m.senderCard, { name: first })} <em>Living Card</em>
             </h1>
             <div className="mt-6">
-              <LivingCard card={landing.sender} />
+              <LivingCard card={landing.sender} locale={locale} />
             </div>
             <ActionCtas profileId={landing.sender.id} ownerName={first} actions={actions} />
             {!landing.acceptsReply && <p className="mt-6 rounded-2xl border border-[var(--line)] p-4 text-[14px] text-[var(--fg-mute)]">{m.alreadyExchanged}</p>}

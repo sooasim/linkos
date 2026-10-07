@@ -197,3 +197,68 @@ const ja: GuestMessages = {
 
 export const GUEST_MESSAGES: Record<Locale, GuestMessages> = { ko, en, ja };
 export const LOCALE_NAMES: Record<Locale, string> = { ko: "한국어", en: "English", ja: "日本語" };
+
+// Living Card labels (shared card component; guest landing passes the negotiated locale)
+export const CARD_MESSAGES = {
+  "ko": {
+    "tabDepth": "카드 깊이",
+    "tab3": "3초",
+    "tab30": "30초",
+    "tabDeep": "딥 프로필",
+    "noFields": "공개된 연락처가 없습니다.",
+    "noDeep": "아직 공개된 딥 프로필이 없습니다.",
+    "hidden": "비공개 항목 {n}개 — 연결 후 공유 요청 가능",
+    "saveVcard": "연락처에 저장 (vCard)",
+    "offer": "Offer · 줄 수 있는 것",
+    "need": "Need · 지금 필요한 것",
+    "projects": "프로젝트",
+    "achievements": "성과",
+    "services": "서비스",
+    "assets": "보유 자원",
+    "network": "네트워크",
+    "interests": "관심 분야",
+    "languages": "언어",
+    "certifications": "인증"
+  },
+  "en": {
+    "tabDepth": "Card depth",
+    "tab3": "3 sec",
+    "tab30": "30 sec",
+    "tabDeep": "Deep profile",
+    "noFields": "No public contact details.",
+    "noDeep": "No deep profile shared yet.",
+    "hidden": "{n} private fields — request access after connecting",
+    "saveVcard": "Save to contacts (vCard)",
+    "offer": "Offer · What I can give",
+    "need": "Need · What I need now",
+    "projects": "Projects",
+    "achievements": "Achievements",
+    "services": "Services",
+    "assets": "Resources",
+    "network": "Network",
+    "interests": "Interests",
+    "languages": "Languages",
+    "certifications": "Certifications"
+  },
+  "ja": {
+    "tabDepth": "カードの深さ",
+    "tab3": "3秒",
+    "tab30": "30秒",
+    "tabDeep": "詳細プロフィール",
+    "noFields": "公開されている連絡先はありません。",
+    "noDeep": "詳細プロフィールはまだ公開されていません。",
+    "hidden": "非公開項目 {n}件 — つながった後に共有を依頼できます",
+    "saveVcard": "連絡先に保存（vCard）",
+    "offer": "Offer · 提供できること",
+    "need": "Need · いま必要なこと",
+    "projects": "プロジェクト",
+    "achievements": "実績",
+    "services": "サービス",
+    "assets": "保有リソース",
+    "network": "ネットワーク",
+    "interests": "関心分野",
+    "languages": "言語",
+    "certifications": "認証"
+  }
+} as const;
+export type CardMessages = (typeof CARD_MESSAGES)["ko"];

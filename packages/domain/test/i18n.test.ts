@@ -1,6 +1,6 @@
 // F-177 다국어: 로케일 선택과 메시지 리소스 완전성
 import { describe, expect, it } from "vitest";
-import { GUEST_MESSAGES, LOCALES, fmt, pickLocale } from "../src/i18n";
+import { CARD_MESSAGES, GUEST_MESSAGES, LOCALES, fmt, pickLocale } from "../src/i18n";
 
 describe("F-177 i18n", () => {
   it("picks by Accept-Language q-value and falls back to ko", () => {
@@ -26,6 +26,9 @@ describe("F-177 i18n", () => {
         expect(ph(GUEST_MESSAGES[l][k]), `${l}.${k}`).toBe(ph(GUEST_MESSAGES.ko[k]));
       }
     }
+  });
+  it("card labels exist in every locale", () => {
+    for (const l of LOCALES) for (const k of Object.keys(CARD_MESSAGES.ko) as (keyof typeof CARD_MESSAGES.ko)[]) expect(CARD_MESSAGES[l][k], `${l}.${k}`).toBeTruthy();
   });
   it("fmt interpolates and leaves unknown keys", () => {
     expect(fmt("{name}님께 보내기", { name: "Jun" })).toBe("Jun님께 보내기");

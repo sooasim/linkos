@@ -1,5 +1,5 @@
 "use client";
-import { toVCard } from "@linkos/domain";
+import { CARD_MESSAGES, type Locale, fmt, toVCard } from "@linkos/domain";
 import { useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 
@@ -83,7 +83,8 @@ export function CardFace({ card, size = "lg", interactive = true }: { card: Card
 }
 
 /** Progressive disclosure: 3초 → 30초 → 딥 프로필 (F-022, F-023, F-024) + Action Card (F-036). */
-export function LivingCard({ card, showActions = true }: { card: CardData; showActions?: boolean }) {
+export function LivingCard({ card, showActions = true, locale = "ko" }: { card: CardData; showActions?: boolean; locale?: Locale }) {
+  const L = CARD_MESSAGES[locale];
   const [tab, setTab] = useState<"3s" | "30s" | "deep">("3s");
   const fields = card.fields ?? [];
   const saveVCard = () => {
@@ -97,25 +98,25 @@ export function LivingCard({ card, showActions = true }: { card: CardData; showA
   };
   const deep = card.deep ?? {};
   const deepSections: [string, string[]][] = [
-    ["프로젝트", (deep.projects ?? []).map((p: any) => (p.status ? `${p.title} · ${p.status}` : p.title))],
-    ["성과", deep.achievements ?? []],
-    ["서비스", deep.services ?? []],
-    ["보유 자원", deep.assets ?? []],
-    ["네트워크", deep.network ?? []],
-    ["관심 분야", deep.interests ?? []],
-    ["언어", deep.languages ?? []],
-    ["인증", deep.certifications ?? []],
+    [L.projects, (deep.projects ?? []).map((p: any) => (p.status ? `${p.title} · ${p.status}` : p.title))],
+    [L.achievements, deep.achievements ?? []],
+    [L.services, deep.services ?? []],
+    [L.assets, deep.assets ?? []],
+    [L.network, deep.network ?? []],
+    [L.interests, deep.interests ?? []],
+    [L.languages, deep.languages ?? []],
+    [L.certifications, deep.certifications ?? []],
   ].filter(([, v]) => (v as string[]).length) as [string, string[]][];
 
   return (
     <div className="space-y-4">
       <CardFace card={card} />
-      <div role="tablist" aria-label="카드 깊이" className="surface flex p-1">
+      <div role="tablist" aria-label={L.tabDepth} className="surface flex p-1">
         {(
           [
-            ["3s", "3초"],
-            ["30s", "30초"],
-            ["deep", "딥 프로필"],
+            ["3s", L.tab3],
+            ["30s", L.tab30],
+            ["deep", L.tabDeep],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -132,7 +133,7 @@ export function LivingCard({ card, showActions = true }: { card: CardData; showA
 
       {tab === "3s" && (
         <div className="space-y-2 animate-fade">
-          {fields.length === 0 && <p className="text-sm text-[var(--fg-mute)]">공개된 연락처가 없습니다.</p>}
+          {fields.length === 0 && <p className="text-sm text-[var(--fg-mute)]">{L.noFields}</p>}
           {fields.map((f, i) => {
             const href = hrefFor(f.type, f.value);
             const inner = (
@@ -159,12 +160,12 @@ export function LivingCard({ card, showActions = true }: { card: CardData; showA
           })}
           {card.hiddenFields ? (
             <p className="flex items-center gap-2 px-1 pt-1 text-[13px] text-[var(--fg-mute)]">
-              <Icon name="lock" size={14} /> 비공개 항목 {card.hiddenFields}개 — 연결 후 공유 요청 가능
+              <Icon name="lock" size={14} /> {fmt(L.hidden, { n: card.hiddenFields })}
             </p>
           ) : null}
           {showActions && (
             <button onClick={saveVCard} className="btn btn-ghost mt-2 w-full">
-              <Icon name="download" size={18} /> 연락처에 저장 (vCard)
+              <Icon name="download" size={18} /> {L.saveVcard}
             </button>
           )}
         </div>
@@ -173,13 +174,13 @@ export function LivingCard({ card, showActions = true }: { card: CardData; showA
       {tab === "30s" && (
         <div className="space-y-4 animate-fade">
           {card.bioShort && <p className="text-[16px] leading-relaxed">{card.bioShort}</p>}
-          <OfferNeed offers={card.offers ?? []} needs={card.needs ?? []} />
+          <OfferNeed offers={card.offers ?? []} needs={card.needs ?? []} locale={locale} />
         </div>
       )}
 
       {tab === "deep" && (
         <div className="space-y-3 animate-fade">
-          {deepSections.length === 0 && <p className="text-sm text-[var(--fg-mute)]">아직 공개된 딥 프로필이 없습니다.</p>}
+          {deepSections.length === 0 && <p className="text-sm text-[var(--fg-mute)]">{L.noDeep}</p>}
           {deepSections.map(([title, items]) => (
             <section key={title} className="surface p-4">
               <h4 className="eyebrow mb-2">{title}</h4>
@@ -199,17 +200,18 @@ export function LivingCard({ card, showActions = true }: { card: CardData; showA
   );
 }
 
-export function OfferNeed({ offers, needs }: { offers: string[]; needs: string[] }) {
+export function OfferNeed({ offers, needs, locale = "ko" }: { offers: string[]; needs: string[]; locale?: Locale }) {
+  const L = CARD_MESSAGES[locale];
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="rounded-[22px] bg-[var(--color-signal)] p-4 text-[var(--color-ink)]">
-        <p className="eyebrow !text-[var(--color-ink)]/70">Offer · 줄 수 있는 것</p>
+        <p className="eyebrow !text-[var(--color-ink)]/70">{L.offer}</p>
         <ul className="mt-2 space-y-1.5">
           {offers.length ? offers.map((o) => <li key={o} className="text-[15px] font-medium leading-snug">{o}</li>) : <li className="text-sm opacity-60">—</li>}
         </ul>
       </div>
       <div className="rounded-[22px] border border-[var(--line-strong)] p-4">
-        <p className="eyebrow">Need · 지금 필요한 것</p>
+        <p className="eyebrow">{L.need}</p>
         <ul className="mt-2 space-y-1.5">
           {needs.length ? needs.map((n) => <li key={n} className="text-[15px] font-medium leading-snug">{n}</li>) : <li className="text-sm opacity-60">—</li>}
         </ul>

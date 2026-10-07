@@ -22,7 +22,15 @@ const ERRORS: Record<string, string> = {
   sso_email_missing: "회사 SSO가 확인된 이메일을 제공하지 않았습니다.",
   sso_token_failed: "회사 SSO 서버와 통신하지 못했습니다.",
   sso_discovery_failed: "회사 SSO 서버와 통신하지 못했습니다.",
+  sso_required: "회사 계정은 회사 SSO로만 로그인할 수 있어요. 회사 로그인으로 이동합니다…",
+  sso_deprovisioned: "조직에서 비활성화된 계정입니다. 회사 관리자에게 문의하세요.",
+  saml_invalid_response: "회사 SSO(SAML) 응답을 확인하지 못했습니다. 다시 시도하세요.",
+  saml_replayed: "이미 사용된 SSO 응답입니다. 다시 로그인하세요.",
+  saml_browser_mismatch: "로그인을 시작한 브라우저에서 다시 시도하세요.",
+  invalid_state: "SSO 로그인 요청이 만료되었습니다. 다시 시도하세요.",
 };
+
+const SSO_START = "/api/v1/auth/sso/start";
 
 function readSsoEmail(): string {
   try {
@@ -66,6 +74,21 @@ export function LoginForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError ? (ERRORS[initialError] ?? null) : null);
   const allRequired = REQUIRED.every((r) => checks[r.type]);
+
+  // F-008 sso_required: the org enforces its IdP for this e-mail's domain → continue with the company SSO flow
+  const toCompanySso = (err: unknown): boolean => {
+    if (!(err instanceof ClientError) || err.code !== "sso_required") return false;
+    const url = (err.details as { ssoUrl?: string } | undefined)?.ssoUrl;
+    if (!url || !url.startsWith(`${SSO_START}?`)) return false;
+    try {
+      if (email.includes("@")) sessionStorage.setItem("lk_sso_email", email);
+    } catch {
+      /* private mode */
+    }
+    setError(ERRORS.sso_required!);
+    window.location.href = `${url}&next=${encodeURIComponent(next)}`;
+    return true;
+  };
   // F-060 One Tap: credential waiting for the consent step (new users only)
   const [oneTapCredential, setOneTapCredential] = useState<string | null>(null);
 
@@ -94,6 +117,8 @@ export function LoginForm({
       if (err instanceof ClientError && err.code === "consent_required") {
         setOneTapCredential(credential);
         setStep("consent");
+      } else if (toCompanySso(err)) {
+        setOneTapCredential(null);
       } else {
         setOneTapCredential(null);
         setError((err as Error).message);
@@ -112,7 +137,7 @@ export function LoginForm({
       setDevCode(r.devCode ?? null);
       setStep("code");
     } catch (err) {
-      setError((err as Error).message);
+      if (!toCompanySso(err)) setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -128,7 +153,7 @@ export function LoginForm({
       router.refresh();
     } catch (err) {
       if (err instanceof ClientError && err.code === "consent_required") setStep("consent");
-      else setError((err as Error).message);
+      else if (!toCompanySso(err)) setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -139,7 +164,7 @@ export function LoginForm({
     window.location.href = `/api/v1/auth/google?next=${encodeURIComponent(next)}`;
   };
 
-  // F-008 회사 SSO: the work email's verified domain picks the org's OIDC IdP
+  // F-008 회사 SSO: the work email's verified domain picks the org's IdP (OIDC or SAML 2.0)
   const continueSso = (withConsent: boolean) => {
     if (!email.includes("@")) {
       setError("회사 이메일을 입력하세요.");
@@ -151,7 +176,7 @@ export function LoginForm({
       /* private mode */
     }
     if (withConsent) document.cookie = `lk_consent=${allRequired ? 1 : 0}; path=/; max-age=600; samesite=lax`;
-    window.location.href = `/api/v1/auth/sso/start?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+    window.location.href = `${SSO_START}?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
   };
 
   // F-006 Passkey sign-in (discoverable credential, or scoped to the typed email)
@@ -166,6 +191,7 @@ export function LoginForm({
       router.replace(next);
       router.refresh();
     } catch (err) {
+      if (toCompanySso(err)) return;
       setError((err as Error).name === "NotAllowedError" ? "패스키 로그인이 취소되었습니다." : (err as Error).message);
     } finally {
       setBusy(false);

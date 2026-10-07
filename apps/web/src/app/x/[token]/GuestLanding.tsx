@@ -1,4 +1,4 @@
-import { ApiError, card, handoff, living } from "@linkos/api";
+import { ApiError, card, cardViews, handoff, living } from "@linkos/api";
 import { generateToken, pickLocale } from "@linkos/domain";
 import { cookies, headers } from "next/headers";
 import { getViewer } from "@/lib/server";
@@ -16,6 +16,9 @@ export async function GuestLanding({ tokenOrCode, lang }: { tokenOrCode: string;
     const code = e instanceof ApiError ? e.code : "error";
     return <LinkState code={code} locale={locale} />;
   }
+  // X-003: +1 view counter for the sender (no viewer id stored; GPC/DNT and the owner's opt-out suppress it)
+  const h = await headers();
+  await cardViews.recordView({ profileId: landing.sender.id, sessionId: landing.sessionId, kind: "view", viewerUserId: userId, gpc: h.get("sec-gpc"), dnt: h.get("dnt") }).catch(() => false);
   let viewerCard: Record<string, string> | null = null;
   if (userId) {
     const pid = await card.primaryProfileId(userId);

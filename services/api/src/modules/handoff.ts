@@ -15,6 +15,7 @@ import {
   generateToken,
   hashToken,
   isWellFormedToken,
+  minimizeOcrLines,
   normalizeShortCode,
   planChannels,
 } from "@linkos/domain";
@@ -30,6 +31,7 @@ import { track } from "../lib/metering";
 import { consume } from "./billing";
 import { adaptCardForSession } from "./living";
 import { insertContact } from "./relationship";
+import { recordView } from "./cardViews";
 
 export const capabilityInput = z
   .object({
@@ -226,6 +228,23 @@ export async function getSenderSessionStatus(ctx: Ctx, sessionId: string) {
   };
 }
 
+/**
+ * Audit G-03: guest-safe live status for `/exchange/sessions/{token}/events` (CLAUDE.md §4 SSE path).
+ * Only the session state — never the sender's or other receivers' data (the token holder already saw the card).
+ */
+export async function getGuestSessionStatus(tokenOrCode: string, ctx: Ctx, opts: { rateLimited?: boolean } = {}) {
+  // only the opening request is rate limited; polls inside an already-open stream are not (venue Wi-Fi shares one IP)
+  if (opts.rateLimited !== false) await rateLimit(`xch:status:${ctx.ip}`, 120, 60);
+  const s = await findSession(tokenOrCode);
+  const terminal = ["REVOKED", "CANCELLED"].includes(s.state);
+  const expired = !terminal && s.expires_at.getTime() < Date.now() && !["EXCHANGED", "CLAIM_PENDING", "CLAIMED", "SYNCED"].includes(s.state);
+  return {
+    state: expired ? ("EXPIRED" as ExchangeState) : s.state,
+    acceptsReply: acceptsReply(s.state, s.expires_at),
+    expiresAt: s.expires_at.toISOString(),
+  };
+}
+
 export interface GuestLanding {
   sessionId: string;
   state: ExchangeState;
@@ -325,10 +344,12 @@ export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, inpu
     for (const k of Object.keys(shared)) provenance[k] = input.provenance[k] ?? { source: "user" };
 
     let businessCardId: string | null = null;
-    if (input.ocr?.lines.length) {
+    // audit G-02 (F-058/F-162): the sender only keeps OCR evidence for fields the guest agreed to share
+    const evidence = input.ocr?.lines.length ? minimizeOcrLines(input.ocr.lines, Object.values(shared)) : [];
+    if (evidence.length) {
       const bc = await one<{ id: string }>(
         `INSERT INTO business_cards (captured_by, raw_ocr, structured_data, confidence, source) VALUES ($1,$2,$3,$4,'guest_exchange') RETURNING id`,
-        [s.sender_user_id, JSON.stringify({ lines: input.ocr.lines, language: input.ocr.language }), JSON.stringify(shared), JSON.stringify(Object.fromEntries(Object.entries(provenance).map(([k, v]) => [k, v.confidence ?? null])))],
+        [s.sender_user_id, JSON.stringify({ lines: evidence, language: input.ocr?.language, minimized: true }), JSON.stringify(shared), JSON.stringify(Object.fromEntries(Object.entries(provenance).map(([k, v]) => [k, v.confidence ?? null])))],
         c,
       );
       businessCardId = bc!.id;
@@ -417,6 +438,7 @@ export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, inpu
     await emit(c, "exchange.completed", "exchange_session", s.id, { relationship_ids: relationshipIds, encounter_id: senderSide.encounterId });
     await audit(c, { userId: ctx.userId }, "exchange.completed", "exchange_session", s.id, { guest: !ctx.userId, fields: input.sharedFields });
     await track(c, "guest_replied", { anonId: `session:${s.id}` }, { signed_in: !!ctx.userId, fields: input.sharedFields.length });
+    await recordView({ profileId: s.sender_profile_id, sessionId: s.id, kind: "reply", viewerUserId: ctx.userId }, c); // X-003 (owner opt-out respected)
 
     return {
       exchanged: true,

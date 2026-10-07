@@ -35,3 +35,6 @@ export * from "./fieldMapping";
 export * from "./webhook";
 export * from "./sso";
 export * from "./crmDeals";
+export * from "./shareKit";
+export * from "./assistant";
+export * from "./minimize";

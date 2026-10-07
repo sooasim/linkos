@@ -1,5 +1,4 @@
 // integration module — Google OAuth/People API 동기화(idempotent, 사용자별 직렬 처리, external etag 매핑) + Export(CSV/vCard/XLSX/TXT/JSON)
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { generateToken, toCsv, toVCard } from "@linkos/domain";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
@@ -9,28 +8,9 @@ import { recordConsents } from "./identity";
 import { assertExportAllowed } from "./policy";
 import { listContacts } from "./relationship";
 
-// ---------- credential vault (AES-256-GCM) ----------
-function key(): Buffer {
-  const k = process.env.CREDENTIALS_KEY;
-  if (!k) {
-    if (process.env.NODE_ENV === "production") throw unavailable("vault_not_configured", "CREDENTIALS_KEY 가 설정되지 않았습니다.");
-    return Buffer.alloc(32, 7);
-  }
-  const b = Buffer.from(k, "base64");
-  if (b.length !== 32) throw new Error("CREDENTIALS_KEY must be 32 bytes base64");
-  return b;
-}
-export function seal(obj: unknown): Buffer {
-  const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", key(), iv);
-  const enc = Buffer.concat([c.update(JSON.stringify(obj), "utf8"), c.final()]);
-  return Buffer.concat([iv, c.getAuthTag(), enc]);
-}
-export function unseal<T>(buf: Buffer): T {
-  const d = createDecipheriv("aes-256-gcm", key(), buf.subarray(0, 12));
-  d.setAuthTag(buf.subarray(12, 28));
-  return JSON.parse(Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString("utf8")) as T;
-}
+// ---------- credential vault (AES-256-GCM) — shared with cached idempotent responses ----------
+export { seal, unseal } from "../lib/vault";
+import { seal, unseal } from "../lib/vault";
 
 // ---------- Google ----------
 const GOOGLE_SCOPES_LOGIN = ["openid", "email", "profile"];
@@ -253,18 +233,21 @@ async function processAccount(accountId: string, limit: number): Promise<number>
           const kind = classify(e);
           const dead = kind === "dead" || (kind === "retry" && attempts >= 6);
           const status = kind === "conflict" ? "conflict" : dead ? "dead" : "retry";
-          await q("UPDATE sync_jobs SET status=$2, attempt_count=$3, last_error=$4, scheduled_at = CASE WHEN $2='retry' THEN now() + ($5 || ' seconds')::interval ELSE scheduled_at END, finished_at = CASE WHEN $2='retry' THEN NULL ELSE now() END, external_id=COALESCE($6, external_id) WHERE id=$1", [
-            job.id,
-            status,
-            attempts,
-            (e as Error).message.slice(0, 300),
-            String(2 ** attempts * 15),
-            e instanceof SyncConflict ? (e.remote?.externalId ?? null) : null,
-          ]);
-          if (status !== "retry") {
-            const provider = job.provider ?? String(job.job_type).split(".")[0];
-            await emit(pool(), "integration.sync.failed", "sync_job", job.id, { provider, job_id: job.id, error_class: status === "conflict" ? "conflict" : ((e as ApiError).code ?? "error") });
-          }
+          // audit G-14: the terminal status and its `integration.sync.failed` event are written in ONE transaction (outbox rule)
+          await tx(async (c) => {
+            await c.query("UPDATE sync_jobs SET status=$2, attempt_count=$3, last_error=$4, scheduled_at = CASE WHEN $2='retry' THEN now() + ($5 || ' seconds')::interval ELSE scheduled_at END, finished_at = CASE WHEN $2='retry' THEN NULL ELSE now() END, external_id=COALESCE($6, external_id) WHERE id=$1", [
+              job.id,
+              status,
+              attempts,
+              (e as Error).message.slice(0, 300),
+              String(2 ** attempts * 15),
+              e instanceof SyncConflict ? (e.remote?.externalId ?? null) : null,
+            ]);
+            if (status !== "retry") {
+              const provider = job.provider ?? String(job.job_type).split(".")[0];
+              await emit(c, "integration.sync.failed", "sync_job", job.id, { provider, job_id: job.id, error_class: status === "conflict" ? "conflict" : ((e as ApiError).code ?? "error") });
+            }
+          });
           log("warn", "sync.job_failed", { job: job.id, attempts, status });
         }
       }

@@ -47,6 +47,14 @@ export default async function MePage() {
           <Link href="/app/me/edit?new=1" className="mt-2 inline-block text-[13px] font-semibold underline">새 프로필 추가</Link>
         </div>
       </div>
+      {/* X-001 / X-002 / X-004 / X-007 share kit */}
+      <Link href="/app/me/share" className="surface glow-border mt-3 flex items-center justify-between p-4" data-testid="share-kit-link">
+        <span>
+          <span className="block text-[15px] font-semibold">공유 도구</span>
+          <span className="block text-[13px] text-[var(--fg-mute)]">메일 서명 · 화상회의 배경 · 지갑 패스 · 행사 포스터</span>
+        </span>
+        <Icon name="share" />
+      </Link>
       <AccessRequests />
     </div>
   );

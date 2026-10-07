@@ -81,6 +81,40 @@ export function hmac(s: string): string {
   return createHmac("sha256", secret ?? "dev-only-secret").update(s).digest("hex");
 }
 
+/** Idempotency-Key format accepted by the API (UUIDs and similar opaque client ids). */
+export function isValidIdempotencyKey(key: string | null | undefined): key is string {
+  return !!key && /^[A-Za-z0-9_.:-]{8,128}$/.test(key);
+}
+
+/**
+ * Look up a cached response for (scope, key). Throws 409 when the key is reused with a different body.
+ * Cached bodies are sealed with AES-256-GCM (audit G-05): responses may carry one-time secrets such as
+ * exchange/claim tokens, which must never sit in the database in plain text.
+ */
+export async function idempotencyLookup<T>(scope: string, key: string, requestBody: unknown): Promise<{ status: number; body: T } | null> {
+  const reqHash = sha256(JSON.stringify(requestBody ?? null));
+  const existing = await one<{ request_hash: string; status_code: number; response: any }>(
+    "SELECT request_hash, status_code, response FROM idempotency_keys WHERE scope=$1 AND key=$2",
+    [scope, key],
+  );
+  if (!existing) return null;
+  if (existing.request_hash !== reqHash) {
+    const { conflict } = await import("./errors");
+    throw conflict("idempotency_key_reused", "같은 Idempotency-Key 로 다른 요청을 보낼 수 없습니다.");
+  }
+  const { unseal } = await import("./vault");
+  const body = existing.response && typeof existing.response === "object" && typeof existing.response.sealed === "string" ? unseal<T>(Buffer.from(existing.response.sealed, "base64")) : (existing.response as T);
+  return { status: existing.status_code, body };
+}
+
+export async function idempotencyStore(scope: string, key: string, requestBody: unknown, status: number, body: unknown): Promise<void> {
+  const { seal } = await import("./vault");
+  await pool().query(
+    "INSERT INTO idempotency_keys (scope, key, request_hash, status_code, response) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+    [scope, key, sha256(JSON.stringify(requestBody ?? null)), status, JSON.stringify({ sealed: seal(body ?? null).toString("base64") })],
+  );
+}
+
 /** Idempotency-Key support for create/update APIs (백서 11). */
 export async function withIdempotency<T>(
   scope: string,
@@ -89,23 +123,10 @@ export async function withIdempotency<T>(
   run: () => Promise<{ status: number; body: T }>,
 ): Promise<{ status: number; body: T; replayed: boolean }> {
   if (!key) return { ...(await run()), replayed: false };
-  const reqHash = sha256(JSON.stringify(requestBody ?? null));
-  const existing = await one<{ request_hash: string; status_code: number; response: T }>(
-    "SELECT request_hash, status_code, response FROM idempotency_keys WHERE scope=$1 AND key=$2",
-    [scope, key],
-  );
-  if (existing) {
-    if (existing.request_hash !== reqHash) {
-      const { conflict } = await import("./errors");
-      throw conflict("idempotency_key_reused", "같은 Idempotency-Key 로 다른 요청을 보낼 수 없습니다.");
-    }
-    return { status: existing.status_code, body: existing.response, replayed: true };
-  }
+  const hit = await idempotencyLookup<T>(scope, key, requestBody);
+  if (hit) return { ...hit, replayed: true };
   const res = await run();
-  await pool().query(
-    "INSERT INTO idempotency_keys (scope, key, request_hash, status_code, response) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
-    [scope, key, reqHash, res.status, JSON.stringify(res.body)],
-  );
+  await idempotencyStore(scope, key, requestBody, res.status, res.body);
   return { ...res, replayed: false };
 }
 

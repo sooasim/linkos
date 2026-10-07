@@ -1,4 +1,4 @@
-import { ApiError, card, living } from "@linkos/api";
+import { ApiError, card, cardViews, living } from "@linkos/api";
 import { contrastText } from "@linkos/domain";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -7,6 +7,8 @@ import { Logo } from "@/components/Icon";
 import { ActionCtas } from "@/components/ActionCtas";
 import { LivingCard } from "@/components/LivingCard";
 import { ProfileMediaGallery } from "@/components/ProfileMedia";
+import { headers } from "next/headers";
+import { CardViewTracker } from "@/components/CardViewTracker";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
 
@@ -38,9 +40,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 // 공개 Living Card (ACL: public; 관계가 있으면 business, 승인되면 trusted)
-export default async function PublicProfile({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicProfile({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ src?: string }> }) {
   const { slug } = await params;
+  const { src } = await searchParams;
   const { card: c, userId } = await load(slug);
+  // X-003: view counter + tracked-link source (signature / virtual background / wallet pass). Counts only, no viewer id.
+  const h = await headers();
+  const privacy = { viewerUserId: userId, gpc: h.get("sec-gpc"), dnt: h.get("dnt") };
+  await cardViews.recordView({ profileId: c.id, kind: "view", ...privacy }).catch(() => false);
+  const linkKind = src === "sig" ? "link_sig" : src === "bg" ? "link_bg" : src === "wallet" ? "link_wallet" : null;
+  if (linkKind) await cardViews.recordView({ profileId: c.id, kind: linkKind, ...privacy }).catch(() => false);
   const actions = (await living.getActionCtas(c.id).catch(() => null))?.actions ?? [];
   return (
     <main className="stage-ink grain min-h-dvh px-5 pb-16 pt-5">
@@ -61,11 +70,15 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
               <span>{c.brand.orgName}</span>
             </div>
           )}
-          <LivingCard card={c} />
+          <CardViewTracker profileId={c.id}>
+            <LivingCard card={c} />
+          </CardViewTracker>
         </div>
         <ProfileMediaGallery profileId={c.id} />
         {c.hiddenFields > 0 && <RequestAccess profileId={c.id} signedIn={!!userId} />}
-        <ActionCtas profileId={c.id} ownerName={c.name} actions={actions} />
+        <CardViewTracker profileId={c.id}>
+          <ActionCtas profileId={c.id} ownerName={c.name} actions={actions} />
+        </CardViewTracker>
       </div>
     </main>
   );

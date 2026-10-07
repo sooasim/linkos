@@ -25,7 +25,11 @@ export function EventDetail({ id }: { id: string }) {
         ))}
       </div>
       {e.isOwner && <p className="mt-4 text-[14px]">참가 코드 <b className="num tracking-[0.2em]">{e.joinCode}</b> — 참가자에게 공유하세요.</p>}
-      <Link href={`/app/events/${id}/booth`} className="btn btn-ghost mt-4"><Icon name="flag" size={18} /> 부스 모드 · 리드 · ROI</Link>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link href={`/app/events/${id}/booth`} className="btn btn-ghost"><Icon name="flag" size={18} /> 부스 모드 · 리드 · ROI</Link>
+        {/* X-007 printable poster / table tent for this event */}
+        <Link href={`/app/me/share?event=${id}#poster`} className="btn btn-ghost" data-testid="event-poster-link"><Icon name="download" size={18} /> 포스터 · 테이블 텐트</Link>
+      </div>
       <section className="mt-8">
         <h2 className="mb-1 text-[18px] font-semibold">오늘 만나볼 사람</h2>
         <p className="mb-3 flex items-center gap-2 text-[13px] text-[var(--fg-mute)]"><AiLabel /> 추천 노출에 동의한 참가자만 · 공유한 Offer/Need 기반</p>

@@ -14,6 +14,7 @@ import { purgeExpiredObjects } from "./modules/files";
 import { processTranscriptions } from "./modules/recording";
 import { notify, processPushQueue } from "./modules/push";
 import { enqueueWebhookDeliveries, processWebhookDeliveries } from "./modules/webhooks";
+import { processPrepBriefs, processReconnectDigests } from "./modules/assistantJobs";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -68,6 +69,18 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
       // F-110: Web Push to the owner's devices (delivered by processPushQueue)
       const f = await c.query<{ title: string; contact_id: string | null }>("SELECT title, contact_id FROM followups WHERE id=$1", [payload.followup_id]);
       if (f.rows[0]) await notify(c, payload.user_id, { kind: "followup.due", title: "후속 할 일", body: f.rows[0].title, url: f.rows[0].contact_id ? `/app/people/${f.rows[0].contact_id}` : "/app", dedupeKey: `followup:${payload.followup_id}` });
+      break;
+    }
+    case "integration.sync.failed": {
+      // notification consumer (audit G-13): tell the account owner once per job; details live in the Sync Journal
+      const o = await c.query<{ user_id: string }>("SELECT a.user_id FROM sync_jobs j JOIN integration_accounts a ON a.id=j.integration_account_id WHERE j.id=$1", [payload.job_id]);
+      if (o.rows[0]) await notify(c, o.rows[0].user_id, { kind: "integration.sync.failed", title: `${payload.provider} 동기화 ${payload.error_class === "conflict" ? "충돌" : "실패"}`, body: "연동 기록에서 확인하고 다시 시도하거나 해결하세요.", url: "/app/integrations", dedupeKey: `syncfail:${payload.job_id}` });
+      break;
+    }
+    case "match.created": {
+      // notification consumer (audit G-01): tell the subject's owner — no names on the lock screen, details in-app
+      const owner = await c.query<{ user_id: string }>("SELECT user_id FROM profiles WHERE id=$1 AND user_id IS NOT NULL", [payload.subject_id]);
+      if (owner.rows[0]) await notify(c, owner.rows[0].user_id, { kind: "match.created", title: "새 매칭 후보 (AI 추론)", body: `근거: ${(payload.reasons as string[]).join(", ")} · 확인 후 연결하세요`, url: "/app/ai", dedupeKey: `match:${payload.subject_id}:${payload.candidate_id}` });
       break;
     }
     case "exchange.completed":
@@ -130,9 +143,12 @@ export async function tick() {
   const retained = await processRetention(); // F-136
   const strengths = await processStrengths(); // F-074
   const rewards = await processReferralRewards(); // F-197 (no-op unless REFERRAL_REWARDS_ENABLED=1)
+  const briefs = await processPrepBriefs().catch((e) => (log("warn", "worker.prep_brief_failed", { error: (e as Error).message }), 0)); // X-005
+  const digests = await processReconnectDigests().catch((e) => (log("warn", "worker.digest_failed", { error: (e as Error).message }), 0)); // X-006
   await q("DELETE FROM webauthn_challenges WHERE expires_at < now() - interval '1 day'");
   await q("DELETE FROM sso_login_states WHERE expires_at < now() - interval '1 day'");
-  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w };
+  await q("DELETE FROM card_view_daily WHERE day < current_date - 400"); // X-003 retention: ~13 months of daily counts
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

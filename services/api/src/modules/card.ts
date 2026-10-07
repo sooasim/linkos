@@ -1,5 +1,6 @@
 // card module — Living Business Card (F-022~F-036): 3초/30초/딥 카드, Offer/Need, 필드 ACL, 변형, Access Request
 import { type Audience, EXCHANGE_AUDIENCE, type Visibility, filterFieldsByAudience, generateToken, hiddenFieldCount } from "@linkos/domain";
+import { type CardTemplateOptions, type ResolvedCardDesign, resolveCardDesign, validateCardDesign } from "@linkos/domain/cardDesign";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../lib/errors";
@@ -9,6 +10,21 @@ import { type CardBrand, brandForProfile } from "./org";
 import { assertProfilePolicy } from "./policy";
 
 export const FIELD_TYPES = ["email", "phone", "mobile", "website", "address", "linkedin", "instagram", "x", "github", "kakao", "booking", "other"] as const;
+
+/** F-021 glyph reference: "i:<icon id>" or "e:<emoji>" — existence is checked by validateCardDesign. */
+export const glyphRef = z.string().min(3).max(40).regex(/^(i:[a-z0-9-]+|e:\S+)$/u);
+
+/** F-021 card design options (OpenAPI: CardTemplateOptions). Semantics (palette, bank membership) → validateCardDesign. */
+export const templateOptionsInput = z
+  .object({
+    accent: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+    monogram: z.string().trim().min(1).max(12).optional(),
+    icon: glyphRef.optional(),
+    fieldIcons: z.record(z.string().max(20), glyphRef).optional(),
+    keywordBadges: z.record(z.string().min(1).max(30), glyphRef).optional(),
+    sectionIcons: z.record(z.string().max(20), glyphRef).optional(),
+  })
+  .strict();
 
 export const profileInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -21,6 +37,10 @@ export const profileInput = z.object({
   industries: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
   regions: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
   theme: z.enum(["ink", "paper", "signal", "ember"]).default("ink"),
+  /** F-021 template id (null clears, omitted keeps the current one) */
+  templateId: z.string().regex(/^[a-z][a-z0-9-]{2,40}$/).nullish(),
+  /** F-021 design options (omitted keeps the current ones) */
+  templateOptions: templateOptionsInput.optional(),
   matchingOptIn: z.boolean().default(true),
   deep: z
     .object({
@@ -78,6 +98,8 @@ export interface FullProfile {
   industries: string[];
   regions: string[];
   theme: string;
+  templateId: string | null;
+  templateOptions: CardTemplateOptions;
   matchingOptIn: boolean;
   deep: Record<string, unknown>;
   fields: ProfileField[];
@@ -120,6 +142,8 @@ export async function loadProfile(id: string, db: Db = pool()): Promise<FullProf
     industries: p.industries ?? [],
     regions: p.regions ?? [],
     theme: p.theme,
+    templateId: p.template_id ?? null,
+    templateOptions: p.template_options ?? {},
     matchingOptIn: p.matching_opt_in,
     deep: p.deep ?? {},
     fields: fields.map((f) => ({ id: f.id, type: f.field_type, label: f.label, value: typeof f.value === "string" ? f.value : String(f.value?.v ?? f.value), visibility: f.visibility })),
@@ -147,6 +171,7 @@ export async function listMyProfiles(userId: string) {
 export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: string, db?: Db): Promise<FullProfile> {
   if (!ctx.userId) throw unauthorized();
   const userId = ctx.userId;
+  assertCardDesign(input);
   const run = async (c: Db) => {
     let id = profileId;
     let changed: string[] = [];
@@ -162,6 +187,12 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
       }
       const map: Record<string, unknown> = { name: input.name, company: input.company ?? null, job_title: input.jobTitle ?? null, headline: input.headline ?? null };
       changed = Object.entries(map).filter(([k, v]) => (cur[k] ?? null) !== v).map(([k]) => k);
+      const templateId = input.templateId === undefined ? (cur.template_id ?? null) : input.templateId;
+      const templateOptions = input.templateOptions === undefined ? (cur.template_options ?? {}) : input.templateOptions;
+      // an accent kept from the old template must still be allowed by the new one
+      if (validateCardDesign(templateId, templateOptions).length) throw designError(validateCardDesign(templateId, templateOptions));
+      if ((cur.template_id ?? null) !== templateId || JSON.stringify(cur.template_options ?? {}) !== JSON.stringify(templateOptions)) changed.push("template");
+      await c.query("UPDATE profiles SET template_id=$2, template_options=$3 WHERE id=$1", [id, templateId, JSON.stringify(templateOptions)]);
       version = cur.version + 1;
       await c.query(
         `UPDATE profiles SET name=$2, company=$3, job_title=$4, headline=$5, bio_short=$6, bio_long=$7, keywords=$8, industries=$9, regions=$10,
@@ -178,6 +209,8 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
       );
       id = row!.id;
       changed = ["created"];
+      if (validateCardDesign(input.templateId ?? null, input.templateOptions).length) throw designError(validateCardDesign(input.templateId ?? null, input.templateOptions));
+      await c.query("UPDATE profiles SET template_id=$2, template_options=$3 WHERE id=$1", [id, input.templateId ?? null, JSON.stringify(input.templateOptions ?? {})]);
       await c.query("UPDATE users SET display_name = COALESCE(display_name, $2) WHERE id=$1", [userId, input.name]);
     }
     await c.query("DELETE FROM profile_fields WHERE profile_id=$1", [id]);
@@ -201,6 +234,45 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
   return db ? run(db) : tx(run);
 }
 
+function designError(errors: string[]) {
+  const unknown = errors.includes("unknown_template");
+  return badRequest(unknown ? "unknown_template" : "invalid_card_design", unknown ? "존재하지 않는 명함 템플릿입니다." : "명함 디자인 옵션을 확인하세요.", { errors });
+}
+
+/** F-021: unknown template id / disallowed accent / icon or emoji not in the banks → 400. */
+export function assertCardDesign(input: Pick<ProfileInput, "templateId" | "templateOptions">) {
+  const errs = validateCardDesign(input.templateId, input.templateOptions);
+  // on update with templateId omitted, accent is re-checked against the stored template inside the transaction
+  const relevant = input.templateId === undefined ? errs.filter((e) => e !== "accent_without_template") : errs;
+  if (relevant.length) throw designError(relevant);
+}
+
+export const profileTemplateInput = z.object({
+  templateId: z.string().regex(/^[a-z][a-z0-9-]{2,40}$/).nullable(),
+  templateOptions: templateOptionsInput.default({}),
+  version: z.number().int().optional(),
+});
+
+/** F-021: apply a template (gallery "적용") without resending the whole profile. Same validation + event as saveProfile. */
+export async function setProfileTemplate(ctx: Ctx, profileId: string, input: z.infer<typeof profileTemplateInput>): Promise<FullProfile> {
+  if (!ctx.userId) throw unauthorized();
+  const errs = validateCardDesign(input.templateId, input.templateOptions);
+  if (errs.length) throw designError(errs);
+  return tx(async (c) => {
+    const cur = await one<any>("SELECT id, user_id, version, template_id, template_options FROM profiles WHERE id=$1 FOR UPDATE", [profileId], c);
+    if (!cur) throw notFound("profile");
+    if (cur.user_id !== ctx.userId) throw forbidden();
+    if (input.version !== undefined && input.version !== cur.version) {
+      throw conflict("version_conflict", "다른 기기에서 먼저 수정되었습니다. 최신 내용을 확인하세요.", { serverVersion: cur.version });
+    }
+    const version = cur.version + 1;
+    await c.query("UPDATE profiles SET template_id=$2, template_options=$3, version=$4, updated_at=now() WHERE id=$1", [profileId, input.templateId, JSON.stringify(input.templateOptions), version]);
+    await emit(c, "profile.updated", "profile", profileId, { profile_id: profileId, changed_fields: ["template"], version });
+    await audit(c, ctx, "profile.template_updated", "profile", profileId, { templateId: input.templateId });
+    return (await loadProfile(profileId, c))!;
+  });
+}
+
 async function syncTexts(c: Db, table: "offers" | "needs", profileId: string, texts: string[]) {
   const existing = await q<{ id: string; text: string }>(`SELECT id, text FROM ${table} WHERE profile_id=$1`, [profileId], c);
   const keep = new Set(texts);
@@ -219,6 +291,10 @@ export interface PublicCard {
   bioShort: string | null;
   keywords: string[];
   theme: string;
+  /** F-021 template id (null → classic theme) */
+  templateId: string | null;
+  /** F-021 render-ready design (template + resolved icons/emoji); null when the card has no design options */
+  design: ResolvedCardDesign | null;
   fields: Omit<ProfileField, "id">[];
   offers: string[];
   needs: string[];
@@ -242,6 +318,8 @@ export function projectCard(p: FullProfile, audience: Audience): PublicCard {
     bioShort: p.bioShort,
     keywords: p.keywords,
     theme: p.theme,
+    templateId: p.templateId,
+    design: resolveCardDesign(p.templateId, p.templateOptions),
     fields: visible.map(({ type, label, value, visibility }) => ({ type, label, value, visibility })),
     offers: p.offers.filter((o) => o.confirmed).map((o) => o.text),
     needs: p.needs.filter((n) => n.confirmed).map((n) => n.text),

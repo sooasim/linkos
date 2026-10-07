@@ -2,10 +2,13 @@
 // F-036 Action Card CTAs — 예약/견적/제안/NDA 요청. 로그인 없이 사용 가능, 명시적 동의 필요, 서버에서 rate limit.
 import Link from "next/link";
 import { useState } from "react";
+import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
 import { api, uid } from "@/lib/client";
+import { Glyph } from "./cardTemplates/Glyph";
 import { Icon } from "./Icon";
 
-export type CardAction = { kind: "booking" | "quote" | "proposal" | "nda"; label: string; url: string | null };
+/** glyph: owner-chosen icon/emoji (F-021), resolved server-side so no icon bank ships here */
+export type CardAction = { kind: "booking" | "quote" | "proposal" | "nda"; label: string; url: string | null; glyph?: ResolvedGlyph | null };
 
 const HINT: Record<CardAction["kind"], string> = {
   booking: "가능한 시간대를 알려주세요",
@@ -54,11 +57,11 @@ export function ActionCtas({ profileId, ownerName, actions, tone = "ink" }: { pr
         {actions.map((a) =>
           a.kind === "booking" && a.url ? (
             <a key={a.kind} href={a.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost">
-              <Icon name="calendar" size={18} /> {a.label}
+              {a.glyph ? <Glyph glyph={a.glyph} size={18} /> : <Icon name="calendar" size={18} />} {a.label}
             </a>
           ) : (
             <button key={a.kind} type="button" aria-expanded={open?.kind === a.kind} className="btn btn-ghost" onClick={() => { setOpen(open?.kind === a.kind ? null : a); setState("idle"); }}>
-              <Icon name={a.kind === "booking" ? "calendar" : a.kind === "nda" ? "lock" : "mail"} size={18} /> {a.label}
+              {a.glyph ? <Glyph glyph={a.glyph} size={18} /> : <Icon name={a.kind === "booking" ? "calendar" : a.kind === "nda" ? "lock" : "mail"} size={18} />} {a.label}
             </button>
           ),
         )}

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon, Logo } from "@/components/Icon";
 import { ClientError, api } from "@/lib/client";
 
@@ -11,16 +11,45 @@ const REQUIRED = [
   { type: "age_14", label: "만 14세 이상입니다" },
 ] as const;
 
-export function LoginForm({ next, google, googleConsent, error: initialError }: { next: string; google: boolean; googleConsent: boolean; error: string | null }) {
+const ERRORS: Record<string, string> = {
+  google_denied: "Google 로그인이 취소되었습니다.",
+  sso_denied: "회사 SSO 로그인이 취소되었습니다.",
+  sso_not_found: "이 이메일 도메인에 연결된 회사 SSO가 없습니다.",
+  sso_domain_not_allowed: "회사 SSO는 조직의 인증된 도메인 이메일만 사용할 수 있습니다.",
+  sso_invalid_token: "회사 SSO 신원 확인에 실패했습니다.",
+  sso_nonce_mismatch: "회사 SSO 신원 확인에 실패했습니다.",
+  sso_email_missing: "회사 SSO가 확인된 이메일을 제공하지 않았습니다.",
+  sso_token_failed: "회사 SSO 서버와 통신하지 못했습니다.",
+  sso_discovery_failed: "회사 SSO 서버와 통신하지 못했습니다.",
+};
+
+function readSsoEmail(): string {
+  try {
+    return sessionStorage.getItem("lk_sso_email") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function LoginForm({ next, google, googleConsent, ssoConsent = false, error: initialError }: { next: string; google: boolean; googleConsent: boolean; ssoConsent?: boolean; error: string | null }) {
   const router = useRouter();
-  const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent ? "consent" : "email");
+  const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent || ssoConsent ? "consent" : "email");
   const [email, setEmail] = useState("");
+  const [ssoEmailKnown, setSsoEmailKnown] = useState(false);
+  useEffect(() => {
+    if (!ssoConsent) return;
+    const e = readSsoEmail();
+    if (e) {
+      setEmail(e);
+      setSsoEmailKnown(true);
+    }
+  }, [ssoConsent]);
   const [code, setCode] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [marketing, setMarketing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(initialError === "google_denied" ? "Google 로그인이 취소되었습니다." : null);
+  const [error, setError] = useState<string | null>(initialError ? (ERRORS[initialError] ?? null) : null);
   const allRequired = REQUIRED.every((r) => checks[r.type]);
 
   const requestCode = async (e?: React.FormEvent) => {
@@ -57,6 +86,39 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
   const continueGoogle = () => {
     document.cookie = `lk_consent=${allRequired ? 1 : 0}; path=/; max-age=600; samesite=lax`;
     window.location.href = `/api/v1/auth/google?next=${encodeURIComponent(next)}`;
+  };
+
+  // F-008 회사 SSO: the work email's verified domain picks the org's OIDC IdP
+  const continueSso = (withConsent: boolean) => {
+    if (!email.includes("@")) {
+      setError("회사 이메일을 입력하세요.");
+      return;
+    }
+    try {
+      sessionStorage.setItem("lk_sso_email", email);
+    } catch {
+      /* private mode */
+    }
+    if (withConsent) document.cookie = `lk_consent=${allRequired ? 1 : 0}; path=/; max-age=600; samesite=lax`;
+    window.location.href = `/api/v1/auth/sso/start?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+  };
+
+  // F-006 Passkey sign-in (discoverable credential, or scoped to the typed email)
+  const signInWithPasskey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      const { challengeId, options } = await api<{ challengeId: string; options: any }>("/auth/passkey/login/options", { body: { email: email.includes("@") ? email : null } });
+      const response = await startAuthentication({ optionsJSON: options });
+      await api("/auth/passkey/login/verify", { body: { challengeId, response } });
+      router.replace(next);
+      router.refresh();
+    } catch (err) {
+      setError((err as Error).name === "NotAllowedError" ? "패스키 로그인이 취소되었습니다." : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -103,6 +165,14 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
               <button className="btn btn-signal btn-lg mt-4 w-full" disabled={busy || !email.includes("@")}>
                 {busy ? "보내는 중…" : "코드 받기"}
               </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" className="btn btn-ghost" onClick={signInWithPasskey} disabled={busy}>
+                  <Icon name="lock" size={16} /> 패스키
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => continueSso(false)} disabled={busy}>
+                  <Icon name="people" size={16} /> 회사 SSO
+                </button>
+              </div>
             </form>
           )}
 
@@ -174,7 +244,14 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
                   </label>
                 </li>
               </ul>
-              {googleConsent || (!code && google) ? (
+              {ssoConsent ? (
+                <>
+                  {!ssoEmailKnown && <input className="field mt-6" type="email" placeholder="회사 이메일" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="회사 이메일" />}
+                  <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={() => continueSso(true)}>
+                    동의하고 회사 SSO로 계속
+                  </button>
+                </>
+              ) : googleConsent || (!code && google) ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={continueGoogle}>
                   동의하고 Google로 계속
                 </button>

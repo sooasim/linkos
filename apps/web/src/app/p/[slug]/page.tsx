@@ -1,4 +1,5 @@
 import { ApiError, card } from "@linkos/api";
+import { contrastText } from "@linkos/domain";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -46,6 +47,16 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
           {!userId && <Link href="/login" className="btn btn-ghost !min-h-10 text-[14px]">로그인</Link>}
         </header>
         <div className="mt-8 animate-rise">
+          {c.brand && (
+            // F-138 org branding on member cards (logo shown only as an inline data: image — CSP blocks third-party images)
+            <div className="mb-3 flex items-center gap-2 rounded-2xl px-3 py-2 text-[13px] font-semibold" style={{ background: c.brand.primaryColor ?? "var(--bg-elev)", color: c.brand.primaryColor ? contrastText(c.brand.primaryColor) : "var(--fg)" }}>
+              {c.brand.logoUrl?.startsWith("data:image/") && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={c.brand.logoUrl} alt="" width={20} height={20} className="rounded" />
+              )}
+              <span>{c.brand.orgName}</span>
+            </div>
+          )}
           <LivingCard card={c} />
         </div>
         {c.hiddenFields > 0 && <RequestAccess profileId={c.id} signedIn={!!userId} />}

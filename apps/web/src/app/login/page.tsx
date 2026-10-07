@@ -13,5 +13,5 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const next = safeNext(sp.next);
   const { userId } = await getViewer();
   if (userId) redirect(next);
-  return <LoginForm next={next} google={integration.googleEnabled()} googleConsent={sp.consent === "google"} error={sp.error ?? null} />;
+  return <LoginForm next={next} google={integration.googleEnabled()} googleConsent={sp.consent === "google"} ssoConsent={sp.consent === "sso"}error={sp.error ?? null} />;
 }

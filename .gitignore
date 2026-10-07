@@ -12,3 +12,7 @@ test-results/
 test-results/
 playwright-report/
 .shot*.mjs
+
+# agent worktrees and local scratch scripts
+.claude/worktrees/
+apps/web/.*.mjs

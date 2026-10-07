@@ -1,4 +1,5 @@
 import pg from "pg";
+import { tracingEnabled, withSpan } from "./tracing";
 
 export type Db = pg.Pool | pg.PoolClient;
 
@@ -35,8 +36,13 @@ export async function q<T extends pg.QueryResultRow = Record<string, unknown>>(
   params: unknown[] = [],
   db: Db = pool(),
 ): Promise<T[]> {
-  const r = await db.query<T>(sql, params);
-  return r.rows;
+  if (!tracingEnabled()) return (await db.query<T>(sql, params)).rows;
+  // F-180: DB span (statement text only — values are bound parameters, never logged)
+  return withSpan("db.query", { "db.system": "postgresql", "db.statement": sql.replace(/\s+/g, " ").trim().slice(0, 300) }, async (span) => {
+    const r = await db.query<T>(sql, params);
+    span?.setAttribute("db.rows", r.rowCount ?? r.rows.length);
+    return r.rows;
+  }, { kind: "client" });
 }
 
 export async function one<T extends pg.QueryResultRow = Record<string, unknown>>(
@@ -50,6 +56,11 @@ export async function one<T extends pg.QueryResultRow = Record<string, unknown>>
 
 /** Run fn inside a transaction. Outbox writes must use the provided client (백서 아키텍처: same-transaction outbox). */
 export async function tx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  if (tracingEnabled()) return withSpan("db.transaction", { "db.system": "postgresql" }, () => runTx(fn));
+  return runTx(fn);
+}
+
+async function runTx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool().connect();
   try {
     await client.query("BEGIN");

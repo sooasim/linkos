@@ -4,6 +4,7 @@ import type { DomainEventName, DomainEvents } from "@linkos/domain";
 import { redact } from "@linkos/domain";
 import { type Db, one, pool, q } from "./db";
 import { tooMany } from "./errors";
+import { currentTraceId } from "./tracing";
 
 export interface Ctx {
   userId: string | null;
@@ -13,7 +14,8 @@ export interface Ctx {
 }
 
 export function log(level: "info" | "warn" | "error", msg: string, data?: Record<string, unknown>): void {
-  const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(data ? (redact(data) as object) : {}) });
+  const traceId = currentTraceId();
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(traceId ? { trace_id: traceId } : {}), ...(data ? (redact(data) as object) : {}) });
   if (process.env.NODE_ENV === "test" && level !== "error") return;
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);

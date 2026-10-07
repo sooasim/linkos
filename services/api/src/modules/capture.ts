@@ -6,6 +6,8 @@ import { z } from "zod";
 import { one, pool, tx } from "../lib/db";
 import { notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit, rateLimit } from "../lib/platform";
+import { recordCost, track } from "../lib/metering";
+import { consume } from "./billing";
 import { duplicatesFor } from "./relationship";
 
 export const captureInput = z.object({
@@ -45,6 +47,7 @@ export async function captureBusinessCard(ctx: Ctx, input: z.infer<typeof captur
   const confidence = Object.fromEntries(result.fields.map((f) => [f.key, Math.round(f.confidence * 100) / 100]));
   const draft = toDraft(result.fields);
   const id = await tx(async (c) => {
+    await consume(c, userId, "ocr_scans"); // F-192 (402 with upgrade info when over the plan limit)
     const bc = await one<{ id: string }>(
       `INSERT INTO business_cards (captured_by, raw_ocr, structured_data, confidence, source) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
       [userId, JSON.stringify({ engine: input.engine, side: input.side, kind: input.kind, lines, language: result.language }), JSON.stringify({ fields: result.fields, draft }), JSON.stringify(confidence), input.kind === "badge" ? "badge" : "scan"],
@@ -52,6 +55,10 @@ export async function captureBusinessCard(ctx: Ctx, input: z.infer<typeof captur
     );
     await emit(c, "card.extraction.completed", "business_card", bc!.id, { card_id: bc!.id, fields: result.fields.map((f) => f.key), confidence });
     await audit(c, ctx, "capture.created", "business_card", bc!.id, { fields: result.fields.length });
+    // F-187: on-device OCR costs nothing server-side; hosted engines are priced per page
+    const onDevice = /tesseract|on[-_]?device/i.test(input.engine);
+    await recordCost(c, { userId, jobType: "ocr", jobId: bc!.id, provider: input.engine, rateKey: onDevice ? "ocr.page.on_device" : "ocr.page.server", units: input.backLines?.length ? 2 : 1 });
+    await track(c, "card_scanned", { userId }, { kind: input.kind, side: input.side, fields: result.fields.length });
     return bc!.id;
   });
   const dups = draft.fullName

@@ -3,6 +3,7 @@ import { type Audience, EXCHANGE_AUDIENCE, type Visibility, filterFieldsByAudien
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../lib/errors";
+import { track } from "../lib/metering";
 import { type Ctx, audit, emit } from "../lib/platform";
 
 export const FIELD_TYPES = ["email", "phone", "mobile", "website", "address", "linkedin", "instagram", "x", "github", "kakao", "booking", "other"] as const;
@@ -182,12 +183,15 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
     }
     await syncTexts(c, "offers", id!, input.offers);
     await syncTexts(c, "needs", id!, input.needs);
+    // keep owner-confirmed highlight order (F-032) across editor saves
+    const kept = new Map((await q<{ audience: string; highlights: string[] }>("SELECT audience, highlights FROM profile_variants WHERE profile_id=$1", [id], c)).map((r) => [r.audience, r.highlights]));
     await c.query("DELETE FROM profile_variants WHERE profile_id=$1", [id]);
     for (const v of input.variants) {
-      await c.query("INSERT INTO profile_variants (profile_id, audience, content, is_default) VALUES ($1,$2,$3,$4)", [id, v.audience, JSON.stringify({ headline: v.headline, bioShort: v.bioShort }), v.isDefault]);
+      await c.query("INSERT INTO profile_variants (profile_id, audience, content, is_default, highlights) VALUES ($1,$2,$3,$4,$5)", [id, v.audience, JSON.stringify({ headline: v.headline, bioShort: v.bioShort }), v.isDefault, kept.get(v.audience) ?? []]);
     }
     await emit(c, "profile.updated", "profile", id!, { profile_id: id!, changed_fields: changed, version });
     await audit(c, ctx, profileId ? "profile.updated" : "profile.created", "profile", id!);
+    if (!profileId) await track(c, "profile_created", { userId }); // F-188
     return (await loadProfile(id!, c))!;
   };
   return db ? run(db) : tx(run);

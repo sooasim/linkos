@@ -7,9 +7,11 @@ import { useState } from "react";
 import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
 import { celebrate } from "@/components/Fx";
 import { Icon, Logo } from "@/components/Icon";
+import { ActionCtas, type CardAction } from "@/components/ActionCtas";
 import { LivingCard } from "@/components/LivingCard";
 import { CARD_KEYS, type CardKey, type ReviewedCard, ReviewFields, initialFromParsed } from "@/components/ReviewFields";
 import { api } from "@/lib/client";
+import { trackClient, useExperiment } from "@/lib/flags";
 
 type Landing = {
   sessionId: string;
@@ -18,14 +20,14 @@ type Landing = {
   isGroup: boolean;
   placeLabel: string | null;
   expiresAt: string;
-  sender: { name: string; company: string | null; jobTitle: string | null; headline: string | null; bioShort: string | null; keywords: string[]; theme: string; fields: { type: string; label: string | null; value: string }[]; offers: string[]; needs: string[]; deep: Record<string, unknown> | null; hiddenFields: number };
+  sender: { id: string; name: string; company: string | null; jobTitle: string | null; headline: string | null; bioShort: string | null; keywords: string[]; theme: string; fields: { type: string; label: string | null; value: string }[]; offers: string[]; needs: string[]; deep: Record<string, unknown> | null; hiddenFields: number };
 };
 
 type Step = "view" | "capture" | "review" | "sending" | "done";
 
 const emptyCard = () => Object.fromEntries(CARD_KEYS.map((k) => [k, ""])) as Record<CardKey, string>;
 
-export function GuestFlow({ token, landing, signedIn, viewerCard, locale = "ko" }: { token: string; landing: Landing; signedIn: boolean; viewerCard: Record<string, string> | null; locale?: Locale }) {
+export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], locale = "ko" }: { token: string; landing: Landing; signedIn: boolean; viewerCard: Record<string, string> | null; actions?: CardAction[]; locale?: Locale }) {
   const m = GUEST_MESSAGES[locale];
   const router = useRouter();
   const setLocale = (l: string) => {
@@ -42,8 +44,11 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, locale = "ko" 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ claimToken: string | null } | null>(null);
   const first = landing.sender.name.split(" ")[0] ?? landing.sender.name;
+  // F-196 CTA copy experiment (default copy when not running / not enrolled); F-188 click event = conversion metric
+  const ctaVariant = useExperiment("guest_reply_cta");
 
   const startReply = () => {
+    trackClient("cta_clicked", { cta: "guest_reply", variant: ctaVariant ?? "default" });
     if (viewerCard) {
       setInitial({ ...emptyCard(), ...viewerCard } as Record<CardKey, string>);
       setConf({});
@@ -128,6 +133,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, locale = "ko" 
             <div className="mt-6">
               <LivingCard card={landing.sender} />
             </div>
+            <ActionCtas profileId={landing.sender.id} ownerName={first} actions={actions} />
             {!landing.acceptsReply && <p className="mt-6 rounded-2xl border border-[var(--line)] p-4 text-[14px] text-[var(--fg-mute)]">{m.alreadyExchanged}</p>}
           </section>
         )}
@@ -209,7 +215,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, locale = "ko" 
           <div className="mx-auto w-full max-w-[520px]">
             {step === "view" && landing.acceptsReply && (
               <button onClick={startReply} className="btn btn-signal btn-lg w-full" data-testid="reply-cta">
-                <Icon name="exchange" size={20} /> {m.replyCta}
+                <Icon name="exchange" size={20} /> {ctaVariant === "fast" ? m.replyCtaFast : m.replyCta}
               </button>
             )}
             {step === "view" && !landing.acceptsReply && (

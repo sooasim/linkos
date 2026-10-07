@@ -5,6 +5,7 @@ import { closePool, q, tx } from "./lib/db";
 import { emit, log } from "./lib/platform";
 import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
+import { fanOutLivingUpdate } from "./modules/living";
 import { processDeletions } from "./modules/security";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
@@ -43,6 +44,16 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
     case "exchange.completed":
       // relationship strength nudge for the sender's side (growth/analytics consumers read the event table)
       await c.query("UPDATE relationships SET strength = LEAST(1, COALESCE(strength,0) + 0.1) WHERE id = ANY($1::uuid[])", [payload.relationship_ids]);
+      break;
+    case "profile.updated":
+      // notification consumer — F-033 Living Update suggestions for everyone holding this person's card
+      await c.query("SAVEPOINT living_update");
+      try {
+        await fanOutLivingUpdate(c, payload.profile_id);
+      } catch (e) {
+        await c.query("ROLLBACK TO SAVEPOINT living_update");
+        throw e;
+      }
       break;
     default:
       break; // analytics/notification consumers read from outbox_events directly

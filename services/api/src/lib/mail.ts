@@ -1,3 +1,4 @@
+import { recordCost } from "./metering";
 import { log } from "./platform";
 
 /** Returns true when the message was handed to an SMTP server; false when mail is not configured. */
@@ -8,6 +9,7 @@ export async function sendMail(to: string, subject: string, text: string): Promi
     const nodemailer = await import("nodemailer");
     const transport = nodemailer.createTransport(url);
     await transport.sendMail({ from: process.env.MAIL_FROM ?? "LINKOS <no-reply@linkos.app>", to, subject, text });
+    await recordCost(null, { jobType: "email", provider: "smtp", rateKey: "email.message", units: 1 }); // F-187
     return true;
   } catch (e) {
     log("error", "mail.send_failed", { error: (e as Error).message });

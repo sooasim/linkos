@@ -7,6 +7,7 @@ import { Icon } from "@/components/Icon";
 import { CardFace, OfferNeed } from "@/components/LivingCard";
 import { PageHeader } from "@/components/Page";
 import { api } from "@/lib/client";
+import { CardIntel } from "./CardIntel";
 
 type Vis = "public" | "business" | "trusted" | "partner" | "private";
 type FieldRow = { type: string; label?: string | null; value: string; visibility: Vis };
@@ -245,6 +246,8 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
               Need↔Offer 매칭 추천에 내 공개 Offer/Need 사용 허용
             </label>
           </section>
+
+          {profile && <CardIntel profileId={profile.id} hasVariants={(profile.variants ?? []).length > 0} />}
         </div>
 
         <aside className="lg:sticky lg:top-10 lg:self-start">

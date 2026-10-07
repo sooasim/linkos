@@ -20,7 +20,9 @@
     "traceability": "node scripts/traceability.mjs",
     "scenarios": "playwright test -c playwright.scenarios.config.ts",
     "loadtest": "node scripts/loadtest.mjs",
-    "restore-drill": "bash scripts/restore-drill.sh"
+    "restore-drill": "bash scripts/restore-drill.sh",
+    "dr:backup": "bash scripts/dr/dr-backup-copy.sh",
+    "dr:verify": "bash scripts/dr/dr-restore-verify.sh"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

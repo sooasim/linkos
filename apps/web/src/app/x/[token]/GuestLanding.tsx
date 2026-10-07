@@ -1,4 +1,4 @@
-import { ApiError, card, handoff } from "@linkos/api";
+import { ApiError, card, handoff, living } from "@linkos/api";
 import { generateToken } from "@linkos/domain";
 import { getViewer } from "@/lib/server";
 import { GuestFlow } from "./GuestFlow";
@@ -22,5 +22,7 @@ export async function GuestLanding({ tokenOrCode }: { tokenOrCode: string }) {
       viewerCard = { fullName: p.name, company: p.company ?? "", jobTitle: p.jobTitle ?? "", department: "", email: f("email"), phone: f("mobile") || f("phone"), address: f("address"), website: f("website") };
     }
   }
-  return <GuestFlow token={tokenOrCode} landing={JSON.parse(JSON.stringify(landing))} signedIn={!!userId} viewerCard={viewerCard} />;
+  // F-036 Action Card CTAs (secondary to the exchange; resolved server-side so the landing stays light)
+  const actions = (await living.getActionCtas(landing.sender.id).catch(() => null))?.actions ?? [];
+  return <GuestFlow token={tokenOrCode} landing={JSON.parse(JSON.stringify(landing))} signedIn={!!userId} viewerCard={viewerCard} actions={actions} />;
 }

@@ -25,6 +25,9 @@ import { ApiError, badRequest, conflict, gone, notFound, unauthorized } from "..
 import { type Ctx, appOrigin, audit, emit, rateLimit, sha256 } from "../lib/platform";
 import { type PublicCard, getExchangeCard, loadProfile, primaryProfileId, saveProfile } from "./card";
 import { recordConsents } from "./identity";
+import { track } from "../lib/metering";
+import { consume } from "./billing";
+import { adaptCardForSession } from "./living";
 import { insertContact } from "./relationship";
 
 export const capabilityInput = z
@@ -49,7 +52,14 @@ export const createSessionInput = z.object({
   group: z.boolean().default(false),
   maxUses: z.number().int().min(1).max(500).optional(),
   profileId: z.string().uuid().optional(),
-  context: z.object({ placeLabel: z.string().max(120).optional(), eventId: z.string().uuid().optional() }).default({}),
+  context: z
+    .object({
+      placeLabel: z.string().max(120).optional(),
+      eventId: z.string().uuid().optional(),
+      /** F-031 explicit audience variant chosen by the sender */
+      audience: z.enum(["investor", "customer", "partner", "recruiting", "general"]).optional(),
+    })
+    .default({}),
 });
 
 interface SessionRow {
@@ -87,6 +97,8 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
   const expiresAt = new Date(Date.now() + ttl);
 
   return tx(async (c) => {
+    // F-192: the sender's plan meters exchanges (402 + upgrade info). Receiving/replying as a guest is never metered.
+    await consume(c, userId, "exchanges");
     let shortCode: string | null = null;
     if (plan.includes("short_code")) {
       for (let i = 0; i < 5 && !shortCode; i++) {
@@ -111,6 +123,7 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
       expires_at: expiresAt.toISOString(),
     });
     await audit(c, ctx, "exchange.session_created", "exchange_session", row!.id, { group: input.group });
+    await track(c, "exchange_created", { userId }, { channel: plan[0], group: input.group, at_event: !!input.context?.eventId });
     const origin = appOrigin();
     return {
       sessionId: row!.id,
@@ -234,6 +247,7 @@ export async function openGuestLanding(tokenOrCode: string, ctx: Ctx, anonymousR
         if (canTransition(locked.state, "RECEIVER_OPENED")) await setState(c, locked, "RECEIVER_OPENED");
         await c.query("UPDATE exchange_sessions SET receiver_opened_at=now() WHERE id=$1", [s.id]);
         await emit(c, "exchange.receiver.opened", "exchange_session", s.id, { session_id: s.id, anonymous_receiver_id: sha256(anonymousReceiverId).slice(0, 16) });
+        await track(c, "guest_landing_viewed", { anonId: `session:${s.id}` }, { signed_in: !!ctx.userId });
         s.state = locked.state;
       }
     });
@@ -241,7 +255,8 @@ export async function openGuestLanding(tokenOrCode: string, ctx: Ctx, anonymousR
   return {
     sessionId: s.id,
     state: s.state,
-    sender: await getExchangeCard(s.sender_profile_id),
+    // F-031: audience variant chosen from the sender's explicit choice / event audience
+    sender: await adaptCardForSession(await getExchangeCard(s.sender_profile_id), s.sender_profile_id, s.context),
     expiresAt: s.expires_at.toISOString(),
     acceptsReply: open,
     isGroup: s.is_group,
@@ -392,6 +407,7 @@ export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyI
     await c.query("UPDATE exchange_sessions SET use_count=$2, updated_at=now() WHERE id=$1", [s.id, newUseCount]);
     await emit(c, "exchange.completed", "exchange_session", s.id, { relationship_ids: relationshipIds, encounter_id: senderSide.encounterId });
     await audit(c, { userId: ctx.userId }, "exchange.completed", "exchange_session", s.id, { guest: !ctx.userId, fields: input.sharedFields });
+    await track(c, "guest_replied", { anonId: `session:${s.id}` }, { signed_in: !!ctx.userId, fields: input.sharedFields.length });
 
     return {
       exchanged: true,
@@ -493,6 +509,7 @@ export async function claimGuest(ctx: Ctx, claimToken: string) {
     }
     await emit(c, "guest.claimed", "guest_claim", g.id, { guest_claim_id: g.id, user_id: userId });
     await audit(c, ctx, "guest.claimed", "guest_claim", g.id);
+    await track(c, "guest_claimed", { userId }, { from_session: !!g.exchange_session_id });
     return { claimed: true, alreadyClaimed: false, profileId, senderContactId: rev.contactId };
   });
 }

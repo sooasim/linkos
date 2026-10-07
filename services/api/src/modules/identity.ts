@@ -7,6 +7,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, unauthorized } from "../lib/errors";
 import { type Ctx, audit, hmac, log, rateLimit, sha256 } from "../lib/platform";
 import { sendMail } from "../lib/mail";
+import { track } from "../lib/metering";
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ROTATE_AFTER_MS = 60 * 60 * 1000; // refresh rotation (F-007)
@@ -84,6 +85,7 @@ export async function verifyOtp(
     const { user, isNew } = await upsertUserByEmail(c, email, consents, displayName, "email_otp", email);
     const sessionToken = await createSession(c, user.id, ctx);
     await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "email_otp" });
+    if (isNew) await track(c, "signup_completed", { userId: user.id }, { method: "email_otp" }); // F-188
     return { user, sessionToken, isNew };
   });
 }

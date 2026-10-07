@@ -1,4 +1,4 @@
-import { analytics } from "@linkos/api";
+import { analytics, growth } from "@linkos/api";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/Page";
 import { getViewer } from "@/lib/server";
@@ -21,6 +21,7 @@ function Stat({ label, value, hint }: { label: string; value: number | null; hin
 export default async function InsightsPage() {
   const { userId } = await getViewer();
   const k = await analytics.exchangeKpis(userId!, 30);
+  const v = await growth.viralReport(30, userId!); // F-189 my part of the viral loop
   const max = Math.max(1, ...k.channels.map((c: any) => c.attempts));
   return (
     <div>
@@ -45,7 +46,8 @@ export default async function InsightsPage() {
           ))}
         </ul>
       </section>
-      <p className="mt-4 text-[12.5px] text-[var(--fg-mute)]">OCR 수정률: {k.ocrCorrectionRate ?? "—"}% (스캔·교환으로 들어온 연락처 중 직접 수정한 비율)</p>
+      <p className="mt-4 text-[14px]">내 교환으로 LINKOS를 시작한 사람 <b className="num">{v.claims}</b>명{v.claimedWhoShared ? ` · 그중 ${v.claimedWhoShared}명이 다시 명함을 공유` : ""}</p>
+      <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">OCR 수정률: {k.ocrCorrectionRate ?? "—"}% (스캔·교환으로 들어온 연락처 중 직접 수정한 비율)</p>
     </div>
   );
 }

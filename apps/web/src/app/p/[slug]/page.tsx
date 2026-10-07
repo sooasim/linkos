@@ -1,8 +1,9 @@
-import { ApiError, card } from "@linkos/api";
+import { ApiError, card, living } from "@linkos/api";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Logo } from "@/components/Icon";
+import { ActionCtas } from "@/components/ActionCtas";
 import { LivingCard } from "@/components/LivingCard";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
@@ -38,6 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PublicProfile({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { card: c, userId } = await load(slug);
+  const actions = (await living.getActionCtas(c.id).catch(() => null))?.actions ?? [];
   return (
     <main className="stage-ink grain min-h-dvh px-5 pb-16 pt-5">
       <div className="mx-auto max-w-[520px]">
@@ -49,6 +51,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
           <LivingCard card={c} />
         </div>
         {c.hiddenFields > 0 && <RequestAccess profileId={c.id} signedIn={!!userId} />}
+        <ActionCtas profileId={c.id} ownerName={c.name} actions={actions} />
       </div>
     </main>
   );

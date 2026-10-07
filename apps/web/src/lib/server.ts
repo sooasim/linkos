@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { ApiError, type Ctx, identity, log, recordRequest, routeKey } from "@linkos/api";
+import { ApiError, type Ctx, identity, log, recordRequest, routeKey, tracing } from "@linkos/api";
+import { generateToken } from "@linkos/domain";
 import { cookies, headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, type ZodType } from "zod";
@@ -38,7 +39,28 @@ interface RouteOptions {
  * enforces same-origin + JSON for mutations (CSRF), and maps errors to the OpenAPI Error schema.
  */
 export function route<P = Record<string, string>>(handler: Handler<P>, opts: RouteOptions = {}) {
-  return async (req: NextRequest, context: { params: Promise<P> }) => {
+  const inner = handle(handler, opts);
+  // F-180: server span per request (W3C traceparent in/out). No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+  return async (req: NextRequest, context: { params: Promise<P> }): Promise<NextResponse> => {
+    if (!tracing.tracingEnabled()) return inner(req, context);
+    const key = routeKey(req.method, req.nextUrl.pathname);
+    return tracing.withSpan(
+      key,
+      { "http.request.method": req.method, "http.route": key },
+      async (span) => {
+        const res = await inner(req, context);
+        span?.setAttribute("http.response.status_code", res.status);
+        if (res.status >= 500) span?.recordError(`HTTP ${res.status}`);
+        if (span) res.headers.set("traceparent", tracing.formatTraceparent(span));
+        return res;
+      },
+      { kind: "server", traceparent: req.headers.get("traceparent") },
+    );
+  };
+}
+
+function handle<P>(handler: Handler<P>, opts: RouteOptions) {
+  return async (req: NextRequest, context: { params: Promise<P> }): Promise<NextResponse> => {
     const requestId = randomUUID();
     const started = performance.now();
     const key = routeKey(req.method, req.nextUrl.pathname);
@@ -99,6 +121,17 @@ export function parse<T>(schema: ZodType<T>, body: unknown): T {
 
 export function setSession(res: NextResponse, token: string) {
   res.cookies.set(SESSION_COOKIE, token, cookieOptions());
+  return res;
+}
+
+/** Anonymous first-party id (httpOnly cookie) for flags/experiments/analytics of signed-out visitors. */
+export function anonId(req: NextRequest): { id: string; fresh: boolean } {
+  const v = req.cookies.get(ANON_COOKIE)?.value;
+  return v ? { id: v, fresh: false } : { id: generateToken(16), fresh: true };
+}
+
+export function withAnon(res: NextResponse, a: { id: string; fresh: boolean }) {
+  if (a.fresh) res.cookies.set(ANON_COOKIE, a.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365, secure: (process.env.APP_ORIGIN ?? "").startsWith("https:") });
   return res;
 }
 

@@ -5,6 +5,8 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { z } from "zod";
 import { q } from "./db";
 import { log } from "./platform";
+import { recordCost } from "./metering";
+import { tryConsume } from "../modules/billing";
 
 export const LLM_MODEL = "claude-opus-5-5";
 
@@ -38,6 +40,11 @@ export async function structured<S extends z.ZodType>(
   opts: { schema: S; task: string; data: string; promptVersion: string; ownerUserId: string | null; kind: string; sourceIds: string[] },
 ): Promise<LlmResult<z.infer<S>> | null> {
   if (!llmEnabled()) return null;
+  // F-192: AI calls are metered per plan; over quota → rule-based fallback (never a hard failure for the user)
+  if (opts.ownerUserId && !(await tryConsume(opts.ownerUserId, "ai_calls").catch(() => true))) {
+    log("info", "llm.quota_exhausted", { kind: opts.kind });
+    return null;
+  }
   try {
     const response = await anthropic().beta.messages.parse({
       model: LLM_MODEL,
@@ -60,6 +67,10 @@ export async function structured<S extends z.ZodType>(
       opts.sourceIds,
       JSON.stringify({ usage: response.usage?.output_tokens ?? null }),
     ]);
+    // F-187 estimated cost per tenant/job
+    const usage = response.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+    await recordCost(null, { userId: opts.ownerUserId, jobType: "llm", jobId: opts.kind, provider: response.model, rateKey: "llm.input_token", units: usage?.input_tokens ?? 0 });
+    await recordCost(null, { userId: opts.ownerUserId, jobType: "llm", jobId: opts.kind, provider: response.model, rateKey: "llm.output_token", units: usage?.output_tokens ?? 0 });
     return { output: response.parsed_output as z.infer<S>, model: response.model, promptVersion: opts.promptVersion };
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) log("warn", "llm.rate_limited", { kind: opts.kind });

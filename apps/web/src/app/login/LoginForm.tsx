@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GoogleOneTap, PENDING_ONETAP_KEY } from "@/components/GoogleOneTap";
+import { AppleLogo } from "@/components/AppleLogo";
 import { Icon, Logo } from "@/components/Icon";
 import { ClientError, api } from "@/lib/client";
 
@@ -22,6 +23,21 @@ const ERRORS: Record<string, string> = {
   sso_email_missing: "회사 SSO가 확인된 이메일을 제공하지 않았습니다.",
   sso_token_failed: "회사 SSO 서버와 통신하지 못했습니다.",
   sso_discovery_failed: "회사 SSO 서버와 통신하지 못했습니다.",
+  // F-060 Sign in with Apple
+  apple_denied: "Apple 로그인이 취소되었습니다.",
+  apple_not_configured: "Apple 로그인이 아직 설정되지 않았습니다.",
+  invalid_state: "로그인 요청이 만료되었거나 이미 사용되었습니다. 다시 시도하세요.",
+  apple_missing_code: "Apple 로그인에 실패했습니다. 다시 시도하세요.",
+  apple_token_failed: "Apple 인증 서버와 통신하지 못했습니다.",
+  apple_no_id_token: "Apple 인증 서버와 통신하지 못했습니다.",
+  apple_jwks_unavailable: "Apple 인증 서버와 통신하지 못했습니다.",
+  apple_invalid_token: "Apple 신원 확인에 실패했습니다.",
+  apple_nonce_mismatch: "Apple 신원 확인에 실패했습니다.",
+  apple_token_expired: "Apple 인증이 만료되었습니다. 다시 시도하세요.",
+  apple_email_missing: "Apple 계정이 이메일을 제공하지 않았습니다. 이메일 코드로 로그인하세요.",
+  apple_failed: "Apple 로그인에 실패했습니다. 다시 시도하세요.",
+  account_disabled: "비활성화된 계정입니다.",
+  rate_limited: "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
 };
 
 function readSsoEmail(): string {
@@ -36,6 +52,8 @@ export function LoginForm({
   next,
   google,
   googleConsent,
+  apple = false,
+  appleConsent = false,
   ssoConsent = false,
   error: initialError,
   oneTapClientId = null,
@@ -43,12 +61,14 @@ export function LoginForm({
   next: string;
   google: boolean;
   googleConsent: boolean;
+  apple?: boolean;
+  appleConsent?: boolean;
   ssoConsent?: boolean;
   error: string | null;
   oneTapClientId?: string | null;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent || ssoConsent ? "consent" : "email");
+  const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent || appleConsent || ssoConsent ? "consent" : "email");
   const [email, setEmail] = useState("");
   const [ssoEmailKnown, setSsoEmailKnown] = useState(false);
   useEffect(() => {
@@ -139,6 +159,13 @@ export function LoginForm({
     window.location.href = `/api/v1/auth/google?next=${encodeURIComponent(next)}`;
   };
 
+  // F-060 Sign in with Apple: returning users go straight through; a new account comes back as ?consent=apple first,
+  // and the accepted consents ride along with the next attempt (lk_consent → server-side login state).
+  const continueApple = (withConsent: boolean) => {
+    document.cookie = `lk_consent=${withConsent && allRequired ? 1 : 0}; path=/; max-age=600; samesite=lax`;
+    window.location.href = `/api/v1/auth/apple?next=${encodeURIComponent(next)}`;
+  };
+
   // F-008 회사 SSO: the work email's verified domain picks the org's OIDC IdP
   const continueSso = (withConsent: boolean) => {
     if (!email.includes("@")) {
@@ -201,18 +228,28 @@ export function LoginForm({
                 시작하기<em className="text-[var(--color-ember)]">.</em>
               </h1>
               <p className="mt-2 text-[15px] text-[var(--fg-mute)]">이메일로 받은 6자리 코드로 로그인합니다.</p>
-              {google && (
+              {(google || apple) && (
                 <>
-                  <button type="button" onClick={() => setStep("consent")} className="btn btn-ink btn-lg mt-8 w-full">
-                    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
-                    Google로 계속하기
-                  </button>
+                  <div className="mt-8 space-y-2">
+                    {google && (
+                      <button type="button" onClick={() => setStep("consent")} className="btn btn-ink btn-lg w-full">
+                        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+                        Google로 계속하기
+                      </button>
+                    )}
+                    {apple && (
+                      <button type="button" onClick={() => continueApple(false)} className="btn btn-ink btn-lg w-full" data-testid="apple-continue">
+                        <AppleLogo size={18} />
+                        Apple로 계속
+                      </button>
+                    )}
+                  </div>
                   <div className="my-5 flex items-center gap-3 text-[12px] text-[var(--fg-mute)]">
                     <span className="h-px flex-1 bg-[var(--line)]" /> 또는 <span className="h-px flex-1 bg-[var(--line)]" />
                   </div>
                 </>
               )}
-              <label className={`label ${google ? "" : "mt-8"}`} htmlFor="email">이메일</label>
+              <label className={`label ${google || apple ? "" : "mt-8"}`} htmlFor="email">이메일</label>
               <input id="email" className="field" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
               <button className="btn btn-signal btn-lg mt-4 w-full" disabled={busy || !email.includes("@")}>
                 {busy ? "보내는 중…" : "코드 받기"}
@@ -299,6 +336,10 @@ export function LoginForm({
               {oneTapCredential ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired || busy} onClick={() => oneTap(oneTapCredential, true)} data-testid="onetap-consent">
                   동의하고 Google 계정으로 가입
+                </button>
+              ) : appleConsent ? (
+                <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={() => continueApple(true)} data-testid="apple-consent">
+                  <AppleLogo size={18} /> 동의하고 Apple로 계속
                 </button>
               ) : ssoConsent ? (
                 <>

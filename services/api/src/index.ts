@@ -2,6 +2,7 @@ export * from "./lib/db";
 export * from "./lib/errors";
 export * from "./lib/platform";
 export * as identity from "./modules/identity";
+export * as apple from "./modules/apple";
 export * as card from "./modules/card";
 export * as relationship from "./modules/relationship";
 export * as handoff from "./modules/handoff";

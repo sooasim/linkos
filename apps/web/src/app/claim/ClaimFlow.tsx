@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AppleLogo } from "@/components/AppleLogo";
 import { Icon, Logo } from "@/components/Icon";
 import { GoogleOneTap, PENDING_ONETAP_KEY } from "@/components/GoogleOneTap";
 import { CardFace } from "@/components/LivingCard";
 import { ClientError, api } from "@/lib/client";
 
-export function ClaimFlow({ signedIn, oneTapClientId = null }: { signedIn: boolean; oneTapClientId?: string | null }) {
+export function ClaimFlow({ signedIn, oneTapClientId = null, appleEnabled = false }: { signedIn: boolean; oneTapClientId?: string | null; appleEnabled?: boolean }) {
   const router = useRouter();
   // F-060 One Tap: sign in right here (Claim comes after the exchange); new users finish consents on /login.
   const onOneTap = async (credential: string) => {
@@ -107,9 +108,17 @@ export function ClaimFlow({ signedIn, oneTapClientId = null }: { signedIn: boole
                 {state === "claiming" ? "연결 중…" : "내 계정에 연결"}
               </button>
             ) : (
-              <Link href="/login?next=/claim" className="btn btn-signal btn-lg mt-8 w-full" data-testid="claim-login">
-                가입하고 소유하기 <Icon name="arrow" size={18} />
-              </Link>
+              <>
+                <Link href="/login?next=/claim" className="btn btn-signal btn-lg mt-8 w-full" data-testid="claim-login">
+                  가입하고 소유하기 <Icon name="arrow" size={18} />
+                </Link>
+                {appleEnabled && (
+                  // F-060: Claim comes after the exchange; a new account still passes the separated consent step (/login?consent=apple)
+                  <a href="/api/v1/auth/apple?next=/claim" className="btn btn-ghost btn-lg mt-2 w-full" data-testid="claim-apple">
+                    <AppleLogo size={18} /> Apple로 계속
+                  </a>
+                )}
+              </>
             )}
             {error && <p role="alert" className="mt-4 text-[14px] text-[var(--color-ember)]">{error}</p>}
           </div>

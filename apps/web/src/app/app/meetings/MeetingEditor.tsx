@@ -45,6 +45,8 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
   const [brief, setBrief] = useState<any>(null);
   const [consent, setConsent] = useState({ owner: false, participants: false, status: meeting?.consentStatus ?? "unknown", msg: "" });
   const [busy, setBusy] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [extract, setExtract] = useState<any>(null);
 
   useEffect(() => {
     api<{ contacts: any[] }>("/contacts?limit=200").then((r) => setContacts(r.contacts)).catch(() => undefined);
@@ -187,6 +189,35 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
                       {p.suggestedTopics.map((t: string) => <p key={t}>추천 논점: {t}</p>)}
                     </div>
                   ))}
+                </div>
+              )}
+            </section>
+
+            <section className="surface space-y-3 p-5" aria-label="노트에서 추출">
+              <h2 className="text-[17px] font-semibold">노트·전사에서 자동 정리</h2>
+              <p className="text-[13.5px] text-[var(--fg-mute)]">회의 메모나 전사 텍스트를 붙여넣으면 결정·약속·To-do·다음 일정을 제안합니다. 적용 전에 확인하세요.</p>
+              <textarea className="field min-h-32" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={"예)\n결정: 3개 병원 파일럿 진행\n할 일: 제안서 송부 금요일까지\n약속: 상대가 데이터 샘플 공유\n다음 미팅: 다음 주 화요일"} aria-label="회의 노트" />
+              <button className="btn btn-ghost" disabled={!notes.trim()} onClick={async () => setExtract(await api(`/meetings/${meeting.id}/extract`, { body: { text: notes } }))}>
+                <Icon name="spark" size={16} /> 추출
+              </button>
+              {extract && (
+                <div className="space-y-2 text-[14.5px]" data-testid="extract">
+                  <AiLabel>{extract.provenance === "ai_inferred" ? "AI 추출 · 확인 필요" : "표시된 줄만 추출"}</AiLabel>
+                  {extract.result.summary && <p>{extract.result.summary}</p>}
+                  {extract.result.decisions.map((d: string) => <p key={d}>결정 · {d}</p>)}
+                  {extract.result.promises.map((p: any) => <p key={p.text}>약속({p.by === "me" ? "내가" : "상대가"}) · {p.text}</p>)}
+                  {extract.result.actionItems.map((a: any) => <p key={a.description}>To-do · {a.description}{a.dueHint ? ` (${a.dueHint})` : ""}</p>)}
+                  {extract.result.nextMeetingHint && <p>다음 일정 후보 · {extract.result.nextMeetingHint}</p>}
+                  <button className="btn btn-signal" onClick={() => {
+                    setM((cur) => ({
+                      ...cur,
+                      discussion: extract.result.summary ? [...cur.discussion, extract.result.summary] : cur.discussion,
+                      decisions: [...cur.decisions, ...extract.result.decisions.filter((d: string) => !cur.decisions.includes(d))],
+                      promises: [...cur.promises, ...extract.result.promises],
+                      actionItems: [...cur.actionItems, ...extract.result.actionItems.map((a: any) => ({ description: a.dueHint ? `${a.description}` : a.description, status: "open" as const, contactId: cur.participantContactIds[0] ?? null }))],
+                    }));
+                    setExtract(null);
+                  }}>미팅 카드에 적용</button>
                 </div>
               )}
             </section>

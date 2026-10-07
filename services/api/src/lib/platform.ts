@@ -110,3 +110,43 @@ export async function withIdempotency<T>(
 export function appOrigin(): string {
   return (process.env.APP_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
 }
+
+// ---------- F-180 metrics (in-process, Prometheus text format) ----------
+const BUCKETS = [25, 50, 100, 200, 300, 400, 800, 1500, 3000, 8000];
+const reqs = new Map<string, { count: number; errors: number; sum: number; buckets: number[] }>();
+
+export function routeKey(method: string, path: string): string {
+  const p = path
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
+    .replace(/\/[A-Za-z0-9_-]{20,}/g, "/:token")
+    .replace(/\/(c|sessions)\/[2-9A-Z]{6}(?=\/|$)/g, "/$1/:code");
+  return `${method} ${p}`;
+}
+
+export function recordRequest(key: string, status: number, ms: number): void {
+  let r = reqs.get(key);
+  if (!r) {
+    if (reqs.size > 500) return; // cardinality guard
+    r = { count: 0, errors: 0, sum: 0, buckets: BUCKETS.map(() => 0) };
+    reqs.set(key, r);
+  }
+  r.count++;
+  if (status >= 500) r.errors++;
+  r.sum += ms;
+  BUCKETS.forEach((b, i) => {
+    if (ms <= b) r!.buckets[i]!++;
+  });
+}
+
+export function renderMetrics(): string {
+  const lines = ["# TYPE linkos_http_request_duration_ms histogram", "# TYPE linkos_http_errors_total counter"];
+  for (const [key, r] of reqs) {
+    const label = `route="${key.replace(/"/g, "'")}"`;
+    BUCKETS.forEach((b, i) => lines.push(`linkos_http_request_duration_ms_bucket{${label},le="${b}"} ${r.buckets[i]}`));
+    lines.push(`linkos_http_request_duration_ms_bucket{${label},le="+Inf"} ${r.count}`);
+    lines.push(`linkos_http_request_duration_ms_sum{${label}} ${r.sum.toFixed(1)}`);
+    lines.push(`linkos_http_request_duration_ms_count{${label}} ${r.count}`);
+    lines.push(`linkos_http_errors_total{${label}} ${r.errors}`);
+  }
+  return lines.join("\n") + "\n";
+}

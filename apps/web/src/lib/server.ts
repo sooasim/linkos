@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { ApiError, type Ctx, identity, log } from "@linkos/api";
+import { ApiError, type Ctx, identity, log, recordRequest, routeKey } from "@linkos/api";
 import { cookies, headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, type ZodType } from "zod";
@@ -40,6 +40,8 @@ interface RouteOptions {
 export function route<P = Record<string, string>>(handler: Handler<P>, opts: RouteOptions = {}) {
   return async (req: NextRequest, context: { params: Promise<P> }) => {
     const requestId = randomUUID();
+    const started = performance.now();
+    const key = routeKey(req.method, req.nextUrl.pathname);
     let rotated: string | undefined;
     try {
       const mutating = !["GET", "HEAD", "OPTIONS"].includes(req.method);
@@ -67,9 +69,11 @@ export function route<P = Record<string, string>>(handler: Handler<P>, opts: Rou
       const res = out instanceof NextResponse ? out : NextResponse.json(out ?? { ok: true }, { status: opts.status ?? 200 });
       if (rotated) res.cookies.set(SESSION_COOKIE, rotated, cookieOptions());
       res.headers.set("x-request-id", requestId);
+      recordRequest(key, res.status, performance.now() - started);
       return res;
     } catch (e) {
       const res = errorResponse(e, requestId);
+      recordRequest(key, res.status, performance.now() - started);
       if (rotated) res.cookies.set(SESSION_COOKIE, rotated, cookieOptions());
       return res;
     }

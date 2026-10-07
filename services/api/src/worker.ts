@@ -2,7 +2,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { closePool, q, tx } from "./lib/db";
-import { log } from "./lib/platform";
+import { emit, log } from "./lib/platform";
+import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
 import { processDeletions } from "./modules/security";
 
@@ -57,8 +58,27 @@ async function expireSessions() {
   await q("DELETE FROM idempotency_keys WHERE created_at < now() - interval '2 days'");
 }
 
+/** F-109 리마인더: due follow-ups → followup.due event (+ email when SMTP is configured). Never sends to the contact. */
+export async function processReminders(limit = 100): Promise<number> {
+  const due = await q<{ id: string; owner_user_id: string; title: string; email: string | null; full_name: string | null }>(
+    `SELECT f.id, f.owner_user_id, f.title, u.email, c.full_name FROM followups f JOIN users u ON u.id=f.owner_user_id LEFT JOIN contacts c ON c.id=f.contact_id
+     WHERE f.status='open' AND f.reminded_at IS NULL AND f.due_at <= now() AND u.status='active' ORDER BY f.due_at LIMIT $1`,
+    [limit],
+  );
+  for (const f of due) {
+    await tx(async (c) => {
+      const upd = await c.query("UPDATE followups SET reminded_at=now() WHERE id=$1 AND reminded_at IS NULL", [f.id]);
+      if (!upd.rowCount) return;
+      await emit(c, "followup.due", "followup", f.id, { followup_id: f.id, user_id: f.owner_user_id });
+    });
+    if (f.email) await sendMail(f.email, `[LINKOS] 후속 할 일: ${f.title}`, `오늘 처리할 후속 할 일이 있어요.\n\n- ${f.title}${f.full_name ? ` (${f.full_name})` : ""}\n\n앱에서 확인하세요.`).catch(() => false);
+  }
+  return due.length;
+}
+
 export async function tick() {
   const n = await relayOutbox();
+  await processReminders();
   const s = await processSyncJobs();
   const d = await processDeletions();
   await expireSessions();

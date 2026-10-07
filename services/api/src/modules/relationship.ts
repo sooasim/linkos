@@ -163,25 +163,38 @@ export async function getContactRow(userId: string, id: string, db: Db = pool())
 }
 
 export async function listContacts(userId: string, opts: { query?: string; tag?: string; limit?: number; cursor?: string } = {}) {
+  // Plan-stable shape (stays fast even with stale statistics right after bulk imports):
+  // 1) rank the owner's live contacts and keep the top N ids, joining relationships through its unique (owner, contact) index;
+  // 2) attach company + tags only for those N rows.
   const params: unknown[] = [userId];
   let where = "c.owner_user_id=$1 AND c.deleted_at IS NULL AND c.merged_into_id IS NULL";
   if (opts.query) {
-    params.push(`%${opts.query.replace(/[%_]/g, "\\$&")}%`);
+    params.push(`%${opts.query.replace(/[%_\\]/g, "\\$&")}%`);
     const i = params.length;
-    where += ` AND (c.full_name ILIKE $${i} OR co.name ILIKE $${i} OR c.email ILIKE $${i} OR c.job_title ILIKE $${i} OR c.phone ILIKE $${i})`;
+    where += ` AND (c.full_name ILIKE $${i} OR c.email ILIKE $${i} OR c.job_title ILIKE $${i} OR c.phone ILIKE $${i}
+      OR EXISTS (SELECT 1 FROM companies cq WHERE cq.id = c.company_id AND cq.name ILIKE $${i}))`;
   }
   if (opts.tag) {
     params.push(opts.tag);
-    where += ` AND EXISTS (SELECT 1 FROM contact_tags ct JOIN tags t ON t.id=ct.tag_id WHERE ct.contact_id=c.id AND t.name=$${params.length})`;
+    where += ` AND EXISTS (SELECT 1 FROM contact_tags ct JOIN tags t ON t.id=ct.tag_id WHERE ct.contact_id=c.id AND t.owner_user_id=$1 AND t.name=$${params.length})`;
   }
-  params.push(Math.min(opts.limit ?? 50, 200));
+  params.push(Math.max(1, Math.min(opts.limit ?? 50, 200)));
   const rows = await q<ContactRow>(
-    `SELECT ${CONTACT_SELECT}, rel.last_contact_at, rel.next_followup_at,
+    `WITH top AS (
+       -- correlated lookup = always a per-row probe of the unique (owner_user_id, contact_id) index;
+       -- a JOIN here degrades to a 14M-row nested loop when statistics are stale (measured: 4.7s → ms)
+       SELECT c.id,
+         COALESCE((SELECT rel.last_contact_at FROM relationships rel WHERE rel.owner_user_id = $1 AND rel.contact_id = c.id), c.created_at) AS sort_at
+       FROM contacts c
+       WHERE ${where}
+       ORDER BY sort_at DESC
+       LIMIT $${params.length}
+     )
+     SELECT ${CONTACT_SELECT}, rel.last_contact_at, rel.next_followup_at,
        COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = c.id), '{}') AS tags
-     FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
-     LEFT JOIN relationships rel ON rel.contact_id = c.id AND rel.owner_user_id = c.owner_user_id
-     WHERE ${where}
-     ORDER BY COALESCE(rel.last_contact_at, c.created_at) DESC LIMIT $${params.length}`,
+     FROM top JOIN contacts c ON c.id = top.id LEFT JOIN companies co ON co.id = c.company_id
+     LEFT JOIN relationships rel ON rel.owner_user_id = $1 AND rel.contact_id = c.id
+     ORDER BY top.sort_at DESC`,
     params,
   );
   return rows.map(toContactDto);
@@ -216,6 +229,16 @@ export async function updateContact(ctx: Ctx, id: string, input: Partial<Contact
       changed.push("company");
     }
     if (changed.length) {
+      // F-073 field-level history (owner-only)
+      const colOf: Record<string, string> = { fullName: "full_name", jobTitle: "job_title", department: "department", email: "email", phone: "phone", address: "address", website: "website" };
+      const oldCompany = cur.company_id ? (await one<{ name: string }>("SELECT name FROM companies WHERE id=$1", [cur.company_id], c))?.name ?? null : null;
+      for (const k of changed) {
+        const oldV = k === "company" ? oldCompany : ((cur as unknown as Record<string, string | null>)[colOf[k]!] ?? null);
+        const newV = k === "company" ? (input.company ?? null) : k === "email" ? cleanEmail(input.email) : ((input as Record<string, string | null | undefined>)[k] ?? null);
+        if ((oldV ?? "") !== (newV ?? "")) {
+          await c.query("INSERT INTO contact_field_history (contact_id, owner_user_id, field, old_value, new_value) VALUES ($1,$2,$3,$4,$5)", [id, userId, k, oldV, newV]);
+        }
+      }
       const prov = { ...(cur.field_provenance as Record<string, unknown>) };
       for (const k of changed) prov[k] = { source: "user" };
       params.push(JSON.stringify(prov));
@@ -258,11 +281,12 @@ export async function contactTimeline(userId: string, id: string) {
     q<any>("SELECT id, kind, title, body_draft, due_at, status, source FROM followups WHERE owner_user_id=$1 AND contact_id=$2 ORDER BY COALESCE(due_at, created_at) DESC", [userId, id]),
     q<any>("SELECT a.id, a.description, a.due_at, a.status, a.meeting_id FROM action_items a WHERE a.owner_user_id=$1 AND a.contact_id=$2 ORDER BY a.due_at NULLS LAST", [userId, id]),
   ]);
-  let linkedProfile: { slug: string; name: string } | null = null;
+  let linkedProfile: { id: string; slug: string; name: string } | null = null;
   if (contact.linkedUserId) {
-    linkedProfile = await one<{ slug: string; name: string }>("SELECT slug, name FROM profiles WHERE user_id=$1 ORDER BY is_primary DESC LIMIT 1", [contact.linkedUserId]);
+    linkedProfile = await one<{ id: string; slug: string; name: string }>("SELECT id, slug, name FROM profiles WHERE user_id=$1 ORDER BY is_primary DESC LIMIT 1", [contact.linkedUserId]);
   }
-  return { contact, encounters, notes, cards, meetings, followups, actions, linkedProfile };
+  const history = await q<any>("SELECT field, old_value, new_value, source, changed_at FROM contact_field_history WHERE owner_user_id=$1 AND contact_id=$2 ORDER BY changed_at DESC LIMIT 50", [userId, id]);
+  return { contact, encounters, notes, cards, meetings, followups, actions, linkedProfile, history };
 }
 
 export async function addNote(ctx: Ctx, contactId: string, body: string, kind: "text" | "voice" = "text") {

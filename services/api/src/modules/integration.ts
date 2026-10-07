@@ -34,12 +34,29 @@ export function unseal<T>(buf: Buffer): T {
 // ---------- Google ----------
 const GOOGLE_SCOPES_LOGIN = ["openid", "email", "profile"];
 const GOOGLE_SCOPES_CONTACTS = ["https://www.googleapis.com/auth/contacts"];
+// drive.file: the app can only see spreadsheets it created (least privilege for F-116/F-117)
+const GOOGLE_SCOPES_SHEETS = ["https://www.googleapis.com/auth/drive.file"];
+export type GooglePurpose = "login" | "contacts" | "sheets";
+
+/** Endpoint bases are overridable so integration tests can run against a local fake Google (GOOGLE_API_BASE). */
+export function gurl(kind: "auth" | "token" | "userinfo" | "people" | "sheets", path = ""): string {
+  const fake = process.env.GOOGLE_API_BASE?.replace(/\/$/, "");
+  if (fake) return `${fake}/${kind}${path}`;
+  const base = {
+    auth: "https://accounts.google.com/o/oauth2/v2/auth",
+    token: "https://oauth2.googleapis.com/token",
+    userinfo: "https://openidconnect.googleapis.com/v1/userinfo",
+    people: "https://people.googleapis.com/v1",
+    sheets: "https://sheets.googleapis.com/v4",
+  }[kind];
+  return `${base}${path}`;
+}
 
 export function googleEnabled() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export function googleAuthUrl(purpose: "login" | "contacts", userId: string | null): { url: string; state: string } {
+export function googleAuthUrl(purpose: GooglePurpose, userId: string | null): { url: string; state: string } {
   if (!googleEnabled()) throw unavailable("google_not_configured", "Google 연동이 설정되지 않았습니다(GOOGLE_CLIENT_ID).");
   const nonce = generateToken(16);
   const payload = `${purpose}.${userId ?? "-"}.${Date.now()}.${nonce}`;
@@ -48,27 +65,27 @@ export function googleAuthUrl(purpose: "login" | "contacts", userId: string | nu
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: `${appOrigin()}/api/v1/integrations/google/callback`,
     response_type: "code",
-    scope: (purpose === "login" ? GOOGLE_SCOPES_LOGIN : [...GOOGLE_SCOPES_LOGIN, ...GOOGLE_SCOPES_CONTACTS]).join(" "),
+    scope: [...GOOGLE_SCOPES_LOGIN, ...(purpose === "contacts" ? GOOGLE_SCOPES_CONTACTS : purpose === "sheets" ? GOOGLE_SCOPES_SHEETS : [])].join(" "),
     state,
-    access_type: purpose === "contacts" ? "offline" : "online",
-    prompt: purpose === "contacts" ? "consent" : "select_account",
+    access_type: purpose === "login" ? "online" : "offline",
+    prompt: purpose === "login" ? "select_account" : "consent",
     include_granted_scopes: "true",
   });
-  return { url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`, state };
+  return { url: `${gurl("auth")}?${params}`, state };
 }
 
-export function verifyState(state: string): { purpose: "login" | "contacts"; userId: string | null } {
+export function verifyState(state: string): { purpose: GooglePurpose; userId: string | null } {
   const [b64, sig] = state.split(".");
   if (!b64 || !sig) throw badRequest("invalid_state");
   const payload = Buffer.from(b64, "base64url").toString();
   if (hmac(payload).slice(0, 32) !== sig) throw badRequest("invalid_state");
   const [purpose, uid, ts] = payload.split(".");
   if (Date.now() - Number(ts) > 10 * 60 * 1000) throw badRequest("state_expired");
-  return { purpose: purpose as "login" | "contacts", userId: uid === "-" ? null : uid! };
+  return { purpose: purpose as GooglePurpose, userId: uid === "-" ? null : uid! };
 }
 
 export async function exchangeGoogleCode(code: string) {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetch(gurl("token"), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -81,7 +98,7 @@ export async function exchangeGoogleCode(code: string) {
   });
   if (!res.ok) throw new ApiError(502, "google_token_failed", "Google 인증에 실패했습니다.");
   const tok = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number; scope: string; id_token?: string };
-  const info = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { authorization: `Bearer ${tok.access_token}` } });
+  const info = await fetch(gurl("userinfo"), { headers: { authorization: `Bearer ${tok.access_token}` } });
   if (!info.ok) throw new ApiError(502, "google_userinfo_failed");
   const user = (await info.json()) as { sub: string; email: string; email_verified: boolean; name?: string };
   if (!user.email_verified) throw badRequest("google_email_unverified", "Google 이메일이 확인되지 않았습니다.");
@@ -108,7 +125,7 @@ async function googleAccessToken(accountId: string, db: Db = pool()): Promise<st
   const creds = unseal<{ access_token: string; refresh_token?: string; expires_at: number }>(a.encrypted_credentials);
   if (creds.expires_at - 60_000 > Date.now()) return creds.access_token;
   if (!creds.refresh_token) throw new ApiError(401, "google_reauth_required");
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetch(gurl("token"), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID!, client_secret: process.env.GOOGLE_CLIENT_SECRET!, refresh_token: creds.refresh_token, grant_type: "refresh_token" }),
@@ -129,7 +146,8 @@ export async function integrationStatus(userId: string) {
      WHERE a.user_id=$1 ORDER BY j.scheduled_at DESC LIMIT 20`,
     [userId],
   );
-  return { googleConfigured: googleEnabled(), accounts, jobs };
+  const sheets = await sheetsStatus(userId);
+  return { googleConfigured: googleEnabled(), accounts, jobs, sheetsConnected: sheets.connected };
 }
 
 /** POST /integrations/google/contacts/sync — enqueue one idempotent job per contact (version-keyed). */
@@ -206,13 +224,13 @@ async function runGoogleUpsert(accountId: string, contactId: string) {
   let res: Response;
   if (map) {
     // never blindly overwrite: send the stored etag; Google rejects if the remote changed (conflict surfaced to user)
-    res = await fetch(`https://people.googleapis.com/v1/${map.external_id}:updateContact?updatePersonFields=names,organizations,emailAddresses,phoneNumbers,urls`, {
+    res = await fetch(`${gurl("people")}/${map.external_id}:updateContact?updatePersonFields=names,organizations,emailAddresses,phoneNumbers,urls`, {
       method: "PATCH",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ ...person, etag: map.external_etag }),
     });
   } else {
-    res = await fetch("https://people.googleapis.com/v1/people:createContact?personFields=names,metadata", {
+    res = await fetch(gurl("people", "/people:createContact?personFields=names,metadata"), {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(person),
@@ -235,7 +253,7 @@ export async function disconnectGoogle(ctx: Ctx) {
 }
 
 // ---------- Export ----------
-export const EXPORT_FORMATS = ["csv", "xlsx", "vcard", "txt", "json"] as const;
+export const EXPORT_FORMATS = ["csv", "xlsx", "docx", "vcard", "txt", "json"] as const;
 export const EXPORT_FIELDS = ["fullName", "company", "jobTitle", "department", "email", "phone", "address", "website", "tags", "lastContactAt", "source"] as const;
 export const exportInput = z.object({
   format: z.enum(EXPORT_FORMATS),
@@ -277,6 +295,11 @@ export async function renderExport(ctx: Ctx, id: string): Promise<{ body: Buffer
       return { body: rows.map((r) => job.fields.map((f) => `${f}: ${r[f] ?? ""}`).join("\n")).join("\n\n---\n\n"), contentType: "text/plain; charset=utf-8", filename: `linkos-contacts-${stamp}.txt` };
     case "json":
       return { body: JSON.stringify(rows, null, 2), contentType: "application/json", filename: `linkos-contacts-${stamp}.json` };
+    case "docx": {
+      const { buildDocx } = await import("../lib/docx");
+      const body = await buildDocx(`LINKOS 연락처 (${stamp})`, job.fields, rows.map((r) => job.fields.map((f) => (r[f] == null ? "" : String(r[f])))));
+      return { body, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename: `linkos-contacts-${stamp}.docx` };
+    }
     case "xlsx": {
       const ExcelJS = (await import("exceljs")).default;
       const wb = new ExcelJS.Workbook();
@@ -289,4 +312,55 @@ export async function renderExport(ctx: Ctx, id: string): Promise<{ body: Buffer
       return { body: Buffer.from(await wb.xlsx.writeBuffer()), contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename: `linkos-contacts-${stamp}.xlsx` };
     }
   }
+}
+
+// ---------- Google Sheets export (F-117) ----------
+export function hasScope(scopes: string[] | null | undefined, scope: string): boolean {
+  return (scopes ?? []).includes(scope);
+}
+
+export async function sheetsStatus(userId: string) {
+  const a = await one<{ id: string; status: string; scopes: string[] }>("SELECT id, status, scopes FROM integration_accounts WHERE user_id=$1 AND provider='google'", [userId]);
+  return { connected: a?.status === "active" && hasScope(a.scopes, GOOGLE_SCOPES_SHEETS[0]!), accountId: a?.id ?? null };
+}
+
+/** Creates a new spreadsheet (drive.file scope) and writes the selected contact fields as RAW values (no formula evaluation). */
+export const sheetsExportInput = exportInput.omit({ format: true });
+export async function exportToGoogleSheets(ctx: Ctx, input: z.infer<typeof sheetsExportInput>) {
+  if (!ctx.userId) throw unauthorized();
+  const st = await sheetsStatus(ctx.userId);
+  if (!st.connected || !st.accountId) throw new ApiError(409, "google_sheets_not_connected", "Google Sheets 권한을 먼저 연결하세요.");
+  const contacts = await listContacts(ctx.userId, { limit: 200, tag: input.tag });
+  const header = input.fields;
+  const rows = contacts.map((c) =>
+    header.map((f) => {
+      if (f === "tags") return c.tags.join(";");
+      if (f === "lastContactAt") return c.lastContactAt ? new Date(c.lastContactAt).toISOString() : "";
+      const v = (c as Record<string, unknown>)[f];
+      return v == null ? "" : String(v);
+    }),
+  );
+  const token = await googleAccessToken(st.accountId);
+  const title = `LINKOS 연락처 ${new Date().toISOString().slice(0, 10)}`;
+  const created = await fetch(gurl("sheets", "/spreadsheets"), {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ properties: { title, locale: "ko_KR" }, sheets: [{ properties: { title: "Contacts", gridProperties: { frozenRowCount: 1 } } }] }),
+  });
+  if (!created.ok) throw new ApiError(created.status === 401 || created.status === 403 ? 409 : 502, `google_sheets_${created.status}`, "Google Sheets 파일을 만들지 못했습니다.");
+  const sheet = (await created.json()) as { spreadsheetId: string; spreadsheetUrl: string };
+  const write = await fetch(gurl("sheets", `/spreadsheets/${encodeURIComponent(sheet.spreadsheetId)}/values/Contacts!A1?valueInputOption=RAW`), {
+    method: "PUT",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ range: "Contacts!A1", majorDimension: "ROWS", values: [header, ...rows] }),
+  });
+  if (!write.ok) throw new ApiError(502, `google_sheets_${write.status}`, "Google Sheets에 데이터를 쓰지 못했습니다.");
+  const job = await one<{ id: string }>("INSERT INTO export_jobs (user_id, format, fields, kind, status) VALUES ($1,'google_sheets',$2,$3,'done') RETURNING id", [ctx.userId, header, `sheets:${sheet.spreadsheetId}`]);
+  await q(
+    `INSERT INTO external_mappings (integration_account_id, entity_type, local_id, external_id) VALUES ($1,'export_sheet',$2,$3)
+     ON CONFLICT (integration_account_id, entity_type, local_id) DO NOTHING`,
+    [st.accountId, job!.id, sheet.spreadsheetId],
+  );
+  await audit(pool(), ctx, "export.google_sheets", "export_job", job!.id, { rows: rows.length, fields: header });
+  return { id: job!.id, spreadsheetId: sheet.spreadsheetId, url: sheet.spreadsheetUrl, rows: rows.length };
 }

@@ -1,5 +1,9 @@
 import { integration } from "@linkos/api";
-import { route } from "@/lib/server";
+import { z } from "zod";
+import { parse, route } from "@/lib/server";
 
-// connectGoogle — returns the OAuth URL (contacts scope; minimal scopes)
-export const POST = route(async ({ ctx }) => ({ url: integration.googleAuthUrl("contacts", ctx.userId).url }));
+// connectGoogle — returns the OAuth URL. purpose=contacts (People API) | sheets (drive.file, least privilege)
+export const POST = route(async ({ ctx, body }) => {
+  const { purpose } = parse(z.object({ purpose: z.enum(["contacts", "sheets"]).default("contacts") }), body);
+  return { url: integration.googleAuthUrl(purpose, ctx.userId).url };
+});

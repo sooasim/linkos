@@ -9,7 +9,16 @@ import { RequestAccess } from "./RequestAccess";
 
 export const dynamic = "force-dynamic";
 
-async function load(slug: string) {
+function decode(slug: string): string {
+  try {
+    return decodeURIComponent(slug);
+  } catch {
+    return slug;
+  }
+}
+
+async function load(rawSlug: string) {
+  const slug = decode(rawSlug);
   const { userId } = await getViewer();
   try {
     return { card: await card.getPublicProfileBySlug(slug, userId), userId };

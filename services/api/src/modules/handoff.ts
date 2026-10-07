@@ -163,7 +163,6 @@ export async function recordAttempt(ctx: Ctx, sessionId: string, channel: Channe
       next = (plan[idx + 1] as Channel | undefined) ?? "qr";
       if (s.state === "CHANNEL_SELECTED" || s.state === "OFFERED") await setState(c, s, "CHANNEL_FAILED");
       await c.query("UPDATE exchange_sessions SET selected_channel=$2 WHERE id=$1", [s.id, next]);
-      if (s.state === "CHANNEL_FAILED") await setState(c, s, "CHANNEL_SELECTED");
     }
     return { state: s.state, nextChannel: next };
   });
@@ -347,7 +346,7 @@ export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyI
     const relationshipIds = [senderSide.relationshipId];
     let claimToken: string | null = null;
     let receiverContactId: string | null = null;
-    const senderCard = await getExchangeCard(s.sender_profile_id);
+    const senderCard = await getExchangeCard(s.sender_profile_id, c); // same connection: never borrow a 2nd one while holding the row lock
     const senderProfile = await loadProfile(s.sender_profile_id, c);
 
     if (ctx.userId) {
@@ -379,6 +378,11 @@ export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyI
       );
     }
 
+    // A reply implies the receiver opened the link (API clients / native apps may skip the landing GET).
+    if (!["RECEIVER_OPENED", "CONSENT_PENDING"].includes(s.state)) {
+      await setState(c, s, "RECEIVER_OPENED");
+      await c.query("UPDATE exchange_sessions SET receiver_opened_at = COALESCE(receiver_opened_at, now()) WHERE id=$1", [s.id]);
+    }
     const newUseCount = s.use_count + 1;
     if (!s.is_group || newUseCount >= s.max_uses) {
       await setState(c, s, "EXCHANGED");

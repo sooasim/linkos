@@ -43,12 +43,18 @@ async function preprocess(file: File): Promise<HTMLCanvasElement> {
   return canvas;
 }
 
-export async function runOcr(file: File, onProgress: (p: number, label: string) => void): Promise<OcrLineOut[]> {
+export const OCR_LANGS = [
+  { v: "kor+eng", label: "한국어·영어" },
+  { v: "jpn+eng", label: "日本語·English" },
+  { v: "chi_sim+eng", label: "中文·English" },
+] as const;
+
+export async function runOcr(file: File, onProgress: (p: number, label: string) => void, langs = "kor+eng"): Promise<OcrLineOut[]> {
   onProgress(0.05, "이미지 보정 중");
   const canvas = await preprocess(file);
   const { createWorker } = await import("tesseract.js");
   onProgress(0.15, "인식 엔진 준비 중");
-  const worker = await createWorker(["kor", "eng"], 1, {
+  const worker = await createWorker(langs.split("+"), 1, {
     logger: (m: { status: string; progress: number }) => {
       if (m.status === "recognizing text") onProgress(0.35 + m.progress * 0.6, "글자 인식 중");
       else if (m.status.includes("loading")) onProgress(0.15 + m.progress * 0.2, "언어 데이터 불러오는 중");
@@ -74,6 +80,7 @@ export function CardScanner({ onLines, onManual, compact = false }: { onLines: (
   const [preview, setPreview] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ p: number; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lang, setLang] = useState<string>("kor+eng");
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -81,7 +88,7 @@ export function CardScanner({ onLines, onManual, compact = false }: { onLines: (
     const url = URL.createObjectURL(file);
     setPreview(url);
     try {
-      const lines = await runOcr(file, (p, label) => setProgress({ p, label }));
+      const lines = await runOcr(file, (p, label) => setProgress({ p, label }), lang);
       if (!lines.length) throw new Error("empty");
       onLines(lines, url);
     } catch {
@@ -127,6 +134,13 @@ export function CardScanner({ onLines, onManual, compact = false }: { onLines: (
           )}
         </div>
       </button>
+      <div className="flex justify-center gap-1.5" role="radiogroup" aria-label="명함 언어">
+        {OCR_LANGS.map((l) => (
+          <button key={l.v} type="button" role="radio" aria-checked={lang === l.v} onClick={() => setLang(l.v)} className={`chip !text-[12px] ${lang === l.v ? "!border-transparent !bg-[var(--fg)] !text-[var(--bg)]" : ""}`}>
+            {l.label}
+          </button>
+        ))}
+      </div>
       {error && <p role="alert" className="rounded-2xl bg-[var(--color-ember)]/10 px-4 py-3 text-[14px] text-[var(--color-ember)]">{error}</p>}
       {onManual && (
         <button type="button" onClick={onManual} className="w-full py-2 text-[14px] font-medium text-[var(--fg-mute)] underline-offset-4 hover:underline">

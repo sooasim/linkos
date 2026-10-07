@@ -13,3 +13,5 @@ export * as event from "./modules/event";
 export * as integration from "./modules/integration";
 export * as security from "./modules/security";
 export * as analytics from "./modules/analytics";
+export * as assist from "./modules/assist";
+export { llmEnabled } from "./lib/llm";

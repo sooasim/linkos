@@ -32,6 +32,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: E2E (guest exchange → claim, QR final fallback)
         run: pnpm e2e
+      - name: 100 scenarios (security, concurrency, devices, OCR variants, exports)
+        run: pnpm scenarios
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: playwright-report, path: playwright-report }

@@ -19,6 +19,7 @@ const EXPORT_FIELDS = [
 ] as const;
 const FORMATS = [
   ["xlsx", "Excel"],
+  ["docx", "Word"],
   ["csv", "CSV"],
   ["vcard", "vCard"],
   ["txt", "TXT"],
@@ -43,6 +44,8 @@ export function Settings() {
   const [fields, setFields] = useState<string[]>(["fullName", "company", "jobTitle", "email", "phone"]);
   const [nfc, setNfc] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<{ url: string; rows: number } | null>(null);
+  const [sheetBusy, setSheetBusy] = useState(false);
 
   const load = () => {
     api("/integrations").then(setInteg).catch(() => undefined);
@@ -97,7 +100,7 @@ export function Settings() {
             )}
           </>
         ) : (
-          <button className="btn btn-ink" onClick={async () => { const r = await api<{ url: string }>("/integrations/google/connect", { body: {} }); window.location.href = r.url; }}>Google 계정 연결</button>
+          <button className="btn btn-ink" onClick={async () => { const r = await api<{ url: string }>("/integrations/google/connect", { body: { purpose: "contacts" } }); window.location.href = r.url; }}>Google 계정 연결</button>
         )}
         {msg && <p className="text-[13.5px]" role="status">{msg}</p>}
       </Section>
@@ -114,7 +117,27 @@ export function Settings() {
             </label>
           ))}
         </div>
-        <button className="btn btn-signal" onClick={doExport} disabled={!fields.length}>내보내기</button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-signal" onClick={doExport} disabled={!fields.length} data-testid="export-file">파일로 내보내기</button>
+          {integ?.googleConfigured && (integ.sheetsConnected ? (
+            <button className="btn btn-ink" disabled={!fields.length || sheetBusy} data-testid="export-sheets" onClick={async () => {
+              setSheetBusy(true);
+              setSheet(null);
+              try {
+                const r = await api<{ url: string; rows: number }>("/integrations/google/sheets/export", { body: { fields } });
+                setSheet({ url: r.url, rows: r.rows });
+              } catch (e) {
+                setMsg((e as Error).message);
+              } finally {
+                setSheetBusy(false);
+              }
+            }}>{sheetBusy ? "Sheets 만드는 중…" : "Google Sheets로 내보내기"}</button>
+          ) : (
+            <button className="btn btn-ghost" onClick={async () => { const r = await api<{ url: string }>("/integrations/google/connect", { body: { purpose: "sheets" } }); window.location.href = r.url; }}>Google Sheets 권한 연결</button>
+          ))}
+        </div>
+        {sheet && <p className="text-[14px]" role="status">{sheet.rows}명을 새 스프레드시트에 저장했어요 · <a className="font-semibold underline" href={sheet.url} target="_blank" rel="noopener noreferrer">열기</a></p>}
+        <p className="text-[12.5px] text-[var(--fg-mute)]">Google Sheets는 LINKOS가 만든 파일에만 접근하는 최소 권한(drive.file)을 사용하며, 값은 수식으로 실행되지 않게 저장됩니다.</p>
       </Section>
 
       <Section title="교환 채널" icon="nfc">

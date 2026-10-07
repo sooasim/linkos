@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { AiLabel, Avatar, PageHeader } from "@/components/Page";
 import { api, fmtDate, relTime } from "@/lib/client";
@@ -25,8 +25,11 @@ type Timeline = {
   meetings: any[];
   followups: any[];
   actions: any[];
-  linkedProfile: { slug: string; name: string } | null;
+  linkedProfile: { id: string; slug: string; name: string } | null;
+  history: { field: string; old_value: string | null; new_value: string | null; changed_at: string }[];
 };
+
+type SpeechCtor = new () => { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null };
 
 export function PersonDetail({ id }: { id: string }) {
   const router = useRouter();
@@ -38,6 +41,10 @@ export function PersonDetail({ id }: { id: string }) {
   const [merge, setMerge] = useState<{ other: any; choices: Record<string, "primary" | "secondary"> } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [draft, setDraft] = useState<{ subject: string; body: string; provenance: string } | null>(null);
+  const [summary, setSummary] = useState<{ summary: string; highlights: string[]; provenance: string } | null>(null);
+  const recRef = useRef<InstanceType<SpeechCtor> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -69,9 +76,49 @@ export function PersonDetail({ id }: { id: string }) {
     }
   };
 
+  // F-080 음성 메모: 브라우저 음성 인식(지원 기기)으로 받아쓴 텍스트를 개인 메모로 저장. 오디오는 서버로 전송하지 않음.
+  const speechCtor = (): SpeechCtor | null => (typeof window === "undefined" ? null : ((window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null));
+  const toggleVoice = () => {
+    const Ctor = speechCtor();
+    if (!Ctor) {
+      setFlash("이 브라우저는 음성 받아쓰기를 지원하지 않아요. 키보드의 음성 입력을 사용하세요.");
+      return;
+    }
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    const rec = new Ctor();
+    rec.lang = "ko-KR";
+    rec.interimResults = true;
+    rec.continuous = true;
+    const base = note ? `${note} ` : "";
+    rec.onresult = (e: any) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      setNote(base + text);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  const makeDraft = async (kind: "thank_you" | "check_in" | "send_material") => {
+    const r = await api<{ result: { subject: string; body: string }; provenance: string }>(`/contacts/${id}/draft`, { body: { kind } });
+    setDraft({ ...r.result, provenance: r.provenance });
+  };
+
+  const loadSummary = async (profileId: string) => {
+    const r = await api<{ result: { summary: string; highlights: string[] }; provenance: string }>(`/profiles/${profileId}/summary`);
+    setSummary({ ...r.result, provenance: r.provenance });
+  };
+
   const addNote = async () => {
     if (!note.trim()) return;
-    await api(`/contacts/${id}/notes`, { body: { body: note } });
+    recRef.current?.stop();
+    await api(`/contacts/${id}/notes`, { body: { body: note, kind: listening ? "voice" : "text" } });
     setNote("");
     load();
   };
@@ -105,6 +152,7 @@ export function PersonDetail({ id }: { id: string }) {
     ...t.encounters.map((e) => ({ at: e.occurred_at, icon: "exchange" as IconName, title: e.source === "exchange" ? "명함 교환" : e.source === "scan" ? "명함 스캔" : "만남", body: [e.place_label, e.event_name, e.note].filter(Boolean).join(" · ") })),
     ...t.notes.map((n) => ({ at: n.created_at, icon: "edit" as IconName, title: "개인 메모", body: n.body, tag: "나만 보기" })),
     ...t.meetings.map((m) => ({ at: m.started_at ?? m.created_at, icon: "calendar" as IconName, title: m.title, body: m.purpose })),
+    ...(t.history ?? []).map((h) => ({ at: h.changed_at, icon: "edit" as IconName, title: `${FIELDS.find(([k]) => k === h.field)?.[1] ?? h.field} 변경`, body: `${h.old_value || "—"} → ${h.new_value || "—"}` })),
     ...t.cards.map((b) => ({ at: b.captured_at, icon: "camera" as IconName, title: "명함 원본", body: b.source === "guest_exchange" ? "상대가 촬영해 보낸 명함" : "OCR 스캔" })),
   ].sort((a, b) => +new Date(b.at) - +new Date(a.at));
 
@@ -208,6 +256,22 @@ export function PersonDetail({ id }: { id: string }) {
         </section>
       )}
 
+      {t.linkedProfile && (
+        <section className="surface mt-4 p-4">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold">{t.linkedProfile.name}님의 Living Card 요약</p>
+            {!summary && <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => loadSummary(t.linkedProfile!.id).catch((e) => setFlash((e as Error).message))}>요약 보기</button>}
+          </div>
+          {summary && (
+            <div className="mt-2 space-y-2 text-[14.5px]">
+              <AiLabel>{summary.provenance === "ai_inferred" ? "AI 요약" : "카드 정보 요약"}</AiLabel>
+              <p>{summary.summary}</p>
+              <ul className="list-disc pl-5 text-[var(--fg-mute)]">{summary.highlights.map((h) => <li key={h}>{h}</li>)}</ul>
+            </div>
+          )}
+        </section>
+      )}
+
       {t.followups.filter((f) => f.status === "open").length > 0 && (
         <section className="mt-6">
           <h2 className="mb-2 text-[17px] font-semibold">후속 할 일</h2>
@@ -232,9 +296,27 @@ export function PersonDetail({ id }: { id: string }) {
       )}
 
       <section className="mt-6">
+        <h2 className="mb-2 text-[17px] font-semibold">후속 메일 초안 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 자동 발송되지 않아요</span></h2>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-ghost !min-h-10 text-[14px]" onClick={() => makeDraft("thank_you")}>감사 인사</button>
+          <button className="btn btn-ghost !min-h-10 text-[14px]" onClick={() => makeDraft("check_in")}>안부</button>
+          <button className="btn btn-ghost !min-h-10 text-[14px]" onClick={() => makeDraft("send_material")}>자료 전달</button>
+        </div>
+        {draft && (
+          <div className="surface mt-3 space-y-2 p-4" data-testid="draft">
+            <AiLabel>{draft.provenance === "ai_inferred" ? "AI 초안 · 확인 후 사용" : "템플릿 초안"}</AiLabel>
+            <input className="field" value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} aria-label="제목" />
+            <textarea className="field min-h-32" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} aria-label="본문" />
+            {c.email && <a className="btn btn-signal" href={`mailto:${c.email}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`}>메일 앱에서 열기</a>}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6">
         <h2 className="mb-2 text-[17px] font-semibold">메모 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 상대에게 절대 공개되지 않아요</span></h2>
         <div className="flex gap-2">
           <input className="field" placeholder="무슨 이야기를 나눴나요?" value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} />
+          <button onClick={toggleVoice} className={`btn shrink-0 ${listening ? "btn-signal" : "btn-ghost"}`} aria-label={listening ? "받아쓰기 중지" : "음성 메모"} aria-pressed={listening}><Icon name="mic" size={18} /></button>
           <button onClick={addNote} className="btn btn-ink shrink-0" aria-label="메모 추가"><Icon name="plus" size={18} /></button>
         </div>
       </section>

@@ -19,6 +19,11 @@ export function pool(): pg.Pool {
     globalThis.__linkosPool = new pg.Pool({
       connectionString: url,
       max: Number(process.env.DB_POOL_MAX ?? 10),
+      // fail fast instead of hanging when the pool is exhausted or a lock is held too long
+      connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS ?? 5000),
+      statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 15000),
+      lock_timeout: Number(process.env.DB_LOCK_TIMEOUT_MS ?? 10000),
+      idle_in_transaction_session_timeout: 30000,
       ssl: /sslmode=require/.test(url) ? { rejectUnauthorized: false } : undefined,
     });
   }

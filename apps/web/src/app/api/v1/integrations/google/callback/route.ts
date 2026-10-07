@@ -8,10 +8,10 @@ export const GET = route(async ({ req, ctx }) => {
   if (sp.get("error")) return NextResponse.redirect(`${origin}/login?error=google_denied`);
   const state = integration.verifyState(sp.get("state") ?? "");
   const { tok, user } = await integration.exchangeGoogleCode(sp.get("code") ?? "");
-  if (state.purpose === "contacts") {
+  if (state.purpose !== "login") {
     if (!ctx.userId || ctx.userId !== state.userId) return NextResponse.redirect(`${origin}/login?next=/app/settings`);
     await integration.storeGoogleAccount(ctx.userId, tok);
-    return NextResponse.redirect(`${origin}/app/settings?google=connected`);
+    return NextResponse.redirect(`${origin}/app/settings?google=${state.purpose}`);
   }
   // Sign-in with Google: new users must accept terms on the consent screen first
   const consentAccepted = req.cookies.get("lk_consent")?.value === "1";

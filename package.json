@@ -3,7 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --filter @linkos/web dev",
     "build": "pnpm --filter @linkos/web build",
@@ -15,11 +17,16 @@
     "db:migrate": "tsx services/api/src/migrate.ts",
     "db:seed": "tsx db/seeds/seed.ts",
     "worker": "tsx services/api/src/worker.ts",
-    "traceability": "node scripts/traceability.mjs"
+    "traceability": "node scripts/traceability.mjs",
+    "scenarios": "playwright test -c playwright.scenarios.config.ts",
+    "loadtest": "node scripts/loadtest.mjs",
+    "restore-drill": "bash scripts/restore-drill.sh"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
     "tsx": "^4.23.0",
     "typescript": "~5.9.3",
     "yaml": "^2.8.0"

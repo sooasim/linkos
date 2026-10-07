@@ -1,10 +1,10 @@
 // ai module — Relationship Memory search (UX-017), Need↔Offer Match (UX-018).
 // ACL 필터 후 검색(본인 소유 데이터만), 결과마다 근거(evidence) 제공, 매칭은 "ai_inferred" 라벨.
 import { type MatchProfile, type MatchResult, rankMatches, tokens } from "@linkos/domain";
-import { one, q } from "../lib/db";
+import { q } from "../lib/db";
 import { unauthorized } from "../lib/errors";
 import type { Ctx } from "../lib/platform";
-import { loadProfile, primaryProfileId } from "./card";
+import { primaryProfileId } from "./card";
 
 const YEAR_HINTS: [RegExp, (now: Date) => [Date, Date]][] = [
   [/작년|지난해|last year/i, (n) => [new Date(n.getFullYear() - 1, 0, 1), new Date(n.getFullYear(), 0, 1)]],
@@ -34,25 +34,42 @@ export async function relationshipSearch(ctx: Ctx, query: string): Promise<{ que
   const words = cleaned.split(/[\s,.?!]+/).map((w) => w.trim()).filter((w) => w.length >= 2);
   const termTokens = tokens(cleaned);
 
-  // Candidate pool: all owned contacts with their textual context (ACL: owner-only corpus)
-  const rows = await q<any>(
-    `SELECT c.id, c.full_name, co.name AS company, c.job_title, c.department, c.email, c.address,
-       COALESCE(json_agg(DISTINCT jsonb_build_object('t', 'encounter', 'text', concat_ws(' · ', e.place_label, ev.name, e.note), 'at', e.occurred_at)) FILTER (WHERE e.id IS NOT NULL), '[]') AS encounters,
-       COALESCE(json_agg(DISTINCT jsonb_build_object('t', 'note', 'text', n.body, 'at', n.created_at)) FILTER (WHERE n.id IS NOT NULL), '[]') AS notes,
-       COALESCE(json_agg(DISTINCT jsonb_build_object('t', 'meeting', 'text', concat_ws(' · ', m.title, m.purpose), 'at', COALESCE(m.started_at, m.created_at))) FILTER (WHERE m.id IS NOT NULL), '[]') AS meetings
-     FROM contacts c
-     LEFT JOIN companies co ON co.id = c.company_id
-     LEFT JOIN encounters e ON e.contact_id = c.id AND e.owner_user_id = c.owner_user_id
-     LEFT JOIN events ev ON ev.id = e.event_id
-     LEFT JOIN notes n ON n.contact_id = c.id AND n.owner_user_id = c.owner_user_id
-     LEFT JOIN meeting_participants mp ON mp.contact_id = c.id
-     LEFT JOIN meetings m ON m.id = mp.meeting_id AND m.owner_user_id = c.owner_user_id
-     WHERE c.owner_user_id = $1 AND c.deleted_at IS NULL AND c.merged_into_id IS NULL
-     GROUP BY c.id, co.name
-     LIMIT 2000`,
-    [userId],
-  );
+  // Candidate pool: owned contacts + their context, fetched as 4 owner-indexed queries and joined in memory.
+  // (A single multi-way GROUP BY join degraded to 20s under stale planner statistics — see scripts/loadtest.mjs.)
+  const [base, encs, notesRows, meets] = await Promise.all([
+    q<any>(
+      `SELECT c.id, c.full_name, co.name AS company, c.job_title, c.department, c.email, c.address
+       FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+       WHERE c.owner_user_id = $1 AND c.deleted_at IS NULL AND c.merged_into_id IS NULL LIMIT 5000`,
+      [userId],
+    ),
+    q<any>(
+      `SELECT e.contact_id, concat_ws(' · ', e.place_label, ev.name, e.note) AS text, e.occurred_at AS at
+       FROM encounters e LEFT JOIN events ev ON ev.id = e.event_id WHERE e.owner_user_id = $1`,
+      [userId],
+    ),
+    q<any>("SELECT contact_id, body AS text, created_at AS at FROM notes WHERE owner_user_id = $1", [userId]),
+    q<any>(
+      `SELECT mp.contact_id, concat_ws(' · ', m.title, m.purpose) AS text, COALESCE(m.started_at, m.created_at) AS at
+       FROM meetings m JOIN meeting_participants mp ON mp.meeting_id = m.id WHERE m.owner_user_id = $1`,
+      [userId],
+    ),
+  ]);
+  const ctxBy = new Map<string, { t: string; text: string; at: string | null }[]>();
+  const add = (rows: any[], t: string) => {
+    for (const r of rows) {
+      if (!r.contact_id) continue;
+      const arr = ctxBy.get(r.contact_id) ?? [];
+      arr.push({ t, text: r.text ?? "", at: r.at ? new Date(r.at).toISOString() : null });
+      ctxBy.set(r.contact_id, arr);
+    }
+  };
+  add(encs, "encounter");
+  add(notesRows, "note");
+  add(meets, "meeting");
+  const rows = base.map((r) => ({ ...r, context: ctxBy.get(r.id) ?? [] }));
 
+  const probes = [...new Set([...words.map((w) => w.toLowerCase()), ...termTokens])].filter(Boolean);
   const results: SearchHit[] = [];
   for (const r of rows) {
     const evidence: SearchHit["evidence"] = [];
@@ -62,6 +79,8 @@ export async function relationshipSearch(ctx: Ctx, query: string): Promise<{ que
       if (!text) return 0;
       let s = 0;
       const low = text.toLowerCase();
+      // Fast reject: every scoring signal requires one of the query words/tokens to occur as a substring.
+      if (!probes.some((p) => low.includes(p))) return 0;
       for (const w of words) if (low.includes(w.toLowerCase())) s += 1;
       const tt = tokens(text);
       let inter = 0;
@@ -74,7 +93,7 @@ export async function relationshipSearch(ctx: Ctx, query: string): Promise<{ que
       evidence.push({ kind: "contact", text: [r.company, r.job_title].filter(Boolean).join(" · ") || r.full_name, at: null });
     }
     let inRange = !range;
-    for (const ctxItem of [...r.encounters, ...r.notes, ...r.meetings] as { t: string; text: string; at: string | null }[]) {
+    for (const ctxItem of r.context as { t: string; text: string; at: string | null }[]) {
       const at = ctxItem.at ? new Date(ctxItem.at) : null;
       if (range && at && at >= range[0] && at < range[1]) inRange = true;
       const s = scoreText(ctxItem.text ?? "");
@@ -98,21 +117,39 @@ export async function relationshipSearch(ctx: Ctx, query: string): Promise<{ que
   return { query, interpreted: { terms: words, from: range?.[0].toISOString() ?? null, to: range?.[1].toISOString() ?? null }, results: results.slice(0, 20) };
 }
 
-async function matchProfileFor(profileId: string, trust = 0): Promise<MatchProfile | null> {
-  const p = await loadProfile(profileId);
-  if (!p) return null;
-  const projects = ((p.deep as any)?.projects ?? []).map((x: any) => x.title).filter(Boolean);
-  return {
-    id: p.id,
-    name: p.name,
-    offers: p.offers.filter((o) => o.confirmed).map((o) => o.text),
-    needs: p.needs.filter((n) => n.confirmed).map((n) => n.text),
-    industries: p.industries,
-    regions: p.regions,
-    projects,
-    trust,
-    matchingOptOut: !p.matchingOptIn,
+/** Batch-load match inputs for many profiles in 3 queries (avoids N+1 on large networks/events). */
+async function matchProfilesFor(profileIds: string[], trust: Map<string, number> = new Map()): Promise<Map<string, MatchProfile & { company: string | null; slug: string }>> {
+  const out = new Map<string, MatchProfile & { company: string | null; slug: string }>();
+  if (!profileIds.length) return out;
+  const ids = [...new Set(profileIds)];
+  const [profiles, offers, needs] = await Promise.all([
+    q<any>("SELECT id, name, company, slug, industries, regions, deep, matching_opt_in FROM profiles WHERE id = ANY($1::uuid[])", [ids]),
+    q<{ profile_id: string; text: string }>("SELECT profile_id, text FROM offers WHERE profile_id = ANY($1::uuid[]) AND confirmed ORDER BY created_at", [ids]),
+    q<{ profile_id: string; text: string }>("SELECT profile_id, text FROM needs WHERE profile_id = ANY($1::uuid[]) AND confirmed ORDER BY created_at", [ids]),
+  ]);
+  const group = (rows: { profile_id: string; text: string }[]) => {
+    const m = new Map<string, string[]>();
+    for (const r of rows) m.set(r.profile_id, [...(m.get(r.profile_id) ?? []), r.text]);
+    return m;
   };
+  const o = group(offers);
+  const n = group(needs);
+  for (const p of profiles) {
+    out.set(p.id, {
+      id: p.id,
+      name: p.name,
+      company: p.company,
+      slug: p.slug,
+      offers: o.get(p.id) ?? [],
+      needs: n.get(p.id) ?? [],
+      industries: p.industries ?? [],
+      regions: p.regions ?? [],
+      projects: ((p.deep?.projects ?? []) as { title?: string }[]).map((x) => x.title ?? "").filter(Boolean),
+      trust: trust.get(p.id) ?? 0,
+      matchingOptOut: !p.matching_opt_in,
+    });
+  }
+  return out;
 }
 
 /** GET /matches — candidates are (a) people in my network who use LINKOS, (b) opted-in co-attendees of my events. */
@@ -121,7 +158,7 @@ export async function listMatches(ctx: Ctx, opts: { eventId?: string } = {}): Pr
   const userId = ctx.userId;
   const myPid = await primaryProfileId(userId);
   if (!myPid) return { subject: null, results: [] };
-  const me = await matchProfileFor(myPid);
+  const me = (await matchProfilesFor([myPid])).get(myPid);
   if (!me) return { subject: null, results: [] };
 
   let candidates: { profile_id: string; strength: number | null; contact_id: string | null }[];
@@ -134,9 +171,9 @@ export async function listMatches(ctx: Ctx, opts: { eventId?: string } = {}): Pr
     );
   } else {
     candidates = await q<any>(
-      `SELECT DISTINCT ON (p.user_id) p.id AS profile_id, rel.strength, c.id AS contact_id
+      `SELECT DISTINCT ON (p.user_id) p.id AS profile_id, c.id AS contact_id,
+         (SELECT rel.strength FROM relationships rel WHERE rel.owner_user_id = $1 AND rel.contact_id = c.id) AS strength
        FROM contacts c JOIN profiles p ON p.user_id = c.linked_user_id
-       LEFT JOIN relationships rel ON rel.contact_id = c.id AND rel.owner_user_id = c.owner_user_id
        WHERE c.owner_user_id=$1 AND c.linked_user_id IS NOT NULL AND c.deleted_at IS NULL AND p.matching_opt_in
        ORDER BY p.user_id, p.is_primary DESC
        LIMIT 500`,
@@ -151,16 +188,10 @@ export async function listMatches(ctx: Ctx, opts: { eventId?: string } = {}): Pr
     const seen = new Set(candidates.map((c) => c.profile_id));
     for (const e of eventPeers) if (!seen.has(e.profile_id)) candidates.push(e);
   }
-  const pool_: (MatchProfile & { contactId: string | null })[] = [];
-  for (const c of candidates) {
-    const mp = await matchProfileFor(c.profile_id, Number(c.strength ?? 0));
-    if (mp) pool_.push({ ...mp, contactId: c.contact_id });
-  }
-  const ranked = rankMatches(me, pool_);
-  const out = [];
-  for (const m of ranked) {
-    const p = await one<{ company: string | null; slug: string }>("SELECT company, slug FROM profiles WHERE id=$1", [m.candidateId]);
-    out.push({ ...m, company: p?.company ?? null, slug: p?.slug ?? "", contactId: pool_.find((x) => x.id === m.candidateId)?.contactId ?? null });
-  }
+  const trust = new Map(candidates.map((c) => [c.profile_id, Number(c.strength ?? 0)]));
+  const contactOf = new Map(candidates.map((c) => [c.profile_id, c.contact_id]));
+  const profiles = await matchProfilesFor(candidates.map((c) => c.profile_id), trust);
+  const ranked = rankMatches(me, [...profiles.values()]);
+  const out = ranked.map((m) => ({ ...m, company: profiles.get(m.candidateId)?.company ?? null, slug: profiles.get(m.candidateId)?.slug ?? "", contactId: contactOf.get(m.candidateId) ?? null }));
   return { subject: me.id, results: out };
 }

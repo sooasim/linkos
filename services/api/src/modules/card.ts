@@ -258,8 +258,8 @@ export async function getPublicProfileBySlug(slug: string, viewerUserId: string 
   return projectCard(p, audience);
 }
 
-export async function getExchangeCard(profileId: string): Promise<PublicCard> {
-  const p = await loadProfile(profileId);
+export async function getExchangeCard(profileId: string, db: Db = pool()): Promise<PublicCard> {
+  const p = await loadProfile(profileId, db);
   if (!p) throw notFound("profile");
   return projectCard(p, EXCHANGE_AUDIENCE);
 }

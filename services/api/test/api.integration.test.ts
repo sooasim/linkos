@@ -194,6 +194,15 @@ describe("Guest Exchange → Claim (F-002, F-003, F-037~F-064)", () => {
     await expect(handoff.openGuestLanding("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", ctx(null), "a")).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("reply without opening the landing first (API/native client) still completes", async () => {
+    const s = await handoff.createExchangeSession(ctx(sender.id), { capabilities: {}, group: false, context: {} });
+    const r = await handoff.replyExchange(s.token, ctx(null), { card: { fullName: "직접회신" }, sharedFields: ["fullName"], consent: { exchange: true }, provenance: {} });
+    expect(r.exchanged).toBe(true);
+    const st = await handoff.getSenderSessionStatus(ctx(sender.id), s.sessionId);
+    expect(st.state).toBe("CLAIM_PENDING");
+    expect(st.receiverOpenedAt).toBeTruthy();
+  });
+
   it("F-051 group exchange accepts multiple replies", async () => {
     const s = await handoff.createExchangeSession(ctx(sender.id), { capabilities: {}, group: true, maxUses: 3, context: {} });
     for (const n of ["A", "B"]) {

@@ -23,6 +23,8 @@ const BENTO = [
 
 const TILE = ["bg-[var(--color-lavender)]", "bg-[var(--color-mint)]", "bg-[var(--color-peach)]", "bg-[var(--color-sky)]", "bg-[var(--color-butter)]", "bg-[var(--color-rose)]"];
 
+const CHIP = ["!bg-[var(--color-lavender)]", "!bg-[var(--color-mint)]", "!bg-[var(--color-peach)]", "!bg-[var(--color-sky)]", "!bg-[var(--color-butter)]", "!bg-[var(--color-rose)]"];
+
 function Words({ text, delay = 0 }: { text: string; delay?: number }) {
   return (
     <span className="words">
@@ -217,7 +219,7 @@ export default function Landing() {
             </p>
             <div className="mt-8 flex flex-wrap gap-2">
               {["3초 카드", "30초 카드", "딥 프로필", "상대별 변형", "Access Request", "Action CTA"].map((x, i) => (
-                <span key={x} className={`chip !border-transparent ${TILE[i]} text-[var(--color-ink)]`}>{x}</span>
+                <span key={x} className={`chip !border-transparent ${CHIP[i]} text-[var(--color-ink)]`}>{x}</span>
               ))}
             </div>
           </div>

@@ -23,6 +23,7 @@
     "restore-drill": "bash scripts/restore-drill.sh"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",

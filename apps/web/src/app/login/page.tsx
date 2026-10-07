@@ -1,4 +1,4 @@
-import { integration } from "@linkos/api";
+import { identity, integration } from "@linkos/api";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getViewer, safeNext } from "@/lib/server";
@@ -13,5 +13,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const next = safeNext(sp.next);
   const { userId } = await getViewer();
   if (userId) redirect(next);
-  return <LoginForm next={next} google={integration.googleEnabled()} googleConsent={sp.consent === "google"} error={sp.error ?? null} />;
+  return (
+    <LoginForm
+      next={next}
+      google={integration.googleEnabled()}
+      googleConsent={sp.consent === "google"}
+      error={sp.error ?? null}
+      oneTapClientId={identity.oneTapEnabled() ? (process.env.GOOGLE_CLIENT_ID ?? null) : null}
+    />
+  );
 }

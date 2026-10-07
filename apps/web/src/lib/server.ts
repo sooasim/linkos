@@ -27,7 +27,22 @@ export async function getViewer(): Promise<{ userId: string | null; ctx: Ctx }> 
   return { userId: ctx.userId, ctx };
 }
 
-type Handler<P> = (args: { req: NextRequest; ctx: Ctx; params: P; body: unknown }) => Promise<unknown | NextResponse>;
+/** Native apps (apps/mobile, App Clip) send `Authorization: Bearer <token>`; such tokens only resolve native sessions. */
+export function bearerToken(req: NextRequest): string | undefined {
+  const h = req.headers.get("authorization");
+  const m = h ? /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(h.trim()) : null;
+  return m?.[1];
+}
+
+/** Resolve the caller's session from the bearer header (native) or the session cookie (web). */
+export async function resolveRequestSession(req: NextRequest, rotate: boolean) {
+  const ua = req.headers.get("user-agent") ?? "";
+  const bearer = bearerToken(req);
+  if (bearer) return { session: await identity.resolveSession(bearer, { userAgent: ua }, false, "native"), bearer: true };
+  return { session: await identity.resolveSession(req.cookies.get(SESSION_COOKIE)?.value, { userAgent: ua }, rotate), bearer: false };
+}
+
+type Handler<P> =(args: { req: NextRequest; ctx: Ctx; params: P; body: unknown }) => Promise<unknown | NextResponse>;
 
 interface RouteOptions {
   auth?: boolean;
@@ -72,9 +87,8 @@ function handle<P>(handler: Handler<P>, opts: RouteOptions) {
         const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
         if (origin && host && new URL(origin).host !== host) throw new ApiError(403, "bad_origin", "허용되지 않은 요청 출처입니다.");
       }
-      const token = req.cookies.get(SESSION_COOKIE)?.value;
       const ua = req.headers.get("user-agent") ?? "";
-      const session = await identity.resolveSession(token, { userAgent: ua });
+      const { session } = await resolveRequestSession(req, true);
       rotated = session?.rotatedToken;
       const ctx: Ctx = { userId: session?.userId ?? null, ip: clientIp(req.headers), userAgent: ua, requestId };
       if (opts.auth !== false && !ctx.userId) throw new ApiError(401, "unauthorized", "로그인이 필요합니다.");

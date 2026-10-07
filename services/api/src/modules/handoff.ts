@@ -62,7 +62,7 @@ export const createSessionInput = z.object({
     .default({}),
 });
 
-interface SessionRow {
+export interface SessionRow {
   id: string;
   sender_user_id: string;
   sender_profile_id: string;
@@ -90,6 +90,10 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
   if (prof?.user_id !== userId) throw notFound("profile");
 
   const cap: CapabilityVector = { ...DEFAULT_CAPABILITIES, ...input.capabilities } as CapabilityVector;
+  // F-044: a registered, active NFC accessory adds the NFC step even if this browser never saw the settings toggle
+  if (!cap.nfcAccessoryEnabled && cap.online) {
+    cap.nfcAccessoryEnabled = Boolean(await one("SELECT 1 FROM nfc_tags WHERE owner_user_id=$1 AND revoked_at IS NULL LIMIT 1", [userId]));
+  }
   const plan = planChannels(cap);
   const token = generateToken();
   const tokenHash = await hashToken(token);
@@ -152,7 +156,7 @@ async function findSession(tokenOrCode: string, db: Db = pool(), forUpdate = fal
   return row;
 }
 
-async function setState(db: Db, s: SessionRow, to: ExchangeState) {
+export async function setState(db: Db, s: SessionRow, to: ExchangeState) {
   if (s.state === to) return;
   if (!canTransition(s.state, to)) throw conflict("invalid_state", `exchange is ${s.state}`);
   await db.query("UPDATE exchange_sessions SET state=$2, updated_at=now() WHERE id=$1", [s.id, to]);
@@ -299,8 +303,12 @@ export type ReplyInput = z.infer<typeof replyInput>;
  */
 export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyInput) {
   await rateLimit(`xch:reply:${ctx.ip}`, 20, 600);
-  return tx(async (c) => {
-    const s = await findSession(tokenOrCode, c, true);
+  return tx(async (c) => applyReply(c, await findSession(tokenOrCode, c, true), ctx, input));
+}
+
+/** Lock-holding core of replyExchange; `s` must have been selected FOR UPDATE on `c`. Also used by F-039 proximity. */
+export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, input: ReplyInput) {
+  {
     if (!acceptsReply(s.state, s.expires_at)) {
       if (s.expires_at.getTime() < Date.now()) throw gone("exchange_expired", "교환 링크가 만료되었습니다.");
       throw conflict("already_exchanged", "이미 교환이 완료된 링크입니다.");
@@ -417,10 +425,10 @@ export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyI
       sender: senderCard,
       senderName: senderProfile?.name ?? senderCard.name,
     };
-  });
+  }
 }
 
-function cardToContact(card: PublicCard) {
+export function cardToContact(card: PublicCard) {
   const f = (t: string) => card.fields.find((x) => x.type === t)?.value ?? null;
   return {
     fullName: card.name,

@@ -3,13 +3,16 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV !== "production";
 
 // tesseract.js loads its worker/wasm/language data from jsDelivr on demand (on-device OCR).
+// Google Identity Services (F-060 One Tap, only rendered on /login and /claim when GOOGLE_CLIENT_ID is set).
+const gsi = "https://accounts.google.com/gsi/";
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net ${gsi}client${isDev ? " 'unsafe-eval'" : ""}`,
   "worker-src 'self' blob: https://cdn.jsdelivr.net",
-  "connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:",
+  `connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com ${gsi} data: blob:`,
+  `frame-src ${gsi}`,
   "img-src 'self' data: blob:",
-  "style-src 'self' 'unsafe-inline'",
+  `style-src 'self' 'unsafe-inline' ${gsi}style`,
   "font-src 'self' data:",
   "media-src 'self' blob:",
   "frame-ancestors 'none'",
@@ -39,7 +42,10 @@ const config: NextConfig = {
       { source: "/x/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/c/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }, { key: "Service-Worker-Allowed", value: "/" }] },
+      // NFC tag landing: redirects to a fresh one-time exchange token
+      { source: "/n/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/.well-known/apple-app-site-association", headers: [{ key: "Content-Type", value: "application/json" }] },
+      { source: "/.well-known/assetlinks.json", headers: [{ key: "Content-Type", value: "application/json" }] },
     ];
   },
 };

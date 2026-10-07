@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { GUEST_MESSAGES, LOCALES, LOCALE_NAMES, type Locale, fmt } from "@linkos/domain";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
 import { celebrate } from "@/components/Fx";
 import { Icon, Logo } from "@/components/Icon";
@@ -24,6 +24,15 @@ type Landing = {
 };
 
 type Step = "view" | "capture" | "review" | "sending" | "done";
+
+// F-057 Contact Picker 보조: Android Chrome 등 지원 브라우저에서만. 사용자가 고른 연락처 1개만 이 화면에 채운다(전송은 검토·동의 후).
+type PickedContact = { name?: string[]; email?: string[]; tel?: string[] };
+type ContactsManager = { select: (props: string[], opts?: { multiple?: boolean }) => Promise<PickedContact[]> };
+function contactPicker(): ContactsManager | null {
+  if (typeof window === "undefined" || !("ContactsManager" in window)) return null;
+  const c = (navigator as Navigator & { contacts?: ContactsManager }).contacts;
+  return c && typeof c.select === "function" ? c : null;
+}
 
 const emptyCard = () => Object.fromEntries(CARD_KEYS.map((k) => [k, ""])) as Record<CardKey, string>;
 
@@ -46,6 +55,30 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
   const first = landing.sender.name.split(" ")[0] ?? landing.sender.name;
   // F-196 CTA copy experiment (default copy when not running / not enrolled); F-188 click event = conversion metric
   const ctaVariant = useExperiment("guest_reply_cta");
+
+  const [picker, setPicker] = useState<ContactsManager | null>(null);
+  const [pickNote, setPickNote] = useState<string | null>(null);
+  useEffect(() => setPicker(contactPicker()), []);
+
+  const pickFromContacts = async () => {
+    if (!picker) return;
+    setPickNote(null);
+    try {
+      const [c] = await picker.select(["name", "email", "tel"], { multiple: false });
+      if (!c) return;
+      const base = { ...initial, ...(reviewed?.card ?? {}) } as Record<CardKey, string>;
+      setInitial({
+        ...base,
+        fullName: c.name?.[0]?.trim() || base.fullName,
+        email: c.email?.[0]?.trim() || base.email,
+        phone: c.tel?.[0]?.trim() || base.phone,
+      });
+      setConf({});
+      setPickNote(m.pickFilled);
+    } catch {
+      setPickNote(m.pickFailed);
+    }
+  };
 
   const startReply = () => {
     trackClient("cta_clicked", { cta: "guest_reply", variant: ctaVariant ?? "default" });
@@ -158,6 +191,12 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
               {m.reviewTitle} <em>{m.reviewEm}</em>
             </h1>
             <p className="mt-3 text-[15px] text-[var(--fg-mute)]">{fmt(m.reviewBody, { name: first })}</p>
+            {picker && (
+              <button type="button" onClick={pickFromContacts} className="btn btn-ghost mt-4 w-full" data-testid="contact-picker">
+                <Icon name="people" size={18} /> {m.pickFromContacts}
+              </button>
+            )}
+            {pickNote && <p className="mt-2 text-[13px] text-[var(--fg-mute)]" role="status">{pickNote}</p>}
             <div className="mt-5">
               <ReviewFields key={JSON.stringify(initial)} initial={initial} confidence={conf} selectable onChange={setReviewed} />
             </div>

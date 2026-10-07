@@ -1,4 +1,16 @@
 {
-  "applinks": { "details": [{ "appIDs": ["TEAMID.app.linkos.ios"], "components": [{ "/": "/x/*" }, { "/": "/c/*" }] }] },
-  "appclips": { "apps": ["TEAMID.app.linkos.ios.Clip"] }
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.app.linkos.ios"],
+        "components": [
+          { "/": "/x/*", "comment": "one-time exchange link (guest landing)" },
+          { "/": "/c/*", "comment": "6-char short code" },
+          { "/": "/n/*", "comment": "NFC accessory tag" }
+        ]
+      }
+    ]
+  },
+  "appclips": { "apps": ["TEAMID.app.linkos.ios.Clip"] },
+  "webcredentials": { "apps": ["TEAMID.app.linkos.ios"] }
 }

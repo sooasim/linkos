@@ -1,13 +1,13 @@
-import { ApiError, handoff, identity } from "@linkos/api";
+import { ApiError, handoff } from "@linkos/api";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE } from "@/lib/server";
+import { resolveRequestSession } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
 
 // SSE: live exchange status for the sender (백서 11: 실시간 교환 상태는 WebSocket 또는 SSE)
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await identity.resolveSession(req.cookies.get(SESSION_COOKIE)?.value, { userAgent: req.headers.get("user-agent") ?? "" }, false);
+  const { session } = await resolveRequestSession(req, false);
   if (!session) return new Response("unauthorized", { status: 401 });
   const ctx = { userId: session.userId, ip: "", userAgent: "", requestId: "sse" };
   const enc = new TextEncoder();

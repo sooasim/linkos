@@ -3,11 +3,13 @@ import { normalizeShortCode } from "@linkos/domain";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Logo } from "@/components/Icon";
+import { ReceiveMode } from "@/components/ReceiveMode";
 
 // 단축코드 입력 (브라우저 즉시 수신)
 export default function EnterCodePage() {
   const router = useRouter();
   const [code, setCode] = useState("");
+  const [receiving, setReceiving] = useState(false);
   const valid = normalizeShortCode(code);
   return (
     <main className="stage-ink grain flex min-h-dvh flex-col px-6 pb-10 pt-6">
@@ -39,7 +41,18 @@ export default function EnterCodePage() {
         <button className="btn btn-signal btn-lg mt-5 w-full" disabled={!valid}>
           명함 받기
         </button>
+        {!receiving && (
+          <button type="button" onClick={() => setReceiving(true)} className="btn btn-ghost mt-3 w-full" data-testid="receive-mode-start">
+            코드가 없나요? 받기 모드로 페어링
+          </button>
+        )}
       </form>
+      {/* F-046 웹-웹 페어링: the sender types this page's 4-digit code on their LINKOS exchange screen */}
+      {receiving && (
+        <div className="mx-auto mb-auto w-full max-w-md">
+          <ReceiveMode onClose={() => setReceiving(false)} />
+        </div>
+      )}
     </main>
   );
 }

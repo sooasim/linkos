@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@linkos/domain": ["../../packages/domain/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../../packages/domain/src/**/*.ts", "expo-env.d.ts"]
+}

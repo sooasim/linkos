@@ -5,6 +5,7 @@ export * as identity from "./modules/identity";
 export * as card from "./modules/card";
 export * as relationship from "./modules/relationship";
 export * as handoff from "./modules/handoff";
+export * as channels from "./modules/channels";
 export * as capture from "./modules/capture";
 export * as meeting from "./modules/meeting";
 export * as ai from "./modules/ai";

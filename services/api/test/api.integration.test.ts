@@ -151,7 +151,8 @@ describe("Guest Exchange → Claim (F-002, F-003, F-037~F-064)", () => {
   it("outbox events were written in the same transaction", async () => {
     const types = (await q<{ event_type: string }>("SELECT event_type FROM outbox_events ORDER BY created_at")).map((r) => r.event_type);
     for (const t of ["exchange.session.created", "exchange.channel.attempted", "exchange.receiver.opened", "exchange.completed", "card.extraction.completed", "contact.updated"]) expect(types).toContain(t);
-    const leaked = await q("SELECT 1 FROM outbox_events WHERE payload::text ILIKE '%yh@medi.kr%' OR payload::text ILIKE '%010-%'");
+    // match a real phone number, not any "010-" substring (UUIDs such as …-4010-… contain one)
+    const leaked = await q("SELECT 1 FROM outbox_events WHERE payload::text ILIKE '%yh@medi.kr%' OR payload::text ~ '(^|[^0-9a-fA-F])01[016789]-?[0-9]{3,4}-?[0-9]{4}([^0-9]|$)'");
     expect(leaked).toHaveLength(0);
     expect(await relayOutbox()).toBeGreaterThan(0);
   });

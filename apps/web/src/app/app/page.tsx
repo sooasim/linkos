@@ -159,6 +159,38 @@ export default async function HomePage() {
           </ul>
         </section>
       )}
+
+      {/* 모바일: 하단 Dock 밖의 모든 기능 (데스크톱은 사이드 메뉴) */}
+      <section className="lg:hidden" data-reveal>
+        <h2 className="mb-3 text-[20px] font-semibold">모든 기능</h2>
+        <ul className="grid grid-cols-4 gap-2">
+          {(
+            [
+              ["/app/scan", "scan", "명함 스캔"],
+              ["/app/meetings", "calendar", "미팅"],
+              ["/app/messages", "message", "메시지"],
+              ["/app/calendar", "calendar", "일정"],
+              ["/app/intros", "room", "소개·Room"],
+              ["/app/events", "flag", "행사"],
+              ["/app/team", "people", "팀 주소록"],
+              ["/app/org", "building", "조직"],
+              ["/app/inbox", "bell", "알림함"],
+              ["/app/insights", "chart", "인사이트"],
+              ["/app/integrations", "plug", "CRM·자동화"],
+              ["/app/billing", "card", "플랜·결제"],
+            ] as const
+          ).map(([href, icon, label]) => (
+            <li key={href}>
+              <Link href={href} className="surface flex flex-col items-center gap-1.5 px-1 py-3 text-center text-[11.5px] font-medium">
+                <span className="grid size-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
+                  <Icon name={icon} size={18} />
+                </span>
+                {label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

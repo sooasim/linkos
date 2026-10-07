@@ -46,10 +46,17 @@ const SIDE: { href: string; label: string; icon: IconName }[] = [
   { href: "/app/people", label: "인맥", icon: "people" },
   { href: "/app/meetings", label: "미팅", icon: "calendar" },
   { href: "/app/ai", label: "AI 기억·매칭", icon: "spark" },
+  { href: "/app/messages", label: "메시지", icon: "message" },
+  { href: "/app/calendar", label: "일정", icon: "calendar" },
   { href: "/app/intros", label: "소개·Room", icon: "room" },
   { href: "/app/events", label: "행사", icon: "flag" },
+  { href: "/app/team", label: "팀 주소록", icon: "people" },
+  { href: "/app/org", label: "조직", icon: "building" },
   { href: "/app/me", label: "내 Living Card", icon: "me" },
+  { href: "/app/inbox", label: "알림함", icon: "bell" },
   { href: "/app/insights", label: "인사이트", icon: "chart" },
+  { href: "/app/integrations", label: "CRM·자동화", icon: "plug" },
+  { href: "/app/billing", label: "플랜·결제", icon: "card" },
   { href: "/app/settings", label: "설정·연동", icon: "settings" },
 ];
 
@@ -60,7 +67,7 @@ export function SideNav() {
       <Link href="/app" className="px-3">
         <span className="inline-flex items-center gap-2 font-semibold"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden><rect x="3" y="8" width="17" height="12" rx="3.5" fill="none" stroke="currentColor" strokeWidth="2.2" transform="rotate(-12 11.5 14)" /><rect x="12" y="12" width="17" height="12" rx="3.5" fill="#8f7bff" transform="rotate(8 20.5 18)" /></svg>LINKOS</span>
       </Link>
-      <ul className="mt-8 space-y-0.5">
+      <ul className="no-scrollbar mt-8 -mx-1 flex-1 space-y-0.5 overflow-y-auto px-1">
         {SIDE.map((t) => {
           const on = t.href === "/app" ? path === "/app" : path.startsWith(t.href);
           return (
@@ -73,7 +80,7 @@ export function SideNav() {
           );
         })}
       </ul>
-      <Link href="/app/exchange" className="btn btn-signal mt-auto w-full">
+      <Link href="/app/exchange" className="btn btn-signal mt-4 w-full">
         <Icon name="exchange" size={18} /> 명함 교환
       </Link>
     </nav>

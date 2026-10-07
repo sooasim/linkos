@@ -38,6 +38,11 @@ const paths = {
   merge: "M6 3v6a6 6 0 0 0 6 6h6M6 21v-6M15 12l3 3-3 3",
   eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
   logout: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11",
+  bell: "M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
+  building: "M4 21V5l8-2v18M12 8h8v13M8 8v.01M8 12v.01M8 16v.01M16 12v.01M16 16v.01M2 21h20",
+  message: "M4 5h16v11H9l-5 4zM8 9h8M8 12h5",
+  card: "M3 6h18v12H3zM3 10h18M7 15h4",
+  plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
 } as const;
 
 export type IconName = keyof typeof paths;

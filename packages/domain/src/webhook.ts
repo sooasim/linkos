@@ -22,14 +22,27 @@ function isPrivateIpv4(h: string): boolean {
   return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
 }
 
+/** IPv4 embedded in an IPv6 literal: IPv4-mapped (::ffff:), IPv4-compatible (::) and NAT64 (64:ff9b::), dotted or hex form. */
+function embeddedIpv4(h: string): string | null {
+  const dotted = /^(?:::ffff:|::|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/.exec(h);
+  if (dotted) return dotted[1]!;
+  // WHATWG URL serializes [::ffff:127.0.0.1] as [::ffff:7f00:1]
+  const hex = /^(?:::ffff:|::|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h);
+  if (!hex) return null;
+  const a = parseInt(hex[1]!, 16);
+  const b = parseInt(hex[2]!, 16);
+  return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
+}
+
 export function isPrivateAddress(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  // a trailing dot is the same DNS name ("localhost." resolves to loopback)
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.+$/, "");
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local")) return true;
   if (isPrivateIpv4(h)) return true;
   if (h.includes(":")) {
     if (h === "::1" || h === "::" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
-    const mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isPrivateIpv4(mapped[1]!);
+    const v4 = embeddedIpv4(h);
+    if (v4) return isPrivateIpv4(v4);
   }
   return false;
 }

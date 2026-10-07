@@ -127,7 +127,9 @@ describe("F-052/F-150/F-178/F-179 offline outbox", () => {
     items = enqueue(items, mk(2, "PATCH", `/contacts/${id(1)}`, { email: "a@b.c", version: 4 }));
     expect(items).toHaveLength(1);
     expect(items[0]!.body).toEqual({ jobTitle: "이사", email: "a@b.c", version: 3 });
-    expect(items[0]!.idempotencyKey).toBe("k1");
+    // a merged body is a different request → it carries the newer write's key (QA BUG-10: reusing k1 with a
+    // different body is refused by the server as idempotency_key_reused when the first attempt was in flight)
+    expect(items[0]!.idempotencyKey).toBe("k2");
   });
 
   it("replays in order per entity and blocks later writes behind an unresolved one", () => {

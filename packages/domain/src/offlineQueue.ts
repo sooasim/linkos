@@ -79,7 +79,10 @@ export function enqueue(items: OutboxItem[], item: OutboxItem): OutboxItem[] {
       const prevBody = (prev.body ?? {}) as Record<string, unknown>;
       const nextBody = { ...prevBody, ...((item.body ?? {}) as Record<string, unknown>) };
       if ("version" in prevBody) nextBody.version = prevBody.version;
-      const merged: OutboxItem = { ...prev, body: nextBody };
+      // The body changed, so this is a different request: it takes the new write's Idempotency-Key. Re-using the old key
+      // with a different body is refused by the server (409 idempotency_key_reused) and would drop the merged change
+      // when the first attempt was already in flight.
+      const merged: OutboxItem = { ...prev, body: nextBody, idempotencyKey: item.idempotencyKey };
       return items.map((x, i) => (i === idx ? merged : x));
     }
   }
@@ -139,6 +142,18 @@ export function decide(item: OutboxItem, res: ReplayResponse, now: number, rand 
   // signed out: keep the item (it is retried once the user signs in again), but do not burn attempts quickly
   if (res.status === 401) return retry(401, code, message, 60_000);
   return { action: "failed", item: { ...item, attempts, status: "failed", lastError: { status: res.status, code, message } } };
+}
+
+export type SettleAction = { action: "delete" } | { action: "put"; item: OutboxItem } | { action: "keep" };
+
+/**
+ * Apply a replay decision to the outbox record as it is stored *now*. When the record changed while its request was in
+ * flight (a later PATCH was coalesced into it, which gives it a new Idempotency-Key) or was discarded meanwhile, the
+ * stored record wins: it is still pending and is sent on the next round, so the coalesced change is never lost.
+ */
+export function settle(stored: OutboxItem | null | undefined, sent: OutboxItem, d: ReplayDecision): SettleAction {
+  if (!stored || stored.idempotencyKey !== sent.idempotencyKey) return { action: "keep" };
+  return d.action === "done" ? { action: "delete" } : { action: "put", item: d.item };
 }
 
 /**

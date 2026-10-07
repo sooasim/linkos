@@ -11,7 +11,7 @@ export interface VCardInput {
 }
 
 function esc(v: string): string {
-  return v.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  return v.replace(/\\/g, "\\\\").replace(/\r\n|\r|\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
 
 export function toVCard(c: VCardInput): string {

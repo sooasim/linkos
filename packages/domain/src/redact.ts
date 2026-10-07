@@ -1,6 +1,7 @@
 // 백서 12: 로그/트레이스/분석 이벤트에는 원문 명함·전화·이메일을 남기지 않는다 (central redaction).
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const PHONE = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+// \p{Nd} + full-width separators: CJK IMEs produce "０１０－１２３４－５６７８", which must not slip through.
+const PHONE = /(?:[+＋]?\p{Nd}[\p{Nd}\s().\-－（）．]{7,}\p{Nd})/gu;
 const TOKENISH = /\b[A-Za-z0-9_-]{22,}\b/g;
 
 const SENSITIVE_KEYS = new Set([
@@ -11,7 +12,7 @@ const SENSITIVE_KEYS = new Set([
 export function redactString(s: string): string {
   return s
     .replace(EMAIL, (m) => `${m[0]}***@${m.split("@")[1]}`)
-    .replace(PHONE, (m) => `***${m.replace(/\D/g, "").slice(-2)}`)
+    .replace(PHONE, (m) => `***${m.normalize("NFKC").replace(/\D/g, "").slice(-2)}`)
     .replace(TOKENISH, (m) => `${m.slice(0, 4)}…`);
 }
 

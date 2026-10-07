@@ -29,7 +29,7 @@ export function pickLocale(acceptLanguage: string | null | undefined, override?:
 
 /** "{name}님" + {name:"Jun"} → "Jun님". Unknown keys are left as-is (never throws). */
 export function fmt(template: string, vars: Record<string, string | number> = {}): string {
-  return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
+  return template.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m));
 }
 
 const ko = {

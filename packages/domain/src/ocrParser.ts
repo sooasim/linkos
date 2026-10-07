@@ -45,7 +45,7 @@ export const REVIEW_THRESHOLD = 0.75;
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const URL_RE = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ai|co|kr|jp|cn|app|dev|me|biz|info|xyz|tech|studio|design)(?:\.[a-z]{2})?(?:\/[^\s]*)?/gi;
-const PHONE_RE = /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{4}/g;
+const PHONE_RE = /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{1,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{4}/g;
 const SNS_RE = /\b(?:linkedin\.com\/in\/[\w-]+|instagram\.com\/[\w.]+|x\.com\/\w+|twitter\.com\/\w+|github\.com\/[\w-]+|@[a-z0-9_.]{3,30})\b/gi;
 
 const LABEL_MOBILE = /(?:^|[\s|/])(?:m|mob|mobile|h\.?p|cell|휴대폰|휴대전화|핸드폰|携帯|手机)\s*[.:)]?\s*$/i;
@@ -105,6 +105,22 @@ function looksLikeKoreanName(s: string): boolean {
 
 function looksLikeLatinName(s: string): boolean {
   return /^[A-Z][a-zA-Z'’-]+(?:\s[A-Z][a-zA-Z'’.-]+){1,2}$/.test(s.trim()) && !/\d/.test(s);
+}
+
+/** Smallest slice of `text` that contains `parts` in order (null when they cannot be located in order). */
+function sliceSpanning(text: string, parts: string[]): string | null {
+  if (!parts.length) return null;
+  let from = 0;
+  let start = -1;
+  let end = -1;
+  for (const p of parts) {
+    const at = text.indexOf(p, from);
+    if (at < 0) return null;
+    if (start < 0) start = at;
+    end = at + p.length;
+    from = end;
+  }
+  return text.slice(start, end);
 }
 
 function hasTitleWord(s: string): string | null {
@@ -202,12 +218,22 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
     if (!title) continue;
     const parts = l.text.split(/\s*[,|/·]\s*|\s{2,}/).filter(Boolean);
     let titleValue = l.text;
+    let deptDone = false;
     if (parts.length >= 2) {
       const namePart = parts.find((p) => looksLikeKoreanName(p) || looksLikeLatinName(p));
       if (namePart && nameIdx < 0) {
         push({ key: "fullName", value: namePart, normalized: normalizePersonName(namePart), confidence: lineConf(l) * 0.85, provenance: "ocr", sourceLine: i, bbox: l.bbox });
         nameIdx = i;
-        titleValue = parts.filter((p) => p !== namePart).join(" ");
+        // Rule 6: the title must be a literal slice of the line — never re-join separated parts
+        // ("Jane Doe, CEO, Founder" → "CEO, Founder", not "CEO Founder").
+        const rest = parts.filter((p) => p !== namePart);
+        const deptPart = rest.length >= 2 ? rest.find((p) => !hasTitleWord(p) && DEPT_MARKERS.some((re) => re.test(p))) : undefined;
+        if (deptPart) {
+          push({ key: "department", value: deptPart, normalized: null, confidence: lineConf(l) * 0.75, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+          deptDone = true;
+        }
+        const titleParts = rest.filter((p) => p !== deptPart);
+        titleValue = sliceSpanning(l.text, titleParts) ?? titleParts[0] ?? l.text;
       }
     } else {
       // "홍길동 대표이사" (single space)
@@ -218,7 +244,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
         titleValue = m[2]!;
       }
     }
-    const deptMatch = DEPT_MARKERS.some((re) => re.test(titleValue.split(" ")[0] ?? ""));
+    const deptMatch = !deptDone && DEPT_MARKERS.some((re) => re.test(titleValue.split(" ")[0] ?? ""));
     if (deptMatch && titleValue.includes(" ")) {
       const [dept, ...rest] = titleValue.split(" ");
       push({ key: "department", value: dept!, normalized: null, confidence: lineConf(l) * 0.75, provenance: "ocr", sourceLine: i, bbox: l.bbox });

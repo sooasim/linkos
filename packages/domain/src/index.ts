@@ -11,3 +11,7 @@ export * from "./redact";
 export * from "./events";
 export * from "./introduction";
 export * from "./vcard";
+export * from "./imaging";
+export * from "./badge";
+export * from "./transcript";
+export * from "./offlineQueue";

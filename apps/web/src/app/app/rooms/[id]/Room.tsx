@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/Page";
+import { RoomFiles } from "@/components/RoomFiles";
 import { api, relTime } from "@/lib/client";
 
 export function Room({ id }: { id: string }) {
@@ -24,6 +25,7 @@ export function Room({ id }: { id: string }) {
         <button className="btn btn-ink shrink-0" onClick={() => api(`/rooms/${id}`, { method: "PATCH", body: { nextAction: next } }).then(load)}>저장</button>
         <button className="btn btn-signal shrink-0" onClick={() => api(`/rooms/${id}`, { method: "PATCH", body: { status: "won" } }).then(load)}>성사</button>
       </section>
+      <RoomFiles roomId={id} onChange={load} />
       <ul className="mt-6 space-y-3">
         {r.messages.map((m: any) => (
           <li key={m.id} className="surface p-4">

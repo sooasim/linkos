@@ -12,3 +12,5 @@ test-results/
 test-results/
 playwright-report/
 .shot*.mjs
+# local encrypted object storage (OBJECT_STORAGE_LOCAL_DIR default)
+.data/

@@ -222,6 +222,11 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
             ).map(([k, label]) => (
               <ListEditor key={k} label={label} items={p.deep[k] ?? []} onChange={(v) => set("deep", { ...p.deep, [k]: v })} placeholder={label} max={12} />
             ))}
+            {profile?.id && (
+              <a href="/app/me/media" className="btn btn-ghost w-full">
+                <Icon name="plus" size={16} /> 포트폴리오 이미지 · PDF 관리
+              </a>
+            )}
           </section>
 
           <section className="space-y-3">

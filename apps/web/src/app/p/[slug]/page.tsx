@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Logo } from "@/components/Icon";
 import { LivingCard } from "@/components/LivingCard";
+import { ProfileMediaGallery } from "@/components/ProfileMedia";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
 
@@ -48,6 +49,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
         <div className="mt-8 animate-rise">
           <LivingCard card={c} />
         </div>
+        <ProfileMediaGallery profileId={c.id} />
         {c.hiddenFields > 0 && <RequestAccess profileId={c.id} signedIn={!!userId} />}
       </div>
     </main>

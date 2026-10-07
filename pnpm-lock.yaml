@@ -32,6 +32,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1147.0
+        version: 3.1147.0
       '@fontsource-variable/inter-tight':
         specifier: ^5.2.6
         version: 5.3.0
@@ -62,6 +65,9 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       tesseract.js:
         specifier: ^7.0.0
         version: 7.0.0
@@ -106,9 +112,6 @@ importers:
         specifier: ^0.131.0
         version: 0.131.0(zod@4.6.5)
       '@aws-sdk/client-s3':
-        specifier: ^3.1147.0
-        version: 3.1147.0
-      '@aws-sdk/s3-request-presigner':
         specifier: ^3.1147.0
         version: 3.1147.0
       '@linkos/domain':
@@ -211,10 +214,6 @@ packages:
 
   '@aws-sdk/nested-clients@3.997.46':
     resolution: {integrity: sha512-oRxtBcka/JGHGs9l9p9IVajGoTP8vTPmoAzdHGy4Qcy9P5vPnDf6nhIeM/COQNY9k/OahImTRaLkHftoXvfcmQ==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/s3-request-presigner@3.1147.0':
-    resolution: {integrity: sha512-9za8GOn8IRFz+foPbLfjFFfqDV87mLBhNbUg+8YgqaSIuvzx+o6bWgOAETqPev5wul6DAImTQSCgt8mBsKtGUg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.47':
@@ -2158,15 +2157,6 @@ snapshots:
       '@smithy/core': 3.35.1
       '@smithy/fetch-http-handler': 5.8.0
       '@smithy/node-http-handler': 4.12.1
-      '@smithy/types': 4.19.0
-      tslib: 2.8.1
-
-  '@aws-sdk/s3-request-presigner@3.1147.0':
-    dependencies:
-      '@aws-sdk/core': 3.978.1
-      '@aws-sdk/signature-v4-multi-region': 3.996.47
-      '@aws-sdk/types': 3.974.6
-      '@smithy/core': 3.35.1
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 

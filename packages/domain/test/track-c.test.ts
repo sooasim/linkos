@@ -112,7 +112,8 @@ describe("F-052/F-150/F-178/F-179 offline outbox", () => {
   it("only queues whitelisted writes and assigns per-entity keys", () => {
     expect(classifyRequest("POST", "/contacts")?.kind).toBe("contact");
     expect(classifyRequest("PATCH", `/contacts/${id(1)}`)).toEqual({ kind: "contact_update", entityKey: `contact:${id(1)}` });
-    expect(classifyRequest("POST", `/contacts/${id(1)}/notes`)?.entityKey).toBe(`contact:${id(1)}`);
+    // notes are ordered among themselves but never wait behind a contact field-edit conflict
+    expect(classifyRequest("POST", `/contacts/${id(1)}/notes`)?.entityKey).toBe(`note:contact:${id(1)}`);
     expect(classifyRequest("POST", `/events/${id(2)}/leads`)?.kind).toBe("event_lead");
     expect(classifyRequest("POST", "/capture/commit")?.kind).toBe("scan");
     expect(classifyRequest("POST", "/exchange/sessions")).toBeNull();
@@ -131,11 +132,13 @@ describe("F-052/F-150/F-178/F-179 offline outbox", () => {
 
   it("replays in order per entity and blocks later writes behind an unresolved one", () => {
     const a = mk(1, "PATCH", `/contacts/${id(1)}`, { version: 1 });
-    const b = { ...mk(2, "POST", `/contacts/${id(1)}/notes`, { body: "x" }) };
+    const b = mk(2, "PATCH", `/contacts/${id(1)}`, { version: 2 });
     const c = mk(3, "POST", "/contacts", { fullName: "A" });
-    expect(readyItems([c, b, a], 10).map((i) => i.id)).toEqual(["q1", "q3"]);
+    const n1 = mk(4, "POST", `/contacts/${id(1)}/notes`, { body: "x" });
+    const n2 = mk(5, "POST", `/contacts/${id(1)}/notes`, { body: "y" });
+    expect(readyItems([c, b, a, n2, n1], 10).map((i) => i.id)).toEqual(["q1", "q3", "q4"]);
     const parked = { ...a, status: "conflict" as const };
-    expect(readyItems([parked, b, c], 10).map((i) => i.id)).toEqual(["q3"]);
+    expect(readyItems([parked, b, c, n1, n2], 10).map((i) => i.id)).toEqual(["q3", "q4"]);
     const later = { ...c, nextAttemptAt: 100 };
     expect(readyItems([later], 10)).toEqual([]);
   });

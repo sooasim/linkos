@@ -16,6 +16,6 @@ export default defineConfig({
     command: `pnpm --filter @linkos/web start -p ${port}`,
     url: `http://localhost:${port}/api/v1/health`,
     reuseExistingServer: !process.env.CI,
-    env: { AUTH_SECRET: process.env.AUTH_SECRET ?? "e2e-only-secret-not-for-production-use", OTP_DEV_ECHO: "1", RATE_LIMIT_DISABLED: "1", APP_ORIGIN: `http://localhost:${port}`, DATABASE_URL: process.env.DATABASE_URL ?? "postgres://linkos:linkos@localhost:5432/linkos" },
+    env: { AUTH_SECRET: process.env.AUTH_SECRET ?? "e2e-only-secret-not-for-production-use", OTP_DEV_ECHO: "1", RATE_LIMIT_DISABLED: "1", APP_ORIGIN: `http://localhost:${port}`, DATABASE_URL: process.env.DATABASE_URL ?? "postgres://linkos:linkos@localhost:5432/linkos", CREDENTIALS_KEY: process.env.CREDENTIALS_KEY ?? Buffer.alloc(32, 9).toString("base64") },
   },
 });

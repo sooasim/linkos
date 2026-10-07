@@ -31,8 +31,8 @@ export const QUEUEABLE: { method: OutboxMethod; re: RegExp; kind: OutboxKind; en
   { method: "POST", re: /^\/capture\/commit$/, kind: "scan", entity: () => "new" },
   { method: "POST", re: /^\/contacts$/, kind: "contact", entity: () => "new" },
   { method: "PATCH", re: /^\/contacts\/([0-9a-f-]{36})$/, kind: "contact_update", entity: (m) => `contact:${m[1]}` },
-  { method: "POST", re: /^\/contacts\/([0-9a-f-]{36})\/notes$/, kind: "note", entity: (m) => `contact:${m[1]}` },
-  { method: "POST", re: /^\/contacts\/([0-9a-f-]{36})\/encounters$/, kind: "encounter", entity: (m) => `contact:${m[1]}` },
+  { method: "POST", re: /^\/contacts\/([0-9a-f-]{36})\/notes$/, kind: "note", entity: (m) => `note:contact:${m[1]}` },
+  { method: "POST", re: /^\/contacts\/([0-9a-f-]{36})\/encounters$/, kind: "encounter", entity: (m) => `encounter:contact:${m[1]}` },
   { method: "POST", re: /^\/events\/([0-9a-f-]{36})\/leads$/, kind: "event_lead", entity: (m) => `event:${m[1]}` },
   { method: "PATCH", re: /^\/profiles\/([0-9a-f-]{36})$/, kind: "profile_update", entity: (m) => `profile:${m[1]}` },
 ];

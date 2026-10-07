@@ -3,7 +3,18 @@
 > 만나는 순간부터 관계를 기억하고, 다음 행동과 사업 기회까지. **상대는 가입하지 않아도 됩니다.**
 
 이 저장소는 `dd/` 폴더의 **LINKOS 기술백서·상용화 아키텍처 v1** 번들(197개 Feature ID)을 기준으로 구현한 웹/PWA + API 모노레포입니다.
-작업 지침은 [`CLAUDE.md`](CLAUDE.md), 기능별 구현 현황은 [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md)를 보세요.
+작업 지침은 [`CLAUDE.md`](CLAUDE.md), 기능별 구현 현황은 [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md), 품질 검증은 [`docs/QUALITY_REPORT.md`](docs/QUALITY_REPORT.md)를 보세요.
+
+## 화면 미리보기
+
+전체 31개 화면과 화면별 소스 코드 링크: **[docs/UI_PREVIEW.md](docs/UI_PREVIEW.md)**
+
+<p>
+<img src="docs/screenshots/m-guest-1-landing.webp" width="190" alt="게스트 랜딩">
+<img src="docs/screenshots/m-guest-3-review.webp" width="190" alt="보낼 항목 선택">
+<img src="docs/screenshots/m-app-exchange-qr.webp" width="190" alt="교환 QR 폴백">
+<img src="docs/screenshots/m-app-ai-match.webp" width="190" alt="Need-Offer 매칭">
+</p>
 
 ## 구성
 

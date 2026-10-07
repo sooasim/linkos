@@ -1,7 +1,9 @@
 import { analytics, growth } from "@linkos/api";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/Page";
+import Link from "next/link";
 import { getViewer } from "@/lib/server";
+import { CardViews } from "./CardViews";
 import { CHANNEL_LABEL_KO, type Channel } from "@linkos/domain";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,15 @@ export default async function InsightsPage() {
         <Stat label="Reciprocal" value={k.reciprocalRate} hint={`열람 → 회신 ${k.funnel.reciprocated}`} />
         <Stat label="Claim" value={k.claimRate} hint={`회신 → 계정 Claim ${k.funnel.claimed}`} />
         <Stat label="Follow-up 완료" value={k.followupCompletion} hint="추천 후속 행동 수행률" />
+      </div>
+      <CardViews userId={userId!} />
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <Link href="/app/reconnect" className="surface flex items-center justify-between p-4" data-testid="reconnect-link">
+          <span><span className="block text-[15px] font-semibold">이번 주 다시 연락</span><span className="block text-[13px] text-[var(--fg-mute)]">멀어지는 관계 3명 · 안부 초안</span></span>
+        </Link>
+        <Link href="/app/brief" className="surface flex items-center justify-between p-4" data-testid="brief-link">
+          <span><span className="block text-[15px] font-semibold">미팅 전 30초 브리핑</span><span className="block text-[13px] text-[var(--fg-mute)]">다가오는 약속과 상대 기록</span></span>
+        </Link>
       </div>
       <section className="surface mt-6 p-5">
         <h2 className="text-[17px] font-semibold">채널별 시도</h2>

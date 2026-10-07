@@ -5,6 +5,7 @@ import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/Page";
 import { getViewer } from "@/lib/server";
 import { AccountExtras } from "./AccountExtras";
+import { AssistantPrefs } from "./AssistantPrefs";
 import { Settings } from "./Settings";
 
 export const metadata: Metadata = { title: "설정·연동" };
@@ -23,6 +24,7 @@ export default async function SettingsPage() {
         {admin && <Link href="/app/admin" className="btn btn-ghost"><Icon name="chart" size={18} /> 관리자</Link>}
       </nav>
       <Settings />
+      <AssistantPrefs />
       <AccountExtras />
     </div>
   );

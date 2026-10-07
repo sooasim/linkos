@@ -31,6 +31,13 @@ export function EventsHub() {
           {msg && <p className="text-[13px] text-[var(--color-ember)]">{msg}</p>}
         </form>
       </section>
+      <Link href="/app/me/share#poster" className="surface flex items-center justify-between p-4" data-testid="events-poster-link">
+        <span>
+          <span className="block text-[15px] font-semibold">행사용 포스터 · 테이블 텐트 (PDF)</span>
+          <span className="block text-[13px] text-[var(--fg-mute)]">큰 단축코드로 지나가는 사람과 바로 교환 · A6 / A4</span>
+        </span>
+        <Icon name="download" />
+      </Link>
       <section>
         <h2 className="mb-3 text-[18px] font-semibold">내 행사</h2>
         {!events ? <div className="surface h-24 animate-pulse" /> : events.length === 0 ? <Empty title="참여한 행사가 없어요" /> : (

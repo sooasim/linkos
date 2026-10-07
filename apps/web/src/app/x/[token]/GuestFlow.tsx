@@ -8,6 +8,7 @@ import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
 import { celebrate } from "@/components/Fx";
 import { Icon, Logo } from "@/components/Icon";
 import { ActionCtas, type CardAction } from "@/components/ActionCtas";
+import { CardViewTracker } from "@/components/CardViewTracker";
 import { LivingCard } from "@/components/LivingCard";
 import { CARD_KEYS, type CardKey, type ReviewedCard, ReviewFields, initialFromParsed } from "@/components/ReviewFields";
 import { api } from "@/lib/client";
@@ -55,6 +56,27 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
   const first = landing.sender.name.split(" ")[0] ?? landing.sender.name;
   // F-196 CTA copy experiment (default copy when not running / not enrolled); F-188 click event = conversion metric
   const ctaVariant = useExperiment("guest_reply_cta");
+
+  // Audit G-03: guest-safe live status (SSE) — if the sender revokes or the link expires while this page is open,
+  // say so before the guest types their card. Progressive: without EventSource nothing changes.
+  const [closedLive, setClosedLive] = useState(false);
+  useEffect(() => {
+    if (!landing.acceptsReply || typeof EventSource === "undefined") return;
+    const es = new EventSource(`/api/v1/exchange/sessions/${encodeURIComponent(token)}/events`);
+    es.addEventListener("status", (ev) => {
+      try {
+        const st = JSON.parse((ev as MessageEvent).data) as { acceptsReply: boolean };
+        if (!st.acceptsReply) {
+          setClosedLive(true);
+          es.close();
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [landing.acceptsReply, token]);
 
   const [picker, setPicker] = useState<ContactsManager | null>(null);
   const [pickNote, setPickNote] = useState<string | null>(null);
@@ -163,11 +185,13 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
             <h1 id="sender-heading" className="display mt-2 text-[44px]">
               {fmt(m.senderCard, { name: first })} <em>Living Card</em>
             </h1>
-            <div className="mt-6">
-              <LivingCard card={landing.sender} locale={locale} />
-            </div>
-            <ActionCtas profileId={landing.sender.id} ownerName={first} actions={actions} />
-            {!landing.acceptsReply && <p className="mt-6 rounded-2xl border border-[var(--line)] p-4 text-[14px] text-[var(--fg-mute)]">{m.alreadyExchanged}</p>}
+            <CardViewTracker profileId={landing.sender.id} sessionId={landing.sessionId} locale={locale}>
+              <div className="mt-6">
+                <LivingCard card={landing.sender} locale={locale} />
+              </div>
+              <ActionCtas profileId={landing.sender.id} ownerName={first} actions={actions} />
+            </CardViewTracker>
+            {(!landing.acceptsReply || closedLive) && <p className="mt-6 rounded-2xl border border-[var(--line)] p-4 text-[14px] text-[var(--fg-mute)]" data-testid="link-closed">{m.alreadyExchanged}</p>}
           </section>
         )}
 
@@ -252,12 +276,12 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
       {(step === "view" || step === "review" || step === "sending") && (
         <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)]/95 to-transparent px-5 pt-10 safe-bottom">
           <div className="mx-auto w-full max-w-[520px]">
-            {step === "view" && landing.acceptsReply && (
+            {step === "view" && landing.acceptsReply && !closedLive && (
               <button onClick={startReply} className="btn btn-signal btn-lg w-full" data-testid="reply-cta">
                 <Icon name="exchange" size={20} /> {ctaVariant === "fast" ? m.replyCtaFast : m.replyCta}
               </button>
             )}
-            {step === "view" && !landing.acceptsReply && (
+            {step === "view" && (!landing.acceptsReply || closedLive) && (
               <Link href="/" className="btn btn-ghost btn-lg w-full">
                 {m.startLinkos}
               </Link>

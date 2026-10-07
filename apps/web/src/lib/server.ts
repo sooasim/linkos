@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { ApiError, type Ctx, identity, log, recordRequest, routeKey, tracing } from "@linkos/api";
+import { ApiError, type Ctx, identity, idempotencyLookup, idempotencyStore, isValidIdempotencyKey, log, recordRequest, routeKey, sha256, tracing } from "@linkos/api";
 import { generateToken } from "@linkos/domain";
 import { cookies, headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
@@ -101,8 +101,29 @@ function handle<P>(handler: Handler<P>, opts: RouteOptions) {
         else if ((req.headers.get("content-length") ?? "0") !== "0") throw new ApiError(415, "unsupported_media_type", "application/json 만 허용됩니다.");
       }
       const params = (await context.params) ?? ({} as P);
+      // Audit G-04 (CLAUDE.md §3): every create/update API honours Idempotency-Key — a retried write (offline outbox,
+      // flaky network) replays the first response instead of running twice. Scoped per caller + method + path.
+      const idemKey = mutating ? req.headers.get("idempotency-key") : null;
+      let idemScope: string | null = null;
+      if (isValidIdempotencyKey(idemKey)) {
+        const who = ctx.userId ?? `anon:${sha256(req.cookies.get(ANON_COOKIE)?.value ?? `${ctx.ip}|${ua}`).slice(0, 32)}`;
+        idemScope = `route:${who}:${req.method}:${req.nextUrl.pathname}`;
+        const hit = await idempotencyLookup<unknown>(idemScope, idemKey, body ?? null);
+        if (hit) {
+          const replay = NextResponse.json(hit.body, { status: hit.status });
+          replay.headers.set("idempotent-replayed", "true");
+          replay.headers.set("x-request-id", requestId);
+          if (rotated) replay.cookies.set(SESSION_COOKIE, rotated, cookieOptions());
+          recordRequest(key, replay.status, performance.now() - started);
+          return replay;
+        }
+      }
       const out = await handler({ req, ctx, params, body });
       const res = out instanceof NextResponse ? out : NextResponse.json(out ?? { ok: true }, { status: opts.status ?? 200 });
+      if (idemScope && res.status >= 200 && res.status < 300 && !res.headers.get("set-cookie") && (res.headers.get("content-type") ?? "").includes("application/json")) {
+        const cached = out instanceof NextResponse ? await res.clone().json().catch(() => undefined) : (out ?? { ok: true });
+        if (cached !== undefined) await idempotencyStore(idemScope, idemKey!, body ?? null, res.status, cached).catch((e) => log("warn", "idempotency.store_failed", { error: (e as Error).message }));
+      }
       if (rotated) res.cookies.set(SESSION_COOKIE, rotated, cookieOptions());
       res.headers.set("x-request-id", requestId);
       recordRequest(key, res.status, performance.now() - started);

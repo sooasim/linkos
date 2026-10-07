@@ -1,9 +1,9 @@
 // ai module — Relationship Memory search (UX-017), Need↔Offer Match (UX-018).
 // ACL 필터 후 검색(본인 소유 데이터만), 결과마다 근거(evidence) 제공, 매칭은 "ai_inferred" 라벨.
-import { type MatchProfile, type MatchResult, rankMatches, tokens } from "@linkos/domain";
-import { q } from "../lib/db";
+import { type MatchProfile, type MatchResult, announceableMatches, rankMatches, tokens } from "@linkos/domain";
+import { q, tx } from "../lib/db";
 import { unauthorized } from "../lib/errors";
-import type { Ctx } from "../lib/platform";
+import { type Ctx, emit, log } from "../lib/platform";
 import { primaryProfileId } from "./card";
 
 const YEAR_HINTS: [RegExp, (now: Date) => [Date, Date]][] = [
@@ -193,5 +193,28 @@ export async function listMatches(ctx: Ctx, opts: { eventId?: string } = {}): Pr
   const profiles = await matchProfilesFor(candidates.map((c) => c.profile_id), trust);
   const ranked = rankMatches(me, [...profiles.values()]);
   const out = ranked.map((m) => ({ ...m, company: profiles.get(m.candidateId)?.company ?? null, slug: profiles.get(m.candidateId)?.slug ?? "", contactId: contactOf.get(m.candidateId) ?? null }));
+  await announceMatches(me.id, out).catch((e) => log("warn", "match.announce_failed", { error: (e as Error).message }));
   return { subject: me.id, results: out };
+}
+
+/**
+ * Audit G-01: `match.created` (06_EVENT_CATALOG) — emitted once per subject↔candidate pair when a match first reaches
+ * the announce threshold. Payload carries reason kinds only (no free text), written in the same transaction as the ledger row.
+ */
+export async function announceMatches(subjectProfileId: string, results: MatchResult[]): Promise<number> {
+  const fresh = announceableMatches(results);
+  if (!fresh.length) return 0;
+  return tx(async (c) => {
+    let n = 0;
+    for (const m of fresh) {
+      const ins = await c.query(
+        "INSERT INTO match_announcements (subject_profile_id, candidate_profile_id, score) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+        [subjectProfileId, m.candidateId, m.score],
+      );
+      if (!ins.rowCount) continue;
+      await emit(c, "match.created", "profile", subjectProfileId, { subject_id: subjectProfileId, candidate_id: m.candidateId, score: Math.round(m.score * 1000) / 1000, reasons: [...new Set(m.reasons.map((r) => r.kind))] });
+      n++;
+    }
+    return n;
+  });
 }

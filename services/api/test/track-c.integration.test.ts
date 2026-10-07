@@ -148,7 +148,9 @@ describe("F-019 명함 원본 보관 (opt-in), signed URLs, retention", () => {
     const dl = await files.downloadSigned(id, exp, sig);
     expect(dl.contentType).toBe("image/jpeg");
     expect(sniffType(dl.bytes)).toBe("image/jpeg");
-    await expect(files.downloadSigned(id, exp, `${sig!.slice(0, -1)}0`)).rejects.toMatchObject({ status: 403 });
+    // tamper the first character (always a real change; replacing the last char with a fixed value was a no-op 1 in 16 runs)
+    const tampered = `${sig![0] === "A" ? "B" : "A"}${sig!.slice(1)}`;
+    await expect(files.downloadSigned(id, exp, tampered)).rejects.toMatchObject({ status: 403 });
     const old = urlParams(files.signedFileUrl(id, 60, Date.now() - 3600_000));
     await expect(files.downloadSigned(old.id, old.exp, old.sig)).rejects.toMatchObject({ status: 410 });
 

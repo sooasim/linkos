@@ -83,7 +83,7 @@ export default function TemplateGallery({ profile, selectedId, onSelect, full = 
     [profile.industries, profile.keywords, profile.jobTitle, profile.headline, profile.company, profile.bioShort],
   );
   const list = useMemo(() => searchTemplates(query, cat), [query, cat]);
-  const grid = full ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-2 sm:grid-cols-3";
+  const grid = full ? "grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]" : "grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]";
 
   return (
     <div className="space-y-4" data-testid="template-gallery">

@@ -18,8 +18,14 @@ export async function api<T = any>(path: string, init: { method?: string; body?:
   const idempotencyKey = init.idempotencyKey ?? (mutating && init.body !== undefined ? uid() : undefined);
   const queue = async () => {
     if (!mutating || init.offline === false) return false;
-    const { queueRequest } = await import("./offline");
-    return Boolean(await queueRequest({ method, path, body: init.body, idempotencyKey: idempotencyKey ?? uid() }));
+    try {
+      // the outbox module is lazy-loaded; offline, its chunk may not be cached — then we simply cannot queue
+      // (found by the 100-environment matrix: a guest reply sent offline surfaced "Failed to load chunk …")
+      const { queueRequest } = await import("./offline");
+      return Boolean(await queueRequest({ method, path, body: init.body, idempotencyKey: idempotencyKey ?? uid() }));
+    } catch {
+      return false;
+    }
   };
   let res: Response;
   try {

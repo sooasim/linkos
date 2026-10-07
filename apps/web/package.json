@@ -15,6 +15,7 @@
     "@fontsource/instrument-serif": "^5.2.6",
     "@linkos/api": "workspace:*",
     "@linkos/domain": "workspace:*",
+    "@simplewebauthn/browser": "^13.3.0",
     "next": "16.4.0",
     "pretendard": "^1.3.9",
     "qrcode": "^1.5.4",

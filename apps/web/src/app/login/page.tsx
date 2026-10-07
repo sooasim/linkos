@@ -18,6 +18,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       next={next}
       google={integration.googleEnabled()}
       googleConsent={sp.consent === "google"}
+      ssoConsent={sp.consent === "sso"}
       error={sp.error ?? null}
       oneTapClientId={identity.oneTapEnabled() ? (process.env.GOOGLE_CLIENT_ID ?? null) : null}
     />

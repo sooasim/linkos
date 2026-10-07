@@ -5,6 +5,8 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../lib/errors";
 import { track } from "../lib/metering";
 import { type Ctx, audit, emit } from "../lib/platform";
+import { type CardBrand, brandForProfile } from "./org";
+import { assertProfilePolicy } from "./policy";
 
 export const FIELD_TYPES = ["email", "phone", "mobile", "website", "address", "linkedin", "instagram", "x", "github", "kakao", "booking", "other"] as const;
 
@@ -153,6 +155,8 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
       const cur = await one<any>("SELECT * FROM profiles WHERE id=$1 FOR UPDATE", [id], c);
       if (!cur) throw notFound("profile");
       if (cur.user_id !== userId) throw forbidden();
+      // F-139: org card policy (min field visibility / required fields) for org-attached cards
+      await assertProfilePolicy(id, input.fields.map((f) => ({ type: f.type, visibility: f.visibility, value: f.value })), c);
       if (input.version !== undefined && input.version !== cur.version) {
         throw conflict("version_conflict", "다른 기기에서 먼저 수정되었습니다. 최신 내용을 확인하세요.", { serverVersion: cur.version });
       }
@@ -220,6 +224,8 @@ export interface PublicCard {
   needs: string[];
   deep: Record<string, unknown> | null;
   hiddenFields: number;
+  /** F-138: org branding on member cards (null unless the org enabled it and the card is attached) */
+  brand?: CardBrand | null;
 }
 
 /** Public-safe projection after ACL filtering (F-034). bio_long/deep only for trusted+. */
@@ -259,13 +265,13 @@ export async function getPublicProfileBySlug(slug: string, viewerUserId: string 
     const related = await one("SELECT 1 FROM contacts WHERE owner_user_id=$1 AND linked_user_id=$2 AND deleted_at IS NULL", [row.user_id, viewerUserId]);
     audience = granted ? "trusted" : related ? "business" : "public";
   }
-  return projectCard(p, audience);
+  return { ...projectCard(p, audience), brand: await brandForProfile(row.id) };
 }
 
 export async function getExchangeCard(profileId: string, db: Db = pool()): Promise<PublicCard> {
   const p = await loadProfile(profileId, db);
   if (!p) throw notFound("profile");
-  return projectCard(p, EXCHANGE_AUDIENCE);
+  return { ...projectCard(p, EXCHANGE_AUDIENCE), brand: await brandForProfile(profileId, db) };
 }
 
 // ---------- Access Request (F-035) ----------

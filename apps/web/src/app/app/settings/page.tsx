@@ -4,12 +4,13 @@ import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/Page";
 import { getViewer } from "@/lib/server";
+import { AccountExtras } from "./AccountExtras";
 import { Settings } from "./Settings";
 
 export const metadata: Metadata = { title: "설정·연동" };
 export const dynamic = "force-dynamic";
 
-// UX-022 Integrations + UX-023 Export + Privacy
+// UX-022 Integrations + UX-023 Export + Privacy + F-006 Passkey + F-064 Referral
 export default async function SettingsPage() {
   const { userId } = await getViewer();
   const admin = await growth.isAdmin(userId);
@@ -22,6 +23,7 @@ export default async function SettingsPage() {
         {admin && <Link href="/app/admin" className="btn btn-ghost"><Icon name="chart" size={18} /> 관리자</Link>}
       </nav>
       <Settings />
+      <AccountExtras />
     </div>
   );
 }

@@ -90,7 +90,7 @@ export async function getConnectionRoom(ctx: Ctx, roomId: string) {
   if (!r) throw notFound("room");
   const intro = r.introduction_id ? await getIntroduction(ctx, r.introduction_id) : null;
   const messages = await q<any>("SELECT id, body, created_at, author_user_id FROM connection_room_messages WHERE room_id=$1 ORDER BY created_at", [roomId]);
-  return { id: r.id, title: r.title, purpose: r.purpose, status: r.status, nextAction: r.next_action, introduction: intro, messages };
+  return { id: r.id, title: r.title, purpose: r.purpose, status: r.status, nextAction: r.next_action, introduction: intro, messages, summary: r.summary ?? null };
 }
 
 export async function postRoomMessage(ctx: Ctx, roomId: string, body: string) {

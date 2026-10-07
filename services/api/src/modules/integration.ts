@@ -6,6 +6,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, appOrigin, audit, emit, hmac, log } from "../lib/platform";
 import { recordConsents } from "./identity";
+import { assertExportAllowed } from "./policy";
 import { listContacts } from "./relationship";
 
 // ---------- credential vault (AES-256-GCM) ----------
@@ -263,6 +264,7 @@ export const exportInput = z.object({
 
 export async function createExport(ctx: Ctx, input: z.infer<typeof exportInput>) {
   if (!ctx.userId) throw unauthorized();
+  await assertExportAllowed(ctx.userId); // F-139
   const r = await one<{ id: string }>("INSERT INTO export_jobs (user_id, format, fields, kind) VALUES ($1,$2,$3,$4) RETURNING id", [ctx.userId, input.format, input.fields, input.tag ? `contacts:tag:${input.tag}` : "contacts"]);
   await audit(pool(), ctx, "export.created", "export_job", r!.id, { format: input.format, fields: input.fields });
   return { id: r!.id, status: "ready", downloadUrl: `/api/v1/exports/${r!.id}/download` };
@@ -328,6 +330,7 @@ export async function sheetsStatus(userId: string) {
 export const sheetsExportInput = exportInput.omit({ format: true });
 export async function exportToGoogleSheets(ctx: Ctx, input: z.infer<typeof sheetsExportInput>) {
   if (!ctx.userId) throw unauthorized();
+  await assertExportAllowed(ctx.userId); // F-139
   const st = await sheetsStatus(ctx.userId);
   if (!st.connected || !st.accountId) throw new ApiError(409, "google_sheets_not_connected", "Google Sheets 권한을 먼저 연결하세요.");
   const contacts = await listContacts(ctx.userId, { limit: 200, tag: input.tag });

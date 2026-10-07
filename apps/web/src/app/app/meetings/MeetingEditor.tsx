@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { AiLabel, PageHeader } from "@/components/Page";
+import { MeetingFollowThrough } from "@/components/MeetingFollowThrough";
 import { api, fmtDate } from "@/lib/client";
 import { MeetingRecorder } from "./MeetingRecorder";
 import { TranscriptPanel } from "./TranscriptPanel";
@@ -217,6 +218,8 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
                 </div>
               )}
             </section>
+
+            <MeetingFollowThrough meetingId={meeting.id} hint={extract?.result?.nextMeetingHint} />
 
             <section className="surface space-y-3 p-5" aria-label="녹음 동의">
               <h2 className="flex items-center gap-2 text-[17px] font-semibold"><Icon name="mic" size={18} /> 회의 녹음</h2>

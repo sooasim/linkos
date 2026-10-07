@@ -1,5 +1,5 @@
 // F-009 동의 분리 (서비스/개인정보/마케팅), 백서 12: exchange/integration/recording 동의는 별도 기록 + policy_version.
-export const CONSENT_TYPES = ["terms", "privacy", "marketing", "age_14", "exchange", "integration_google", "recording"] as const;
+export const CONSENT_TYPES = ["terms", "privacy", "marketing", "age_14", "exchange", "integration_google", "recording", "integration_microsoft", "integration_salesforce", "integration_hubspot", "integration_dynamics"] as const;
 export type ConsentType = (typeof CONSENT_TYPES)[number];
 
 export const POLICY_VERSIONS: Record<ConsentType, string> = {
@@ -10,6 +10,10 @@ export const POLICY_VERSIONS: Record<ConsentType, string> = {
   exchange: "2026-10-01",
   integration_google: "2026-10-01",
   recording: "2026-10-01",
+  integration_microsoft: "2026-10-01",
+  integration_salesforce: "2026-10-01",
+  integration_hubspot: "2026-10-01",
+  integration_dynamics: "2026-10-01",
 };
 
 export const REQUIRED_FOR_SIGNUP: ConsentType[] = ["terms", "privacy", "age_14"];

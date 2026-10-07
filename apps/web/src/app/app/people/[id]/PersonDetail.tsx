@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { AiLabel, Avatar, PageHeader } from "@/components/Page";
+import { ContactComms } from "@/components/ContactComms";
 import { api, fmtDate, relTime } from "@/lib/client";
 
 const FIELDS = [
@@ -311,6 +312,8 @@ export function PersonDetail({ id }: { id: string }) {
           </div>
         )}
       </section>
+
+      <ContactComms contactId={id} email={c.email} phone={c.phone} />
 
       <section className="mt-6">
         <h2 className="mb-2 text-[17px] font-semibold">메모 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 상대에게 절대 공개되지 않아요</span></h2>

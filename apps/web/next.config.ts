@@ -33,7 +33,9 @@ const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
   transpilePackages: ["@linkos/domain", "@linkos/api"],
-  serverExternalPackages: ["pg", "exceljs", "nodemailer", "sharp", "@aws-sdk/client-s3"],
+  serverExternalPackages: ["pg", "exceljs", "nodemailer", "sharp", "@aws-sdk/client-s3", "pdfkit", "web-push"],
+  // F-126: the PDF export embeds Pretendard from node_modules
+  outputFileTracingIncludes: { "/api/v1/exports/**": ["./node_modules/pretendard/dist/public/static/alternative/Pretendard-{Regular,SemiBold}.ttf"], "/api/v1/integrations/google/drive": ["./node_modules/pretendard/dist/public/static/alternative/Pretendard-{Regular,SemiBold}.ttf"] },
   poweredByHeader: false,
   async headers() {
     return [
@@ -43,6 +45,7 @@ const config: NextConfig = {
       { source: "/c/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       // org invite links carry a bearer token too (F-004)
       { source: "/join/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
+      { source: "/b/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }, { key: "Service-Worker-Allowed", value: "/" }] },
       // NFC tag landing: redirects to a fresh one-time exchange token
       { source: "/n/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },

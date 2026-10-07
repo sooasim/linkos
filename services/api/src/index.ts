@@ -34,3 +34,8 @@ export * as files from "./modules/files";
 export * as recording from "./modules/recording";
 export { sttProvider } from "./lib/stt";
 export { storageDriver } from "./lib/storage";
+export * as comms from "./modules/comms";
+export * as calendar from "./modules/calendar";
+export * as crm from "./modules/crm";
+export * as push from "./modules/push";
+export * as webhooks from "./modules/webhooks";

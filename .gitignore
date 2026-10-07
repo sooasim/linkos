@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.local
+*.tsbuildinfo
+.DS_Store
+test-results/
+playwright-report/
+.shot*.mjs

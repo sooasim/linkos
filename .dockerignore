@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+.git
+test-results
+playwright-report
+dd/*.zip
+dd/*.docx
+dd/LINKOS_Product_Blueprint_v1/*.docx
+dd/LINKOS_Product_Blueprint_v1/diagrams/*.png
+.env

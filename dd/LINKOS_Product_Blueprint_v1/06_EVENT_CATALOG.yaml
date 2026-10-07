@@ -1,0 +1,83 @@
+events:
+- name: exchange.session.created
+  producer: handoff-service
+  consumers:
+  - analytics
+  - notification
+  payload: session_id,sender_id,channel_candidates,expires_at
+- name: exchange.channel.attempted
+  producer: handoff-service
+  consumers:
+  - analytics
+  payload: session_id,channel,outcome,latency_ms
+- name: exchange.receiver.opened
+  producer: handoff-service
+  consumers:
+  - growth-service
+  - notification
+  payload: session_id,anonymous_receiver_id
+- name: exchange.completed
+  producer: relationship-service
+  consumers:
+  - growth-service
+  - integration-service
+  - ai-orchestrator
+  payload: relationship_ids,encounter_id
+- name: guest.claimed
+  producer: identity-service
+  consumers:
+  - growth-service
+  - relationship-service
+  payload: guest_claim_id,user_id
+- name: card.extraction.completed
+  producer: capture-service
+  consumers:
+  - relationship-service
+  - ai-orchestrator
+  payload: card_id,fields,confidence
+- name: contact.updated
+  producer: relationship-service
+  consumers:
+  - integration-service
+  - search-index
+  - match-service
+  payload: contact_id,changed_fields
+- name: profile.updated
+  producer: card-service
+  consumers:
+  - match-service
+  - notification
+  payload: profile_id,changed_fields,version
+- name: meeting.transcript.ready
+  producer: meeting-service
+  consumers:
+  - ai-orchestrator
+  payload: meeting_id,transcript_ref
+- name: meeting.actions.extracted
+  producer: ai-orchestrator
+  consumers:
+  - meeting-service
+  - communication-service
+  payload: meeting_id,action_item_ids
+- name: match.created
+  producer: match-service
+  consumers:
+  - notification
+  - analytics
+  payload: subject_id,candidate_id,score,reasons
+- name: followup.due
+  producer: communication-service
+  consumers:
+  - notification
+  payload: followup_id,user_id
+- name: integration.sync.failed
+  producer: integration-service
+  consumers:
+  - notification
+  - ops
+  payload: provider,job_id,error_class
+- name: privacy.deletion.requested
+  producer: security-core
+  consumers:
+  - all-data-services
+  payload: subject_id,deadline

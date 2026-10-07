@@ -1,0 +1,14 @@
+
+digraph G {
+ graph [rankdir=LR, bgcolor="white", fontname="Noto Sans CJK KR", nodesep=0.30];
+ node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=9, fillcolor="#F6F8FB", color="#3B4A5A"];
+ A [label="기존 사용자가\n일회성 교환 링크 전달"];
+ B [label="비사용자 즉시 열람\n가입 요구 없음", fillcolor="#E8F1FF"];
+ C [label="'내 명함도 보내기'\n카메라로 종이명함 촬영"];
+ D [label="AI OCR/구조화\n10~20초 검토"];
+ E [label="상호 교환 완료\n양쪽 Relationship 생성", fillcolor="#E9F7EF"];
+ F [label="계정 Claim\nGoogle/Apple/Passkey/OTP"];
+ G [label="Living Card 자동 완성\nOffer/Need 2문항"];
+ H [label="다음 사람에게 공유\n바이럴 루프"];
+ A->B->C->D->E->F->G->H->A;
+}

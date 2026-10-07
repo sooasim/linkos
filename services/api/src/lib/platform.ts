@@ -1,0 +1,112 @@
+// 공통 플랫폼 기능: outbox, audit, rate limit, idempotency, 구조화 로그(PII 리댁션)
+import { createHash, createHmac } from "node:crypto";
+import type { DomainEventName, DomainEvents } from "@linkos/domain";
+import { redact } from "@linkos/domain";
+import { type Db, one, pool, q } from "./db";
+import { tooMany } from "./errors";
+
+export interface Ctx {
+  userId: string | null;
+  ip: string;
+  userAgent: string;
+  requestId: string;
+}
+
+export function log(level: "info" | "warn" | "error", msg: string, data?: Record<string, unknown>): void {
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(data ? (redact(data) as object) : {}) });
+  if (process.env.NODE_ENV === "test" && level !== "error") return;
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else if (process.env.NODE_ENV !== "test") console.log(line);
+}
+
+/** Transactional outbox: call with the same client used for the domain write. */
+export async function emit<E extends DomainEventName>(
+  db: Db,
+  event: E,
+  aggregateType: string,
+  aggregateId: string,
+  payload: DomainEvents[E],
+): Promise<void> {
+  await db.query(
+    "INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload) VALUES ($1,$2,$3,$4)",
+    [aggregateType, aggregateId, event, JSON.stringify(payload)],
+  );
+}
+
+export async function audit(
+  db: Db,
+  ctx: Pick<Ctx, "userId">,
+  action: string,
+  entityType: string | null,
+  entityId: string | null,
+  metadata: Record<string, unknown> = {},
+  organizationId: string | null = null,
+): Promise<void> {
+  await db.query(
+    "INSERT INTO audit_logs (organization_id, actor_user_id, action, entity_type, entity_id, metadata) VALUES ($1,$2,$3,$4,$5,$6)",
+    [organizationId, ctx.userId, action, entityType, entityId, JSON.stringify(redact(metadata))],
+  );
+}
+
+/** Fixed-window rate limit stored in Postgres (works across instances). */
+export async function rateLimit(bucket: string, limit: number, windowSec: number): Promise<void> {
+  if (process.env.RATE_LIMIT_DISABLED === "1") return;
+  const now = Date.now();
+  const windowStart = new Date(now - (now % (windowSec * 1000)));
+  const row = await one<{ count: number }>(
+    `INSERT INTO rate_limits (bucket, window_start, count) VALUES ($1,$2,1)
+     ON CONFLICT (bucket, window_start) DO UPDATE SET count = rate_limits.count + 1
+     RETURNING count`,
+    [bucket, windowStart],
+  );
+  if ((row?.count ?? 0) > limit) {
+    const retry = Math.ceil((windowStart.getTime() + windowSec * 1000 - now) / 1000);
+    throw tooMany(retry);
+  }
+  if (Math.random() < 0.01) {
+    void q("DELETE FROM rate_limits WHERE window_start < now() - interval '1 day'").catch(() => undefined);
+  }
+}
+
+export function sha256(s: string): string {
+  return createHash("sha256").update(s).digest("hex");
+}
+
+export function hmac(s: string): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") throw new Error("AUTH_SECRET is required in production");
+  return createHmac("sha256", secret ?? "dev-only-secret").update(s).digest("hex");
+}
+
+/** Idempotency-Key support for create/update APIs (백서 11). */
+export async function withIdempotency<T>(
+  scope: string,
+  key: string | null,
+  requestBody: unknown,
+  run: () => Promise<{ status: number; body: T }>,
+): Promise<{ status: number; body: T; replayed: boolean }> {
+  if (!key) return { ...(await run()), replayed: false };
+  const reqHash = sha256(JSON.stringify(requestBody ?? null));
+  const existing = await one<{ request_hash: string; status_code: number; response: T }>(
+    "SELECT request_hash, status_code, response FROM idempotency_keys WHERE scope=$1 AND key=$2",
+    [scope, key],
+  );
+  if (existing) {
+    if (existing.request_hash !== reqHash) {
+      const { conflict } = await import("./errors");
+      throw conflict("idempotency_key_reused", "같은 Idempotency-Key 로 다른 요청을 보낼 수 없습니다.");
+    }
+    return { status: existing.status_code, body: existing.response, replayed: true };
+  }
+  const res = await run();
+  await pool().query(
+    "INSERT INTO idempotency_keys (scope, key, request_hash, status_code, response) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+    [scope, key, reqHash, res.status, JSON.stringify(res.body)],
+  );
+  return { ...res, replayed: false };
+}
+
+export function appOrigin(): string {
+  return (process.env.APP_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
+}

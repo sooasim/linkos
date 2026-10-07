@@ -1,0 +1,13 @@
+{
+  "title": "LINKOS Business Identity & Relationship OS",
+  "version": "1.0",
+  "date": "2026-10-08",
+  "feature_count": 197,
+  "docx": "LINKOS_기술백서_상용화_아키텍처_v1.docx",
+  "non_negotiable": [
+    "Exchange before signup",
+    "QR final fallback",
+    "No universal browser phone-to-phone NFC claim",
+    "Feature-ID traceability"
+  ]
+}

@@ -1,0 +1,26 @@
+
+digraph G {
+ graph [rankdir=LR, bgcolor="white", fontname="Noto Sans CJK KR", nodesep=0.25, ranksep=0.3];
+ node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=9, fillcolor="#F7F9FC", color="#44546A"];
+ edge [fontname="Noto Sans CJK KR", fontsize=8, color="#596780"];
+ S [label="공유 시작\n1회 탭", fillcolor="#E8F1FF"];
+ A [label="1. 앱↔앱\nBLE 근접 세션\n상호 승인"];
+ B [label="2. OS 공유\nAirDrop/Quick Share 등\n일회성 링크"];
+ C [label="3. NFC 액세서리\n카드/스티커/링\n링크 호출"];
+ D [label="4. 단축코드\nlk.to + 6자리\n브라우저 즉시 수신"];
+ E [label="5. 실험 채널\n음향/모션 페어링\nA/B 테스트"];
+ F [label="6. QR 자동 표시\n최종 범용 폴백", fillcolor="#FFF4E5"];
+ G [label="Guest Exchange\n가입 없이 수신/회신\n명함 촬영 가능", fillcolor="#E9F7EF"];
+ S->A [label="양쪽 앱"];
+ S->B [label="비사용자/웹"];
+ B->G [label="성공"];
+ A->G [label="성공"];
+ B->C [label="불가/취소"];
+ C->G [label="성공"];
+ C->D [label="불가"];
+ D->G [label="성공"];
+ D->E [label="선택"];
+ E->G [label="성공"];
+ E->F [label="실패/시간초과"];
+ F->G;
+}

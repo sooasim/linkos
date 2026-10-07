@@ -1,0 +1,30 @@
+
+digraph G {
+ graph [rankdir=TB, bgcolor="white", fontname="Noto Sans CJK KR", nodesep=0.28, ranksep=0.38];
+ node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=9, fillcolor="#F7F9FC", color="#425466"];
+ subgraph cluster_clients { label="Clients"; fontname="Noto Sans CJK KR"; Web [label="Next.js PWA"]; RN [label="React Native App"]; Clip [label="iOS App Clip\nSwiftUI"];
+ }
+ Gateway [label="API Gateway / BFF\nREST + WebSocket/SSE", fillcolor="#E8F1FF"];
+ Auth [label="Identity/Auth\nOIDC · Passkey · OTP · SSO"];
+ Handoff [label="Handoff Service\nEphemeral Sessions"];
+ Contact [label="Contact/Relationship Service"];
+ Card [label="Living Card Service"];
+ Capture [label="Capture/OCR Service"];
+ Meet [label="Meeting Service"];
+ AI [label="AI Orchestrator\nPython workers"];
+ Match [label="Match/Graph Service"];
+ Integr [label="Integration Hub\nGoogle/CRM/Calendar"];
+ Export [label="Export/Document Service"];
+ Notify [label="Notification Service"];
+ Admin [label="Enterprise/Admin Service"];
+ Bus [label="Event Bus + Outbox"];
+ DB [label="PostgreSQL + pgvector"];
+ Redis [label="Redis"];
+ Obj [label="Object Storage"];
+ Search [label="Search Index"];
+ Web->Gateway; RN->Gateway; Clip->Gateway;
+ Gateway->Auth; Gateway->Handoff; Gateway->Contact; Gateway->Card; Gateway->Capture; Gateway->Meet; Gateway->Admin;
+ Capture->AI; Meet->AI; Contact->Match; Card->Match; AI->Match; Match->Integr; Meet->Integr; Contact->Integr; Integr->Export; Contact->Notify; Meet->Notify;
+ Handoff->Bus; Contact->Bus; Meet->Bus; Integr->Bus; Bus->AI; Bus->Notify;
+ Handoff->Redis; Contact->DB; Card->DB; Meet->DB; Match->DB; Capture->Obj; Meet->Obj; AI->Obj; Contact->Search; Card->Search;
+}

@@ -1,0 +1,4 @@
+{
+  "applinks": { "details": [{ "appIDs": ["TEAMID.app.linkos.ios"], "components": [{ "/": "/x/*" }, { "/": "/c/*" }] }] },
+  "appclips": { "apps": ["TEAMID.app.linkos.ios.Clip"] }
+}

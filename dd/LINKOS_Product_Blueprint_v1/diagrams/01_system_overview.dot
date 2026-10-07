@@ -1,0 +1,16 @@
+
+digraph G {
+  graph [rankdir=TB, bgcolor="white", fontname="Noto Sans CJK KR", nodesep=0.38, ranksep=0.48];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=10, fillcolor="#F6F8FB", color="#394B59"];
+  edge [fontname="Noto Sans CJK KR", fontsize=9, color="#52606D"];
+  U [label="사용자 접점\nWeb/PWA · iOS · Android · App Clip"];
+  H [label="Adaptive Handoff Engine\n근접교환 · OS 공유 · NFC · 단축코드 · QR(최종)", fillcolor="#E8F1FF"];
+  C [label="Capture Engine\n명함/배지/사진 · OCR · AI 구조화"];
+  R [label="Relationship Core\nContact · Encounter · Relationship · Living Card"];
+  A [label="AI Intelligence\nMatch · Memory · Follow-up · Meeting Prep"];
+  M [label="Meeting Intelligence\n음성 · 전사 · 요약 · To-do · 일정"];
+  I [label="Integration Hub\nGoogle · Outlook · CRM · Export"];
+  D [label="Data Platform\nPostgreSQL/pgvector · Redis · Object Storage · Search"];
+  S [label="Security & Governance\nConsent · Field ACL · Audit · Encryption · Tenant Isolation"];
+  U -> H; U -> C; H -> R; C -> R; R -> A; R -> M; A -> I; M -> I; R -> D; A -> D; M -> D; I -> D; S -> H; S -> R; S -> I; S -> D;
+}

@@ -250,7 +250,7 @@
 | F-174 | P0 | PWA | 🟢 구현 | manifest, sw.js |  |  |  |  |
 | F-175 | P0 | Responsive UX | ✅ 구현+자동테스트 | all |  |  | tests/e2e/guest-exchange.spec.ts, tests/scenarios S-095~S-098 | iPhone SE / Android 360 / iPad / 데스크톱 |
 | F-176 | P1 | 접근성 | 🟡 부분 |  |  |  | tests/scenarios S-099,S-100 | 키보드·포커스·모션감소 자동테스트. 전체 axe 감사 미실시 |
-| F-177 | P0 | 다국어 | ✅ 구현+자동테스트 | /x/[token] 언어 선택 |  | packages/domain/src/i18n.ts (ko/en/ja 리소스, pickLocale) | packages/domain/test/domain.test.ts, tests/e2e/guest-exchange.spec.ts | 게스트 수신·링크 상태 화면 ko/en/ja(Accept-Language·?lang·쿠키). 앱 내부 화면은 한국어 — 리소스 분리 구조로 확장 |
+| F-177 | P0 | 다국어 | ✅ 구현+자동테스트 | /x/[token] 언어 선택 |  | packages/domain/src/i18n.ts (ko/en/ja 리소스, pickLocale) | packages/domain/test/i18n.test.ts, tests/e2e/i18n.spec.ts | 게스트 수신·링크 상태 화면 ko/en/ja(Accept-Language·?lang·쿠키). 앱 내부 화면은 한국어 — 리소스 분리 구조로 확장 |
 | F-178 | P1 | 오프라인 캡처 | ⬜ 미착수 |  |  |  |  |  |
 | F-179 | P0 | 재동기화 | 🟡 부분 |  |  | Idempotency-Key, sync_jobs | tests/scenarios S-026,S-027 |  |
 | F-180 | P0 | 관찰성 | 🟢 구현 |  | /metrics, /health | platform.recordRequest (Prometheus) |  | 라우트별 지연 히스토그램·오류 카운터. 분산 트레이싱 미구현 |

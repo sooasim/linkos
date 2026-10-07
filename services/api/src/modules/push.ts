@@ -9,7 +9,7 @@ export function vapidConfig(): { publicKey: string; privateKey: string; subject:
   const publicKey = process.env.VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
   if (!publicKey || !privateKey) return null;
-  return { publicKey, privateKey, subject: process.env.VAPID_SUBJECT ?? "mailto:support@linkos.app" };
+  return { publicKey, privateKey, subject: process.env.VAPID_SUBJECT || "mailto:support@linkos.app" };
 }
 
 export const subscriptionInput = z.object({

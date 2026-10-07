@@ -1,7 +1,9 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Icon } from "@/components/Icon";
+import { PushSettings } from "@/components/PushSettings";
 import { api, relTime } from "@/lib/client";
 
 const EXPORT_FIELDS = [
@@ -24,6 +26,7 @@ const FORMATS = [
   ["vcard", "vCard"],
   ["txt", "TXT"],
   ["json", "JSON"],
+  ["pdf", "PDF"],
 ] as const;
 
 function Section({ title, icon, children }: { title: string; icon: Parameters<typeof Icon>[0]["name"]; children: React.ReactNode }) {
@@ -46,6 +49,7 @@ export function Settings() {
   const [msg, setMsg] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ url: string; rows: number } | null>(null);
   const [sheetBusy, setSheetBusy] = useState(false);
+  const [drive, setDrive] = useState<{ url: string; name: string } | null>(null);
 
   const load = () => {
     api("/integrations").then(setInteg).catch(() => undefined);
@@ -62,6 +66,18 @@ export function Settings() {
   }, []);
 
   const google = integ?.accounts?.find((a: any) => a.provider === "google");
+  const connectGoogle = async (purpose: string) => {
+    const r = await api<{ url: string }>("/integrations/google/connect", { body: { purpose } });
+    window.location.href = r.url;
+  };
+  const saveDrive = async () => {
+    setDrive(null);
+    try {
+      setDrive(await api<{ url: string; name: string }>("/integrations/google/drive", { body: { format: fmt, fields } }));
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
   const marketing = me?.consents?.find((c: any) => c.consent_type === "marketing")?.granted ?? false;
 
   const doExport = async () => {
@@ -136,8 +152,43 @@ export function Settings() {
             <button className="btn btn-ghost" onClick={async () => { const r = await api<{ url: string }>("/integrations/google/connect", { body: { purpose: "sheets" } }); window.location.href = r.url; }}>Google Sheets 권한 연결</button>
           ))}
         </div>
+        {integ?.googleConfigured && (integ.google?.drive ? (
+          <button className="btn btn-ghost" disabled={!fields.length} data-testid="export-drive" onClick={saveDrive}>Google Drive에 저장</button>
+        ) : (
+          <button className="btn btn-ghost" onClick={() => connectGoogle("drive")}>Google Drive 권한 연결</button>
+        ))}
+        {drive && <p className="text-[14px]" role="status">Drive의 LINKOS 폴더에 {drive.name} 저장 · <a className="font-semibold underline" href={drive.url} target="_blank" rel="noopener noreferrer">열기</a></p>}
         {sheet && <p className="text-[14px]" role="status">{sheet.rows}명을 새 스프레드시트에 저장했어요 · <a className="font-semibold underline" href={sheet.url} target="_blank" rel="noopener noreferrer">열기</a></p>}
         <p className="text-[12.5px] text-[var(--fg-mute)]">Google Sheets는 LINKOS가 만든 파일에만 접근하는 최소 권한(drive.file)을 사용하며, 값은 수식으로 실행되지 않게 저장됩니다.</p>
+      </Section>
+
+      <Section title="메일 · 캘린더 권한" icon="mail">
+        {!integ ? null : !integ.googleConfigured ? (
+          <p className="text-[14px] text-[var(--fg-mute)]">Google OAuth가 설정되지 않아 메일은 LINKOS 메일(SMTP) 또는 메일 앱으로, 일정은 .ics 파일로 보냅니다.</p>
+        ) : (
+          <ul className="space-y-2 text-[14px]">
+            {([
+              ["gmail", "Gmail 발송 · 초안", integ.google?.gmailSend && integ.google?.gmailDrafts],
+              ["calendar", "Google Calendar 일정 · 빈 시간", integ.google?.calendar],
+              ["drive", "Google Drive 파일 저장 (LINKOS가 만든 파일만)", integ.google?.drive],
+            ] as const).map(([purpose, label, on]) => (
+              <li key={purpose} className="flex items-center justify-between gap-3">
+                <span>{label}</span>
+                {on ? <span className="chip">연결됨</span> : <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => connectGoogle(purpose)}>권한 연결</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[12.5px] text-[var(--fg-mute)]">메일은 항상 직접 확인·승인한 뒤에만 발송되고, 일정은 승인한 것만 캘린더에 등록됩니다. Outlook·CRM은 아래 연동 화면에서 연결하세요.</p>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/app/messages" className="btn btn-ghost !min-h-10 text-[14px]"><Icon name="mail" size={16} />메시지·템플릿</Link>
+          <Link href="/app/calendar" className="btn btn-ghost !min-h-10 text-[14px]"><Icon name="calendar" size={16} />일정·예약 링크</Link>
+          <Link href="/app/integrations" className="btn btn-ghost !min-h-10 text-[14px]"><Icon name="link" size={16} />CRM·웹훅</Link>
+        </div>
+      </Section>
+
+      <Section title="알림" icon="bolt">
+        <PushSettings />
       </Section>
 
       <Section title="교환 채널" icon="nfc">

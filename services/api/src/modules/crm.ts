@@ -16,7 +16,7 @@ import {
   validateMapping,
 } from "@linkos/domain";
 import { z } from "zod";
-import { type Db, one, pool, q } from "../lib/db";
+import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, conflict, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, appOrigin, audit, hmac, log } from "../lib/platform";
 import { recordConsents } from "./identity";
@@ -34,23 +34,23 @@ function fake(p: CrmProvider): string | undefined {
 }
 
 function clientId(p: CrmProvider): string | undefined {
-  return process.env[`${ENV[p]}_CLIENT_ID`] ?? (p === "dynamics" ? process.env.MICROSOFT_CLIENT_ID : undefined);
+  return process.env[`${ENV[p]}_CLIENT_ID`] || (p === "dynamics" ? process.env.MICROSOFT_CLIENT_ID : undefined);
 }
 function clientSecret(p: CrmProvider): string | undefined {
-  return process.env[`${ENV[p]}_CLIENT_SECRET`] ?? (p === "dynamics" ? process.env.MICROSOFT_CLIENT_SECRET : undefined);
+  return process.env[`${ENV[p]}_CLIENT_SECRET`] || (p === "dynamics" ? process.env.MICROSOFT_CLIENT_SECRET : undefined);
 }
 export function providerConfigured(p: CrmProvider): boolean {
   return Boolean(clientId(p) && clientSecret(p));
 }
 
 function msTenant(p: CrmProvider) {
-  return (p === "dynamics" ? process.env.DYNAMICS_TENANT : undefined) ?? process.env.MICROSOFT_TENANT ?? "common";
+  return (p === "dynamics" ? process.env.DYNAMICS_TENANT : undefined) || process.env.MICROSOFT_TENANT || "common";
 }
 
 function sfLogin(): string {
-  return fake("salesforce") ? `${fake("salesforce")}/sf` : (process.env.SALESFORCE_LOGIN_URL ?? "https://login.salesforce.com").replace(/\/$/, "");
+  return fake("salesforce") ? `${fake("salesforce")}/sf` : (process.env.SALESFORCE_LOGIN_URL || "https://login.salesforce.com").replace(/\/$/, "");
 }
-const SF_VERSION = () => process.env.SALESFORCE_API_VERSION ?? "v61.0";
+const SF_VERSION = () => process.env.SALESFORCE_API_VERSION || "v61.0";
 
 function authUrl(p: CrmProvider): string {
   const f = fake(p);
@@ -150,9 +150,7 @@ export function crmAuthUrl(p: CrmProvider, userId: string, input: z.infer<typeof
   const meta: AccountMeta = p === "dynamics" ? { orgUrl: validateOrgUrl(input.orgUrl) } : {};
   const state = signState({ p, u: userId, t: Date.now(), n: generateToken(16), m: meta });
   const params = new URLSearchParams({ client_id: clientId(p)!, redirect_uri: redirectUri(p), response_type: "code", state });
-  const scopes = scopesFor(p, meta);
-  if (p === "salesforce") params.set("scope", scopes.join(" "));
-  else params.set("scope", scopes.join(" "));
+  params.set("scope", scopesFor(p, meta).join(" "));
   if (p === "microsoft" || p === "dynamics") {
     params.set("response_mode", "query");
     params.set("prompt", "select_account");
@@ -208,7 +206,6 @@ export async function completeCrmOAuth(p: CrmProvider, ctx: Ctx, code: string, s
   const creds: Creds = { access_token: tok.access_token, refresh_token: tok.refresh_token, expires_at: Date.now() + expiresIn * 1000 };
   const scopes = (tok.scope ?? scopesFor(p, meta).join(" ")).split(/[ ,]+/).filter(Boolean);
   const userId = ctx.userId;
-  const { tx } = await import("../lib/db");
   await tx(async (c) => {
     const prev = await one<{ encrypted_credentials: Buffer | null }>("SELECT encrypted_credentials FROM integration_accounts WHERE user_id=$1 AND provider=$2", [userId, p], c);
     if (!creds.refresh_token && prev?.encrypted_credentials) creds.refresh_token = unseal<Creds>(prev.encrypted_credentials).refresh_token;

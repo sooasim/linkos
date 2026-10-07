@@ -30,7 +30,9 @@ const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
   transpilePackages: ["@linkos/domain", "@linkos/api"],
-  serverExternalPackages: ["pg", "exceljs", "nodemailer"],
+  serverExternalPackages: ["pg", "exceljs", "nodemailer", "pdfkit", "web-push"],
+  // F-126: the PDF export embeds Pretendard from node_modules
+  outputFileTracingIncludes: { "/api/v1/exports/**": ["./node_modules/pretendard/dist/public/static/alternative/Pretendard-{Regular,SemiBold}.ttf"], "/api/v1/integrations/google/drive": ["./node_modules/pretendard/dist/public/static/alternative/Pretendard-{Regular,SemiBold}.ttf"] },
   poweredByHeader: false,
   async headers() {
     return [
@@ -38,6 +40,7 @@ const config: NextConfig = {
       // exchange links carry a bearer token in the path: never send it as a referrer
       { source: "/x/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/c/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
+      { source: "/b/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }, { key: "Service-Worker-Allowed", value: "/" }] },
       { source: "/.well-known/apple-app-site-association", headers: [{ key: "Content-Type", value: "application/json" }] },
     ];

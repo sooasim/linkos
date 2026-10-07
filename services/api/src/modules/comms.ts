@@ -55,7 +55,8 @@ export async function listTemplates(userId: string) {
      ORDER BY updated_at DESC LIMIT 200`,
     [userId],
   );
-  return { variables: TEMPLATE_VARIABLES, templates: rows.map((r) => templateDto(r, userId)) };
+  const organizations = await q<{ id: string; name: string }>("SELECT o.id, o.name FROM organizations o JOIN organization_members om ON om.organization_id=o.id WHERE om.user_id=$1 AND om.status='active' ORDER BY o.name", [userId]);
+  return { variables: TEMPLATE_VARIABLES, organizations, templates: rows.map((r) => templateDto(r, userId)) };
 }
 
 export async function saveTemplate(ctx: Ctx, input: z.infer<typeof templateInput>, id?: string) {

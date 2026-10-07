@@ -11,6 +11,7 @@ import {
   isValidTimeZone,
   parseScheduleHint,
   validateWindows,
+  zonedToUtc,
 } from "@linkos/domain";
 import type pg from "pg";
 import { z } from "zod";
@@ -266,7 +267,6 @@ export async function proposeFromMeeting(ctx: Ctx, meetingId: string, input: z.i
       for (const c of llm?.output.candidates ?? []) {
         const mm = c.startLocal.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
         if (!mm) continue;
-        const { zonedToUtc } = await import("@linkos/domain");
         const start = zonedToUtc(Number(mm[1]), Number(mm[2]), Number(mm[3]), Number(mm[4]) * 60 + Number(mm[5]), input.timezone);
         if (start <= now) continue;
         slots.push({ start, end: new Date(start.getTime() + input.durationMin * 60000), confidence: Math.min(0.6, c.confidence), provenance: "ai_inferred" });

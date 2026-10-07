@@ -23,6 +23,7 @@ export function pdfFontPath(weight: "Regular" | "SemiBold" = "Regular"): string 
   } catch {
     /* ignore */
   }
+  candidates.push(join(process.cwd(), "node_modules/pretendard", FONT_REL, file)); // standalone output (traced files only)
   const hit = candidates.find((p) => existsSync(p));
   if (!hit) throw unavailable("pdf_font_missing", "PDF용 한글 글꼴(Pretendard)을 찾지 못했습니다. PDF_FONT_DIR 을 설정하세요.");
   return hit;

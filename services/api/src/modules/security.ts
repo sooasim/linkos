@@ -24,8 +24,18 @@ export async function exportMyData(ctx: Ctx) {
     q("SELECT consent_type, policy_version, granted, created_at FROM consent_records WHERE subject_user_id=$1 ORDER BY created_at", [u]),
     q("SELECT id, state, selected_channel, created_at, expires_at FROM exchange_sessions WHERE sender_user_id=$1", [u]),
   ]);
+  // Track B data (communication, scheduling, integrations) — secrets/tokens are never exported
+  const [messages, templates, sequences, calendarCandidates, bookingPages, webhookEndpoints, fieldMappings] = await Promise.all([
+    q("SELECT id, contact_id, channel, to_address, subject, body, language, provenance, status, provider, sent_at, created_at FROM messages WHERE owner_user_id=$1", [u]),
+    q("SELECT id, scope, name, channel, language, subject, body, created_at FROM message_templates WHERE owner_user_id=$1", [u]),
+    q("SELECT id, contact_id, name, status, created_at FROM followup_sequences WHERE owner_user_id=$1", [u]),
+    q("SELECT id, source, title, starts_at, ends_at, status, provenance, attendees, requester_name, requester_email, created_at FROM calendar_candidates WHERE owner_user_id=$1", [u]),
+    q("SELECT id, title, duration_min, timezone, windows, active, created_at FROM booking_pages WHERE owner_user_id=$1", [u]),
+    q("SELECT id, url, events, active, created_at FROM webhook_endpoints WHERE owner_user_id=$1", [u]),
+    q("SELECT provider, object_type, mapping, updated_at FROM crm_field_mappings WHERE owner_user_id=$1", [u]),
+  ]);
   await audit(pool(), ctx, "privacy.export", "user", u);
-  return { exportedAt: new Date().toISOString(), format: "linkos-portable-v1", user, profiles, profileFields: fields, offers, needs, contacts, encounters, notes, meetings, actionItems: actions, followups, consents, exchangeSessions: exchanges };
+  return { exportedAt: new Date().toISOString(), format: "linkos-portable-v1", user, profiles, profileFields: fields, offers, needs, contacts, encounters, notes, meetings, actionItems: actions, followups, consents, exchangeSessions: exchanges, messages, templates, sequences, calendarCandidates, bookingPages, webhookEndpoints, fieldMappings };
 }
 
 /** POST /me/privacy/delete — revoke sessions now, deactivate, hard-delete after the grace period (worker). */
@@ -37,6 +47,10 @@ export async function requestDeletion(ctx: Ctx) {
     const r = await one<{ id: string }>("INSERT INTO deletion_requests (user_id, deadline) VALUES ($1,$2) RETURNING id", [u, deadline], c);
     await c.query("UPDATE users SET status='pending_deletion', updated_at=now() WHERE id=$1", [u]);
     await c.query("UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL", [u]);
+    // stop outward-facing surfaces immediately: public booking links, outgoing webhooks, push devices
+    await c.query("UPDATE booking_pages SET active=false WHERE owner_user_id=$1", [u]);
+    await c.query("UPDATE webhook_endpoints SET active=false, disabled_reason='account_deletion' WHERE owner_user_id=$1", [u]);
+    await c.query("DELETE FROM push_subscriptions WHERE user_id=$1", [u]);
     await c.query("UPDATE exchange_sessions SET state='REVOKED', revoked_at=now(), short_code=NULL WHERE sender_user_id=$1 AND state NOT IN ('EXCHANGED','CLAIM_PENDING','CLAIMED','SYNCED','REVOKED','EXPIRED','CANCELLED')", [u]);
     await emit(c, "privacy.deletion.requested", "user", u, { subject_id: u, deadline: deadline.toISOString() });
     await audit(c, ctx, "privacy.delete_requested", "user", u, { deadline: deadline.toISOString() });

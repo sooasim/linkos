@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { GoogleOneTap, PENDING_ONETAP_KEY } from "@/components/GoogleOneTap";
 import { Icon, Logo } from "@/components/Icon";
 import { ClientError, api } from "@/lib/client";
 
@@ -11,7 +12,19 @@ const REQUIRED = [
   { type: "age_14", label: "만 14세 이상입니다" },
 ] as const;
 
-export function LoginForm({ next, google, googleConsent, error: initialError }: { next: string; google: boolean; googleConsent: boolean; error: string | null }) {
+export function LoginForm({
+  next,
+  google,
+  googleConsent,
+  error: initialError,
+  oneTapClientId = null,
+}: {
+  next: string;
+  google: boolean;
+  googleConsent: boolean;
+  error: string | null;
+  oneTapClientId?: string | null;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent ? "consent" : "email");
   const [email, setEmail] = useState("");
@@ -22,6 +35,42 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError === "google_denied" ? "Google 로그인이 취소되었습니다." : null);
   const allRequired = REQUIRED.every((r) => checks[r.type]);
+  // F-060 One Tap: credential waiting for the consent step (new users only)
+  const [oneTapCredential, setOneTapCredential] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem(PENDING_ONETAP_KEY);
+      if (pending) {
+        sessionStorage.removeItem(PENDING_ONETAP_KEY);
+        setOneTapCredential(pending);
+        setStep("consent");
+      }
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
+
+  const oneTap = async (credential: string, withConsents: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const consents = withConsents ? [...REQUIRED.map((r) => ({ type: r.type, granted: true })), { type: "marketing", granted: marketing }] : [];
+      await api("/auth/google/onetap", { body: { credential, consents } });
+      router.replace(next);
+      router.refresh();
+    } catch (err) {
+      if (err instanceof ClientError && err.code === "consent_required") {
+        setOneTapCredential(credential);
+        setStep("consent");
+      } else {
+        setOneTapCredential(null);
+        setError((err as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const requestCode = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -61,6 +110,7 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
 
   return (
     <main className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
+      {oneTapClientId && step === "email" && <GoogleOneTap clientId={oneTapClientId} onCredential={(c) => oneTap(c, false)} />}
       <aside className="stage-ink grain relative hidden overflow-hidden p-12 lg:flex lg:flex-col">
         <Logo />
         <div className="my-auto">
@@ -174,7 +224,11 @@ export function LoginForm({ next, google, googleConsent, error: initialError }: 
                   </label>
                 </li>
               </ul>
-              {googleConsent || (!code && google) ? (
+              {oneTapCredential ? (
+                <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired || busy} onClick={() => oneTap(oneTapCredential, true)} data-testid="onetap-consent">
+                  동의하고 Google 계정으로 가입
+                </button>
+              ) : googleConsent || (!code && google) ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={continueGoogle}>
                   동의하고 Google로 계속
                 </button>

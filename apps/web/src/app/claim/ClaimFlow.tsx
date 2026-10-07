@@ -3,11 +3,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, Logo } from "@/components/Icon";
+import { GoogleOneTap, PENDING_ONETAP_KEY } from "@/components/GoogleOneTap";
 import { CardFace } from "@/components/LivingCard";
-import { api } from "@/lib/client";
+import { ClientError, api } from "@/lib/client";
 
-export function ClaimFlow({ signedIn }: { signedIn: boolean }) {
+export function ClaimFlow({ signedIn, oneTapClientId = null }: { signedIn: boolean; oneTapClientId?: string | null }) {
   const router = useRouter();
+  // F-060 One Tap: sign in right here (Claim comes after the exchange); new users finish consents on /login.
+  const onOneTap = async (credential: string) => {
+    try {
+      await api("/auth/google/onetap", { body: { credential, consents: [] } });
+      window.location.reload();
+    } catch (e) {
+      if (e instanceof ClientError && e.code === "consent_required") {
+        try {
+          sessionStorage.setItem(PENDING_ONETAP_KEY, credential);
+        } catch {
+          /* storage blocked → plain login */
+        }
+        router.push("/login?next=/claim");
+      } else setError((e as Error).message);
+    }
+  };
   const [token, setToken] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ guest: Record<string, string | null>; senderName: string | null; claimed: boolean } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "claiming" | "claimed" | "missing" | "error">("loading");
@@ -54,6 +71,7 @@ export function ClaimFlow({ signedIn }: { signedIn: boolean }) {
   const g = preview?.guest ?? {};
   return (
     <main className="stage-ink grain min-h-dvh px-5 pb-12 pt-5">
+      {!signedIn && oneTapClientId && state === "ready" && <GoogleOneTap clientId={oneTapClientId} onCredential={onOneTap} />}
       <div className="mx-auto max-w-[520px]">
         <Logo />
         {state === "missing" && (

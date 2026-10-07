@@ -6,7 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { Avatar } from "@/components/Page";
 import { Qr } from "@/components/Qr";
+import { ReceiveMode } from "@/components/ReceiveMode";
+import { ACOUSTIC_EXPERIMENT, acousticSupported, playShortCode } from "@/lib/acoustic";
 import { api, uid } from "@/lib/client";
+import { NfcTags } from "./NfcTags";
 
 interface Session {
   sessionId: string;
@@ -27,7 +30,7 @@ interface Status {
 
 const CH_ICON: Record<Channel, IconName> = { ble_proximity: "bolt", os_share: "share", nfc_accessory: "nfc", short_code: "code", web_rendezvous: "link", acoustic: "bolt", local_receipt: "lock", qr: "qr" };
 
-function detectCapabilities() {
+function detectCapabilities(peerOnWebScreen: boolean) {
   const nav = navigator as Navigator & { share?: unknown };
   let nfc = false;
   try {
@@ -45,8 +48,109 @@ function detectCapabilities() {
     camera: !!navigator.mediaDevices,
     online: navigator.onLine,
     pwaInstalled: window.matchMedia?.("(display-mode: standalone)").matches ?? false,
-    receiverMode: "unknown" as const,
+    // F-046: the other person opened LINKOS "받기 모드" → server rendezvous (never browser P2P)
+    receiverMode: peerOnWebScreen ? ("web_exchange_screen" as const) : ("unknown" as const),
+    // F-047 (P3 experiment, flag-gated)
+    experimentalAcoustic: ACOUSTIC_EXPERIMENT && acousticSupported(),
   };
+}
+
+/** F-046 sender side: enter the 4 digits the receiver reads out, then confirm who it is. */
+function RendezvousSender({ session, onFail }: { session: Session; onFail: () => void }) {
+  const [code, setCode] = useState("");
+  const [match, setMatch] = useState<{ rendezvousId: string; receiverHint: string | null } | null>(null);
+  const [state, setState] = useState<"idle" | "busy" | "confirmed">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const find = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setState("busy");
+    try {
+      setMatch(await api(`/exchange/manage/${session.sessionId}/rendezvous`, { body: { code } }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setState("idle");
+    }
+  };
+  const decide = async (accept: boolean) => {
+    if (!match) return;
+    setState("busy");
+    try {
+      await api(`/exchange/manage/${session.sessionId}/rendezvous/confirm`, { body: { rendezvousId: match.rendezvousId, token: session.token, accept } });
+      if (accept) setState("confirmed");
+      else {
+        setMatch(null);
+        setCode("");
+        setState("idle");
+      }
+    } catch (err) {
+      setError((err as Error).message);
+      setMatch(null);
+      setState("idle");
+    }
+  };
+
+  if (state === "confirmed") return <p className="text-center text-[15px] font-semibold">연결했어요 — 상대 화면에 내 카드가 열립니다</p>;
+  return (
+    <div className="text-center" data-testid="rendezvous-sender">
+      {!match ? (
+        <form onSubmit={find}>
+          <p className="text-[15px] text-[var(--fg-mute)]">상대가 LINKOS 받기 모드에서 불러주는 4자리 숫자를 입력하세요</p>
+          <input
+            className="num field mt-4 text-center !text-[32px] font-semibold tracking-[0.4em]"
+            inputMode="numeric"
+            maxLength={4}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            aria-label="상대의 4자리 페어링 코드"
+          />
+          <button className="btn btn-signal btn-lg mt-3 w-full" disabled={code.length !== 4 || state === "busy"}>
+            상대 찾기
+          </button>
+        </form>
+      ) : (
+        <div>
+          <p className="text-[14px] text-[var(--fg-mute)]">이 사람이 맞나요?</p>
+          <p className="mt-1 text-[22px] font-semibold">{match.receiverHint ?? "이름 없는 기기"}</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button onClick={() => decide(false)} className="btn btn-ghost" disabled={state === "busy"}>아니요</button>
+            <button onClick={() => decide(true)} className="btn btn-signal" disabled={state === "busy"} data-testid="rendezvous-confirm">맞아요, 보내기</button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-[14px] text-[var(--color-ember)]">
+          {error} <button onClick={onFail} className="underline">다른 방법</button>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** F-047 experiment: play the short code as near-ultrasonic tones for a receiver in "소리로 받기". */
+function AcousticSender({ code }: { code: string }) {
+  const [state, setState] = useState<"idle" | "playing" | "failed">("idle");
+  const play = async () => {
+    setState("playing");
+    try {
+      await playShortCode(code);
+      setState("idle");
+    } catch {
+      setState("failed");
+    }
+  };
+  return (
+    <div className="text-center">
+      <span className="chip">실험 기능</span>
+      <p className="mt-2 text-[15px] text-[var(--fg-mute)]">상대가 받기 모드에서 "소리로 받기"를 누르면, 폰을 가까이 두고 재생하세요. 실패하면 단축코드를 불러 주세요.</p>
+      <button onClick={play} disabled={state === "playing"} className="btn btn-signal btn-lg mt-4 w-full">
+        <Icon name="bolt" size={20} /> {state === "playing" ? "재생 중…" : "소리로 보내기"}
+      </button>
+      {state === "failed" && <p role="alert" className="mt-2 text-[13px] text-[var(--color-ember)]">이 브라우저에서 재생할 수 없어요.</p>}
+    </div>
+  );
 }
 
 export function ExchangeConsole({ group, name }: { group: boolean; name: string }) {
@@ -57,24 +161,27 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
   const [place, setPlace] = useState("");
   const [deadline, setDeadline] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [peerOnWeb, setPeerOnWeb] = useState(false);
+  const [receiving, setReceiving] = useState(false);
   const startedAt = useRef(Date.now());
 
   const start = useCallback(async () => {
     setError(null);
     setStatus(null);
     try {
-      const s = await api<Session>("/exchange/sessions", { body: { capabilities: detectCapabilities(), group, context: place ? { placeLabel: place } : {} }, idempotencyKey: uid() });
+      const s = await api<Session>("/exchange/sessions", { body: { capabilities: detectCapabilities(peerOnWeb), group, context: place ? { placeLabel: place } : {} }, idempotencyKey: uid() });
       setSession(s);
       setChannel(s.channelPlan[0] ?? "qr");
       startedAt.current = Date.now();
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [group, place]);
+  }, [group, place, peerOnWeb]);
 
   // auto-advance timer per channel (F-048)
   useEffect(() => {
-    if (!channel || channel === "qr") return setDeadline(null);
+    // QR never fails over; rendezvous waits for the user typing the spoken code (they can still tap "다른 방법")
+    if (!channel || channel === "qr" || channel === "web_rendezvous") return setDeadline(null);
     setDeadline(Date.now() + CHANNEL_TIMEOUT_MS[channel]);
   }, [channel]);
   useEffect(() => {
@@ -147,6 +254,14 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
   const done = status && ["EXCHANGED", "CLAIM_PENDING", "CLAIMED", "SYNCED"].includes(status.state);
   const remaining = deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null;
 
+  if (!session && receiving) {
+    return (
+      <div className="mt-8 animate-rise">
+        <ReceiveMode onClose={() => setReceiving(false)} />
+      </div>
+    );
+  }
+
   if (!session) {
     return (
       <div className="mt-8 space-y-4 animate-rise delay-1">
@@ -154,11 +269,30 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
           <span className="label">어디서 만났나요? (선택)</span>
           <input className="field" placeholder="예: 코엑스 메디컬 엑스포" value={place} onChange={(e) => setPlace(e.target.value)} maxLength={120} />
         </label>
+        {!group && (
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--line)] p-3 text-[14px]">
+            <input type="checkbox" className="mt-0.5 size-5 shrink-0" checked={peerOnWeb} onChange={(e) => setPeerOnWeb(e.target.checked)} data-testid="peer-on-web" />
+            <span>상대도 LINKOS 교환 화면의 <b>받기 모드</b>를 열었어요 (4자리 코드로 페어링)</span>
+          </label>
+        )}
         <button onClick={start} className="btn btn-signal btn-lg w-full" data-testid="start-exchange">
           <Icon name="exchange" size={20} /> {group ? "그룹 교환 링크 만들기" : "교환 시작"}
         </button>
+        {!group && (
+          <button onClick={() => setReceiving(true)} className="btn btn-ghost w-full" data-testid="receive-mode-start">
+            <Icon name="download" size={18} /> 받기 모드 — 상대 화면에서 받기
+          </button>
+        )}
         <p className="text-center text-[12.5px] text-[var(--fg-mute)]">상대는 가입 없이 열어보고 바로 명함을 보낼 수 있어요. 링크는 {group ? "12시간" : "15분"} 후 만료됩니다.</p>
         {error && <p role="alert" className="text-[14px] text-[var(--color-ember)]">{error}</p>}
+        <details className="surface p-4">
+          <summary className="flex cursor-pointer items-center gap-2 text-[14px] font-semibold">
+            <Icon name="nfc" size={16} /> NFC 카드·스티커 관리
+          </summary>
+          <div className="mt-3">
+            <NfcTags />
+          </div>
+        </details>
       </div>
     );
   }
@@ -224,9 +358,19 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
             <div className="text-center">
               <Icon name="nfc" size={40} className="mx-auto" />
               <p className="mt-3 text-[16px] font-semibold">NFC 카드를 상대 폰 뒷면에 대세요</p>
-              <p className="mt-1 text-[14px] text-[var(--fg-mute)]">카드에 기록된 내 Living Card 링크가 상대 브라우저에서 열립니다.</p>
+              <p className="mt-1 text-[14px] text-[var(--fg-mute)]">태그할 때마다 1회용 교환 링크가 새로 만들어져 상대 브라우저에서 열립니다.</p>
+              <details className="mt-4 text-left">
+                <summary className="cursor-pointer text-[13px] font-semibold">태그 관리</summary>
+                <div className="mt-2">
+                  <NfcTags />
+                </div>
+              </details>
             </div>
           )}
+
+          {channel === "web_rendezvous" && <RendezvousSender session={session} onFail={() => advance("failed", "rendezvous_failed")} />}
+
+          {channel === "acoustic" && session.shortCode && <AcousticSender code={session.shortCode} />}
 
           {channel === "short_code" && session.shortCode && (
             <div className="text-center">

@@ -1,7 +1,7 @@
 "use client";
 // UX-005~UX-008: 수신 → "내 명함도 보내기" → 촬영/직접입력 → 검토·동의 → 교환 완료 → (그 다음에) Claim
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
 import { Icon, Logo } from "@/components/Icon";
 import { LivingCard } from "@/components/LivingCard";
@@ -20,6 +20,15 @@ type Landing = {
 
 type Step = "view" | "capture" | "review" | "sending" | "done";
 
+// F-057 Contact Picker 보조: Android Chrome 등 지원 브라우저에서만. 사용자가 고른 연락처 1개만 이 화면에 채운다(전송은 검토·동의 후).
+type PickedContact = { name?: string[]; email?: string[]; tel?: string[] };
+type ContactsManager = { select: (props: string[], opts?: { multiple?: boolean }) => Promise<PickedContact[]> };
+function contactPicker(): ContactsManager | null {
+  if (typeof window === "undefined" || !("ContactsManager" in window)) return null;
+  const c = (navigator as Navigator & { contacts?: ContactsManager }).contacts;
+  return c && typeof c.select === "function" ? c : null;
+}
+
 const emptyCard = () => Object.fromEntries(CARD_KEYS.map((k) => [k, ""])) as Record<CardKey, string>;
 
 export function GuestFlow({ token, landing, signedIn, viewerCard }: { token: string; landing: Landing; signedIn: boolean; viewerCard: Record<string, string> | null }) {
@@ -33,6 +42,29 @@ export function GuestFlow({ token, landing, signedIn, viewerCard }: { token: str
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ claimToken: string | null } | null>(null);
   const first = landing.sender.name.split(" ")[0] ?? landing.sender.name;
+  const [picker, setPicker] = useState<ContactsManager | null>(null);
+  const [pickNote, setPickNote] = useState<string | null>(null);
+  useEffect(() => setPicker(contactPicker()), []);
+
+  const pickFromContacts = async () => {
+    if (!picker) return;
+    setPickNote(null);
+    try {
+      const [c] = await picker.select(["name", "email", "tel"], { multiple: false });
+      if (!c) return;
+      const base = { ...initial, ...(reviewed?.card ?? {}) } as Record<CardKey, string>;
+      setInitial({
+        ...base,
+        fullName: c.name?.[0]?.trim() || base.fullName,
+        email: c.email?.[0]?.trim() || base.email,
+        phone: c.tel?.[0]?.trim() || base.phone,
+      });
+      setConf({});
+      setPickNote("연락처에서 채웠어요. 보내기 전에 확인하세요.");
+    } catch {
+      setPickNote("연락처를 불러오지 못했어요. 직접 입력해 주세요.");
+    }
+  };
 
   const startReply = () => {
     if (viewerCard) {
@@ -133,6 +165,12 @@ export function GuestFlow({ token, landing, signedIn, viewerCard }: { token: str
               보낼 내용을 <em>확인</em>
             </h1>
             <p className="mt-3 text-[15px] text-[var(--fg-mute)]">체크한 항목만 {first}님에게 전달됩니다.</p>
+            {picker && (
+              <button type="button" onClick={pickFromContacts} className="btn btn-ghost mt-4 w-full" data-testid="contact-picker">
+                <Icon name="people" size={18} /> 내 연락처에서 불러오기
+              </button>
+            )}
+            {pickNote && <p className="mt-2 text-[13px] text-[var(--fg-mute)]" role="status">{pickNote}</p>}
             <div className="mt-5">
               <ReviewFields key={JSON.stringify(initial)} initial={initial} confidence={conf} selectable onChange={setReviewed} />
             </div>

@@ -1,4 +1,5 @@
 import pg from "pg";
+import { ApiError } from "./errors";
 import { tracingEnabled, withSpan } from "./tracing";
 
 export type Db = pg.Pool | pg.PoolClient;
@@ -31,11 +32,32 @@ export function pool(): pg.Pool {
   return globalThis.__linkosPool;
 }
 
+/**
+ * A malformed id/date in a path or body ("/contacts/not-a-uuid") reaches Postgres as a bad cast. That is the
+ * caller's mistake, not a server fault: map it to a 4xx instead of letting the route layer answer 500.
+ * (22P02 invalid_text_representation, 22007 invalid_datetime_format, 22008 datetime_field_overflow)
+ */
+export function mapInputError(e: unknown): unknown {
+  const code = (e as { code?: string })?.code;
+  const msg = String((e as Error)?.message ?? "");
+  if (code === "22P02" && /type uuid/.test(msg)) return new ApiError(404, "not_found", "resource not found");
+  if (code === "22P02" || code === "22007" || code === "22008") return new ApiError(400, "invalid_input", "입력값 형식이 올바르지 않습니다.");
+  return e;
+}
+
 export async function q<T extends pg.QueryResultRow = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
   db: Db = pool(),
 ): Promise<T[]> {
+  try {
+    return await runQuery<T>(sql, params, db);
+  } catch (e) {
+    throw mapInputError(e);
+  }
+}
+
+async function runQuery<T extends pg.QueryResultRow>(sql: string, params: unknown[], db: Db): Promise<T[]> {
   if (!tracingEnabled()) return (await db.query<T>(sql, params)).rows;
   // F-180: DB span (statement text only — values are bound parameters, never logged)
   return withSpan("db.query", { "db.system": "postgresql", "db.statement": sql.replace(/\s+/g, " ").trim().slice(0, 300) }, async (span) => {
@@ -69,7 +91,7 @@ async function runTx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
     return out;
   } catch (e) {
     await client.query("ROLLBACK").catch(() => undefined);
-    throw e;
+    throw mapInputError(e);
   } finally {
     client.release();
   }

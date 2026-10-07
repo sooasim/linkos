@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { ApiError, type Ctx, identity, log, recordRequest, routeKey, tracing } from "@linkos/api";
+import { ApiError, type Ctx, identity, log, mapInputError, recordRequest, routeKey, tracing } from "@linkos/api";
 import { generateToken } from "@linkos/domain";
 import { cookies, headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
@@ -116,7 +116,10 @@ function handle<P>(handler: Handler<P>, opts: RouteOptions) {
   };
 }
 
-export function errorResponse(e: unknown, traceId: string) {
+export function errorResponse(e: unknown, traceId: string): NextResponse {
+  // malformed ids/dates that reached Postgres directly (pool.query) are client errors, not 500s
+  const mapped = mapInputError(e);
+  if (mapped !== e) return errorResponse(mapped, traceId);
   if (e instanceof ApiError) {
     const res = NextResponse.json({ code: e.code, message: e.message, traceId, details: e.details ?? undefined }, { status: e.status });
     if (e.status === 429 && (e.details as { retryAfter?: number })?.retryAfter) res.headers.set("retry-after", String((e.details as { retryAfter: number }).retryAfter));

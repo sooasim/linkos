@@ -5,6 +5,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
 import { recordConsents } from "./identity";
+import { assertRecordingPolicy } from "./policy";
 import { primaryProfileId, loadProfile } from "./card";
 import { textSimilarity } from "@linkos/domain";
 
@@ -123,6 +124,8 @@ export async function setRecordingConsent(ctx: Ctx, meetingId: string, body: { o
   return tx(async (c) => {
     const m = await one<{ id: string }>("SELECT id FROM meetings WHERE id=$1 AND owner_user_id=$2 FOR UPDATE", [meetingId, ctx.userId], c);
     if (!m) throw notFound("meeting");
+    // F-139: an org may require all-party recording consent for its members
+    await assertRecordingPolicy(ctx.userId!, body.policy, c);
     await recordConsents(c, ctx.userId!, [{ type: "recording", granted: body.ownerConsent }], { meetingId, participantsAcknowledged: body.participantsAcknowledged, policy: body.policy });
     const gate = canStartRecording({ ownerConsented: body.ownerConsent, participantsAcknowledged: body.participantsAcknowledged, policy: body.policy });
     await c.query("UPDATE meetings SET consent_status=$2, consent_policy=$3 WHERE id=$1", [meetingId, gate.ok ? "granted" : "denied", body.policy]);

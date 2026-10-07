@@ -2,6 +2,7 @@
 import { one, pool, q, tx } from "../lib/db";
 import { unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
+import { departAllOrgs } from "./org";
 
 export const DELETION_GRACE_DAYS = 7;
 
@@ -49,6 +50,8 @@ export async function processDeletions(): Promise<number> {
   const due = await q<{ id: string; user_id: string }>("SELECT id, user_id FROM deletion_requests WHERE status='scheduled' AND deadline <= now() LIMIT 20");
   for (const d of due) {
     await tx(async (c) => {
+      // F-132: company-owned leads are reassigned inside each org before the account (and its personal data) is removed
+      await departAllOrgs(c, d.user_id);
       await c.query("UPDATE contacts SET linked_user_id=NULL WHERE linked_user_id=$1", [d.user_id]);
       await c.query("DELETE FROM users WHERE id=$1", [d.user_id]);
       await c.query("UPDATE deletion_requests SET status='completed', completed_at=now() WHERE id=$1", [d.id]);

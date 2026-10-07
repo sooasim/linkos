@@ -102,6 +102,15 @@ export async function upsertUserByEmail(
     : await one<UserRow>("SELECT * FROM users WHERE email=$1", [email], c);
   let isNew = false;
   if (user && user.status !== "active") throw new ApiError(403, "account_disabled", "비활성화된 계정입니다.");
+  if (user && !isNew) {
+    // F-008: accounts provisioned by an org's SCIM never accepted terms themselves → require consent at first sign-in
+    const provisioned = await one("SELECT 1 FROM identities WHERE user_id=$1 AND provider LIKE 'scim:%' LIMIT 1", [user.id], c);
+    if (provisioned && !(await one("SELECT 1 FROM consent_records WHERE subject_user_id=$1 AND consent_type='terms' AND granted LIMIT 1", [user.id], c))) {
+      const missing = missingRequiredConsents(consents);
+      if (missing.length) throw new ApiError(422, "consent_required", "필수 약관 동의가 필요합니다.", { missing });
+      await recordConsents(c, user.id, consents, { at: "first_login_after_provisioning" });
+    }
+  }
   if (!user) {
     const missing = missingRequiredConsents(consents);
     if (missing.length) throw new ApiError(422, "consent_required", "필수 약관 동의가 필요합니다.", { missing });

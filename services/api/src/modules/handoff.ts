@@ -24,6 +24,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, conflict, gone, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, appOrigin, audit, emit, rateLimit, sha256 } from "../lib/platform";
 import { type PublicCard, getExchangeCard, loadProfile, primaryProfileId, saveProfile } from "./card";
+import { recordReferral } from "./growth";
 import { recordConsents } from "./identity";
 import { insertContact } from "./relationship";
 
@@ -490,6 +491,10 @@ export async function claimGuest(ctx: Ctx, claimToken: string) {
     if (g.exchange_session_id) {
       const s = await one<SessionRow>("SELECT * FROM exchange_sessions WHERE id=$1 FOR UPDATE", [g.exchange_session_id], c);
       if (s && canTransition(s.state, "CLAIMED")) await setState(c, s, "CLAIMED");
+    }
+    // F-064: privacy-safe referral attribution (sender brought this NEW account in via the exchange)
+    if (d.sender?.userId) {
+      await recordReferral(c, { referrerId: d.sender.userId, referredId: userId, source: "exchange_claim", touchpointAt: (g as { created_at?: Date }).created_at ?? new Date(), exchangeSessionId: g.exchange_session_id });
     }
     await emit(c, "guest.claimed", "guest_claim", g.id, { guest_claim_id: g.id, user_id: userId });
     await audit(c, ctx, "guest.claimed", "guest_claim", g.id);

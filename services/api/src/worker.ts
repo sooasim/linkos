@@ -6,6 +6,9 @@ import { emit, log } from "./lib/platform";
 import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
 import { processDeletions } from "./modules/security";
+import { processRetention } from "./modules/enterprise";
+import { processReferralRewards } from "./modules/growth";
+import { processStrengths } from "./modules/network";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -82,7 +85,12 @@ export async function tick() {
   const s = await processSyncJobs();
   const d = await processDeletions();
   await expireSessions();
-  return { relayed: n, synced: s, deleted: d };
+  const retained = await processRetention(); // F-136
+  const strengths = await processStrengths(); // F-074
+  const rewards = await processReferralRewards(); // F-197 (no-op unless REFERRAL_REWARDS_ENABLED=1)
+  await q("DELETE FROM webauthn_challenges WHERE expires_at < now() - interval '1 day'");
+  await q("DELETE FROM sso_login_states WHERE expires_at < now() - interval '1 day'");
+  return { relayed: n, synced: s, deleted: d, retained, strengths, rewards };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

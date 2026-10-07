@@ -11,10 +11,10 @@ import { assertProfilePolicy } from "./policy";
 
 export const FIELD_TYPES = ["email", "phone", "mobile", "website", "address", "linkedin", "instagram", "x", "github", "kakao", "booking", "other"] as const;
 
-/** F-021 glyph reference: "i:<icon id>" or "e:<emoji>" — existence is checked by validateCardDesign. */
+/** X-008 glyph reference: "i:<icon id>" or "e:<emoji>" — existence is checked by validateCardDesign. */
 export const glyphRef = z.string().min(3).max(40).regex(/^(i:[a-z0-9-]+|e:\S+)$/u);
 
-/** F-021 card design options (OpenAPI: CardTemplateOptions). Semantics (palette, bank membership) → validateCardDesign. */
+/** X-008 card design options (OpenAPI: CardTemplateOptions). Semantics (palette, bank membership) → validateCardDesign. */
 export const templateOptionsInput = z
   .object({
     accent: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
@@ -37,9 +37,9 @@ export const profileInput = z.object({
   industries: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
   regions: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
   theme: z.enum(["ink", "paper", "signal", "ember"]).default("ink"),
-  /** F-021 template id (null clears, omitted keeps the current one) */
+  /** X-008 template id (null clears, omitted keeps the current one) */
   templateId: z.string().regex(/^[a-z][a-z0-9-]{2,40}$/).nullish(),
-  /** F-021 design options (omitted keeps the current ones) */
+  /** X-008 design options (omitted keeps the current ones) */
   templateOptions: templateOptionsInput.optional(),
   matchingOptIn: z.boolean().default(true),
   deep: z
@@ -239,7 +239,7 @@ function designError(errors: string[]) {
   return badRequest(unknown ? "unknown_template" : "invalid_card_design", unknown ? "존재하지 않는 명함 템플릿입니다." : "명함 디자인 옵션을 확인하세요.", { errors });
 }
 
-/** F-021: unknown template id / disallowed accent / icon or emoji not in the banks → 400. */
+/** X-008: unknown template id / disallowed accent / icon or emoji not in the banks → 400. */
 export function assertCardDesign(input: Pick<ProfileInput, "templateId" | "templateOptions">) {
   const errs = validateCardDesign(input.templateId, input.templateOptions);
   // on update with templateId omitted, accent is re-checked against the stored template inside the transaction
@@ -253,7 +253,7 @@ export const profileTemplateInput = z.object({
   version: z.number().int().optional(),
 });
 
-/** F-021: apply a template (gallery "적용") without resending the whole profile. Same validation + event as saveProfile. */
+/** X-008: apply a template (gallery "적용") without resending the whole profile. Same validation + event as saveProfile. */
 export async function setProfileTemplate(ctx: Ctx, profileId: string, input: z.infer<typeof profileTemplateInput>): Promise<FullProfile> {
   if (!ctx.userId) throw unauthorized();
   const errs = validateCardDesign(input.templateId, input.templateOptions);
@@ -291,9 +291,9 @@ export interface PublicCard {
   bioShort: string | null;
   keywords: string[];
   theme: string;
-  /** F-021 template id (null → classic theme) */
+  /** X-008 template id (null → classic theme) */
   templateId: string | null;
-  /** F-021 render-ready design (template + resolved icons/emoji); null when the card has no design options */
+  /** X-008 render-ready design (template + resolved icons/emoji); null when the card has no design options */
   design: ResolvedCardDesign | null;
   fields: Omit<ProfileField, "id">[];
   offers: string[];

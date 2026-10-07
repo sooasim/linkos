@@ -1,4 +1,4 @@
-// F-021 / F-022 card design templates + F-036 CTA icons — integration tests against real PostgreSQL
+// X-008 / F-022 card design templates + F-036 CTA icons — integration tests against real PostgreSQL
 // (DATABASE_URL=…/linkos_test_t). Save/load, validation (unknown template → 400), guest landing payload, Idempotency-Key.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -44,7 +44,7 @@ afterAll(async () => {
   await closePool();
 });
 
-describe("F-021 migration 0012", () => {
+describe("X-008 migration 0012", () => {
   it("adds template_id / template_options to profiles (additive, with defaults)", async () => {
     const cols = await q<{ column_name: string; column_default: string | null }>(
       "SELECT column_name, column_default FROM information_schema.columns WHERE table_name='profiles' AND column_name IN ('template_id','template_options') ORDER BY column_name",
@@ -55,7 +55,7 @@ describe("F-021 migration 0012", () => {
   });
 });
 
-describe("F-021 save/load card template", () => {
+describe("X-008 save/load card template", () => {
   it("creates a profile with a template and options, loads them back", async () => {
     const p = await card.saveProfile(ctx(userId), parse({ ...base, templateId: "clinic-clean", templateOptions: { accent: "#1D4ED8", monogram: "홍", icon: "i:stethoscope", fieldIcons: { email: "e:📧" }, keywordBadges: { 의료AI: "i:ai-sparkle" }, sectionIcons: { projects: "e:🚀" } } }));
     profileId = p.id;
@@ -101,7 +101,7 @@ describe("F-021 save/load card template", () => {
   });
 });
 
-describe("F-021 validation → 400", () => {
+describe("X-008 validation → 400", () => {
   it("rejects an unknown template id", async () => {
     await expect(card.saveProfile(ctx(userId), parse({ ...base, templateId: "no-such-template" }), profileId)).rejects.toMatchObject({ status: 400, code: "unknown_template" });
     await expect(card.saveProfile(ctx(userId), parse({ ...base, templateId: "no-such-template" }))).rejects.toMatchObject({ status: 400, code: "unknown_template" });
@@ -134,7 +134,7 @@ describe("F-021 validation → 400", () => {
   });
 });
 
-describe("F-021 guest landing + public profile render the template", () => {
+describe("X-008 guest landing + public profile render the template", () => {
   it("carries the design in the exchange landing payload and on /p/{slug}", async () => {
     const cur = (await card.loadProfile(profileId))!;
     await card.saveProfile(ctx(userId), parse({ ...base, templateId: "dancheong-band", templateOptions: { icon: "i:hanok-roof" }, version: cur.version }), profileId);
@@ -182,7 +182,7 @@ describe("F-036 Action CTA icons", () => {
   });
 });
 
-describe("F-021 setProfileTemplate (gallery apply)", () => {
+describe("X-008 setProfileTemplate (gallery apply)", () => {
   it("applies a template with options, bumps the version and validates like saveProfile", async () => {
     const cur = (await card.loadProfile(profileId))!;
     const r = await card.setProfileTemplate(ctx(userId), profileId, card.profileTemplateInput.parse({ templateId: "pastel-mint", templateOptions: { monogram: "HG" }, version: cur.version }));

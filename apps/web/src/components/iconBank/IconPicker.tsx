@@ -1,5 +1,5 @@
 "use client";
-// F-021 / F-036 — accessible icon & emoji picker. Lazy-loaded (next/dynamic from GlyphButton) and loads the
+// X-008 / F-036 — accessible icon & emoji picker. Lazy-loaded (next/dynamic from GlyphButton) and loads the
 // icon/emoji banks with a dynamic import, so neither ever ships on the guest landing.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ResolvedGlyph } from "@linkos/domain/cardDesign";

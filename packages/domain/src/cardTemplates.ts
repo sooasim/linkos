@@ -1,4 +1,4 @@
-// F-021 / F-022 — Living Card design templates (50 original templates as DATA, rendered by one component).
+// X-008 / F-022 — Living Card design templates (50 original templates as DATA, rendered by one component).
 // Each template is inspired by a recognizable professional card-design *style* (Swiss grid, letterpress, art-deco …)
 // and is an original composition: no real company's card, logo, trade dress or name is reproduced.
 // Explicit colors are allowed here because the card is a printed object, not app chrome.
@@ -562,7 +562,7 @@ export interface TemplateSuggestion {
 export const DEFAULT_SUGGESTIONS = ["left-rail-iris", "center-quiet", "pastel-lavender", "swiss-grid", "editorial-serif", "glass-frost"] as const;
 
 /**
- * Deterministic industry/keyword → ranked templates (F-021). Weights: industries 3, keywords/job title 2,
+ * Deterministic industry/keyword → ranked templates (X-008). Weights: industries 3, keywords/job title 2,
  * headline/company/bio 1. Ties break on DEFAULT_SUGGESTIONS order, then catalog order. Pads with defaults.
  */
 export function suggestTemplates(profile: SuggestProfile, limit = 6): TemplateSuggestion[] {

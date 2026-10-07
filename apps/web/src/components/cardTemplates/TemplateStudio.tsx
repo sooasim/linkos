@@ -1,5 +1,5 @@
 "use client";
-// F-021 — template step shared by the card editor ("템플릿" tab) and the full-screen gallery (/app/me/templates):
+// X-008 — template step shared by the card editor ("템플릿" tab) and the full-screen gallery (/app/me/templates):
 // lazy gallery + accent override within the template palette + monogram + logo icon.
 import dynamic from "next/dynamic";
 import { GlyphButton } from "../iconBank/GlyphButton";

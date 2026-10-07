@@ -1,4 +1,4 @@
-// F-021 — client-side design state for the editor/gallery (no catalog or bank import: templates and glyphs arrive
+// X-008 — client-side design state for the editor/gallery (no catalog or bank import: templates and glyphs arrive
 // already resolved, from the server or from the lazily-loaded gallery / picker).
 import type { CardTemplateOptions, ResolvedCardDesign, ResolvedGlyph } from "@linkos/domain/cardDesign";
 import type { CardTemplate } from "@linkos/domain/cardTemplateSchema";

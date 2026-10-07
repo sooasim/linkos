@@ -1,5 +1,5 @@
 "use client";
-// F-021 — template gallery: category chips, ko/en search, "추천 템플릿" (suggestTemplates), live mini previews of the
+// X-008 — template gallery: category chips, ko/en search, "추천 템플릿" (suggestTemplates), live mini previews of the
 // user's own card. Loaded with next/dynamic (it imports the 50-template catalog) and previews mount lazily when
 // scrolled into view, so 50 cards stay fast.
 import { useEffect, useMemo, useRef, useState } from "react";

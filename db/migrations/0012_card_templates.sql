@@ -1,4 +1,4 @@
--- 0012: F-021/F-022 Living Card design studio — template choice + per-card design options (additive only).
+-- 0012: F-022/X-008 Living Card design studio — template choice + per-card design options (additive only).
 -- template_id     : id from packages/domain/src/cardTemplates.ts (validated in the card module; unknown → 400)
 -- template_options: { accent?, monogram?, icon?, fieldIcons?, keywordBadges?, sectionIcons? }
 --                   icons are "i:<icon-bank id>", emoji are "e:<single grapheme from the emoji bank>" (validated server-side)

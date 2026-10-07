@@ -1,5 +1,5 @@
 "use client";
-// F-021 / F-022 — single renderer for all 50 card templates (data-driven, CSS/SVG only, no images, no catalog import).
+// X-008 / F-022 — single renderer for all 50 card templates (data-driven, CSS/SVG only, no images, no catalog import).
 // Sizes are container-query units (cqw) so the 3-second card renders faithfully at sm and lg; the pointer tilt/sheen
 // is the same as the classic theme card. Template colors are card-internal (printed object), set as inline styles.
 import type { CSSProperties, ReactNode } from "react";

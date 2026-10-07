@@ -1,4 +1,4 @@
-// F-021 / F-036 — curated Unicode emoji bank with ko/en keywords.
+// X-008 / F-036 — curated Unicode emoji bank with ko/en keywords.
 // Rendered as native emoji text (no image downloads). Pure data; NOT re-exported from the package index so it
 // never ships on the guest landing — import "@linkos/domain/emojiBank" explicitly.
 

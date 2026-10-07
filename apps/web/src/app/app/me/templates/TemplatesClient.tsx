@@ -1,5 +1,5 @@
 "use client";
-// F-021 full-screen gallery: pick → instant preview → 적용 (PUT /profiles/{id}/template, Idempotency-Key via api())
+// X-008 full-screen gallery: pick → instant preview → 적용 (PUT /profiles/{id}/template, Idempotency-Key via api())
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CardTemplateOptions } from "@linkos/domain/cardDesign";

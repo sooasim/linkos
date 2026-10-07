@@ -1,4 +1,4 @@
-// F-021 / F-022 Card design studio E2E: gallery → apply template (+accent, logo icon) → guest landing renders it;
+// X-008 / F-022 Card design studio E2E: gallery → apply template (+accent, logo icon) → guest landing renders it;
 // editor "템플릿" tab → save → public profile renders it; axe audit of the gallery page.
 import AxeBuilder from "@axe-core/playwright";
 import { type Page, expect, test } from "@playwright/test";
@@ -51,7 +51,7 @@ async function shortCodeFor(page: Page): Promise<string> {
   return (await page.evaluate(() => document.body.innerText.match(/\b[2-9A-HJKMNP-Z]{6}\b/)?.[0] ?? null))!;
 }
 
-test("F-021 apply a template from the gallery → guest landing renders it", async ({ page, browser }) => {
+test("X-008 apply a template from the gallery → guest landing renders it", async ({ page, browser }) => {
   await signIn(page, `tpl${uniq()}@linkos.test`);
   await createCard(page, "한서윤");
 
@@ -95,7 +95,7 @@ test("F-021 apply a template from the gallery → guest landing renders it", asy
   await guestCtx.close();
 });
 
-test("F-021 editor 템플릿 tab → save → public profile renders the template; icon picker keyboard + emoji", async ({ page }) => {
+test("X-008 editor 템플릿 tab → save → public profile renders the template; icon picker keyboard + emoji", async ({ page }) => {
   await signIn(page, `tpl2${uniq()}@linkos.test`);
   await createCard(page, "Mina Seo");
 
@@ -125,7 +125,7 @@ test("F-021 editor 템플릿 tab → save → public profile renders the templat
   await expect(page.locator('[data-template="blueprint"] [data-testid="card-face"]')).toBeVisible();
 });
 
-test.describe("F-021 a11y", () => {
+test.describe("X-008 a11y", () => {
   test.use({ contextOptions: { reducedMotion: "reduce" } });
   test("axe: template gallery page has no WCAG A/AA violations", async ({ page }) => {
     await signIn(page, `tpl3${uniq()}@linkos.test`);

@@ -1,4 +1,4 @@
-// F-021 card decoration + F-036 action CTA icons — template options, glyph references, validation, resolution.
+// X-008 card decoration + F-036 action CTA icons — template options, glyph references, validation, resolution.
 // Server-side resolution turns ids into render-ready data (SVG path / emoji char) so the guest landing renderer
 // never needs the 50-template catalog or the icon/emoji banks in its bundle.
 // Pure (no I/O). NOT re-exported from the package index — import "@linkos/domain/cardDesign".

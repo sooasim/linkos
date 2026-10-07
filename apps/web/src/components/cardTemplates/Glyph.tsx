@@ -1,4 +1,4 @@
-// F-021 / F-036 — renders a server- or picker-resolved glyph (line icon path or native emoji). No bank import here.
+// X-008 / F-036 — renders a server- or picker-resolved glyph (line icon path or native emoji). No bank import here.
 import type { CSSProperties } from "react";
 import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
 

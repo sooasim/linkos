@@ -8,7 +8,7 @@ import { TemplatesClient } from "./TemplatesClient";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "명함 템플릿" };
 
-// F-021 / F-022 full-screen template gallery: 50 templates, live preview with my card, apply → guest landing/public profile
+// X-008 / F-022 full-screen template gallery: 50 templates, live preview with my card, apply → guest landing/public profile
 export default async function TemplatesPage({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
   const sp = await searchParams;
   const { userId } = await getViewer();

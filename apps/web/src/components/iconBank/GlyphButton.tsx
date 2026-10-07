@@ -1,5 +1,5 @@
 "use client";
-// F-021 / F-036 — small trigger that opens the (lazy) IconPicker. Only this button ships with the editor;
+// X-008 / F-036 — small trigger that opens the (lazy) IconPicker. Only this button ships with the editor;
 // the picker and its icon/emoji banks load on first open.
 import dynamic from "next/dynamic";
 import { useRef, useState } from "react";

@@ -1,4 +1,4 @@
-// F-021 / F-022 Living Card design studio · F-036 action CTA icons — domain unit tests
+// X-008 / F-022 Living Card design studio · F-036 action CTA icons — domain unit tests
 import { describe, expect, it } from "vitest";
 import { resolveCardDesign, resolveGlyph, validateCardDesign } from "../src/cardDesign";
 import {
@@ -19,7 +19,7 @@ import {
 import { EMOJI_BANK, EMOJI_CATEGORIES, graphemeCount, isBankEmoji, searchEmoji } from "../src/emojiBank";
 import { ICON_BANK, ICON_CATEGORIES, getBankIcon, searchIcons } from "../src/iconBank";
 
-describe("F-021 card templates — catalog", () => {
+describe("X-008 card templates — catalog", () => {
   it("has exactly 50 templates with unique ids and names", () => {
     expect(CARD_TEMPLATES).toHaveLength(50);
     expect(new Set(CARD_TEMPLATES.map((t) => t.id)).size).toBe(50);
@@ -27,11 +27,11 @@ describe("F-021 card templates — catalog", () => {
     expect(new Set(CARD_TEMPLATES.map((t) => t.name.ko)).size).toBe(50);
   });
 
-  it.each(CARD_TEMPLATES.map((t) => [t.id, t] as const))("F-021 template %s is structurally valid", (_id, tpl) => {
+  it.each(CARD_TEMPLATES.map((t) => [t.id, t] as const))("X-008 template %s is structurally valid", (_id, tpl) => {
     expect(validateCardTemplate(tpl)).toEqual([]);
   });
 
-  it.each(CARD_TEMPLATES.map((t) => [t.id, t] as const))("F-021 template %s passes WCAG AA contrast (fg/muted/accent/onAccent ≥ 4.5, foil ≥ 3)", (_id, tpl) => {
+  it.each(CARD_TEMPLATES.map((t) => [t.id, t] as const))("X-008 template %s passes WCAG AA contrast (fg/muted/accent/onAccent ≥ 4.5, foil ≥ 3)", (_id, tpl) => {
     expect(templateContrastIssues(tpl)).toEqual([]);
     // explicit check of the headline requirement: body text fg/bg ≥ 4.5 on the dominant paper color
     expect(contrastRatio(tpl.palette.fg, tpl.palette.bg)).toBeGreaterThanOrEqual(4.5);
@@ -74,7 +74,7 @@ describe("F-021 card templates — catalog", () => {
   });
 });
 
-describe("F-021 suggestTemplates — deterministic industry/keyword ranking", () => {
+describe("X-008 suggestTemplates — deterministic industry/keyword ranking", () => {
   it("maps Korean and English profile text to topics", () => {
     expect([...topicsIn("법률사무소 파트너 변호사")]).toEqual(expect.arrayContaining(["law", "consulting"]));
     expect(topicsIn("Medical AI startup founder").has("medical")).toBe(true);
@@ -120,7 +120,7 @@ describe("F-021 suggestTemplates — deterministic industry/keyword ranking", ()
   });
 });
 
-describe("F-021 icon bank", () => {
+describe("X-008 icon bank", () => {
   it("has ≥240 icons with unique ids and unique path data", () => {
     expect(ICON_BANK.length).toBeGreaterThanOrEqual(240);
     expect(new Set(ICON_BANK.map((i) => i.id)).size).toBe(ICON_BANK.length);
@@ -149,7 +149,7 @@ describe("F-021 icon bank", () => {
   });
 });
 
-describe("F-021 emoji bank", () => {
+describe("X-008 emoji bank", () => {
   it("has ≥600 unique emoji, each a single grapheme with ko+en keywords", () => {
     expect(EMOJI_BANK.length).toBeGreaterThanOrEqual(600);
     expect(new Set(EMOJI_BANK.map((e) => e.char)).size).toBe(EMOJI_BANK.length);
@@ -173,7 +173,7 @@ describe("F-021 emoji bank", () => {
   });
 });
 
-describe("F-021 / F-036 card design options", () => {
+describe("X-008 / F-036 card design options", () => {
   it("validates template id, accent palette, monogram and glyph references", () => {
     expect(validateCardDesign("swiss-grid", { accent: "#1D4ED8", monogram: "JP", icon: "i:rocket", fieldIcons: { email: "e:📧" } })).toEqual([]);
     expect(validateCardDesign("no-such-template", {})).toContain("unknown_template");

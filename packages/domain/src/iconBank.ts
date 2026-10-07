@@ -1,4 +1,4 @@
-// F-021 / F-036 — LINKOS line-icon bank (original glyphs).
+// X-008 / F-036 — LINKOS line-icon bank (original glyphs).
 // 24px grid · stroke 1.7 · round caps/joins — same drawing rules as apps/web/src/components/Icon.tsx.
 // Generic glyphs only: no third-party brand logos or trade dress. Pure data (no I/O); NOT re-exported from the
 // package index so it never ships on the guest landing — import "@linkos/domain/iconBank" explicitly.

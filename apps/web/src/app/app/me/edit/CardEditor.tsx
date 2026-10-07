@@ -1,5 +1,5 @@
 "use client";
-// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + F-021 템플릿·아이콘 꾸미기
+// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + X-008 템플릿·아이콘 꾸미기
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ResolvedGlyph } from "@linkos/domain/cardDesign";

@@ -1,4 +1,4 @@
-// F-021 / F-022 — card template SCHEMA, font tokens and color helpers (no catalog data).
+// X-008 / F-022 — card template SCHEMA, font tokens and color helpers (no catalog data).
 // Kept separate from the 50-template catalog so the card renderer on the guest landing (/x/[token]) imports only
 // this small module; the catalog, gallery and icon/emoji banks are lazy-loaded elsewhere.
 // Pure (no I/O). Import "@linkos/domain/cardTemplateSchema".

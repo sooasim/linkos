@@ -1,7 +1,7 @@
 // F-008 B2B SSO — pure helpers for SAML 2.0 SP configuration and SSO enforcement (no I/O, no XML-DSig here:
 // signature validation is done by a maintained library in services/api; these helpers only read configuration
 // and the already-verified assertion values).
-import type { OrgRole } from "./org";
+import { type OrgRole, emailDomain } from "./org";
 
 export const SAML_NAMEID_FORMATS = [
   "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
@@ -188,8 +188,9 @@ export interface SsoEnforcementInput {
 export function ssoEnforcementDecision(i: SsoEnforcementInput): "allow" | "sso_required" {
   if (!i.ssoRequired || !i.ssoAvailable) return "allow";
   if (SSO_LOGIN_METHODS.includes(i.method)) return "allow";
-  const at = i.email ? i.email.lastIndexOf("@") : -1;
-  const domain = at > 0 ? i.email!.slice(at + 1).toLowerCase() : null;
+  // same domain parsing as the org lookup / domain join (trim, lower-case, trailing dot) — otherwise
+  // "kim@acme.com." or "kim@acme.com " would find the org but slip past enforcement
+  const domain = emailDomain(i.email);
   if (!domain || !i.verifiedDomains.includes(domain)) return "allow";
   if (i.role === "owner" && i.method === "email_otp") return "allow";
   return "sso_required";

@@ -3,7 +3,7 @@ import { type ContactLike, type MergeableField, findDuplicates, mergeContacts, n
 import type pg from "pg";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
-import { conflict, notFound, unauthorized } from "../lib/errors";
+import { badRequest, conflict, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
 
 export const contactInput = z.object({
@@ -315,6 +315,8 @@ export async function addEncounter(ctx: Ctx, contactId: string, data: { placeLab
 export async function mergeContact(ctx: Ctx, primaryId: string, secondaryId: string, choices: Partial<Record<MergeableField, "primary" | "secondary">>) {
   if (!ctx.userId) throw unauthorized();
   const userId = ctx.userId;
+  // merging a contact into itself would set merged_into_id = id and hide it from every list
+  if (primaryId === secondaryId) throw badRequest("same_contact", "같은 연락처끼리는 병합할 수 없습니다.");
   return tx(async (c) => {
     const p = await getContactRow(userId, primaryId, c);
     const s = await getContactRow(userId, secondaryId, c);

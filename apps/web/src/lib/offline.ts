@@ -5,7 +5,7 @@
 //   outbox — queued API writes (replayed with their original Idempotency-Key; see @linkos/domain offlineQueue)
 //   inbox  — photos waiting for on-device OCR/review (F-012 batch import, offline scans)
 // The service worker (public/sw.js) reads the same database for Background Sync replays.
-import { type OutboxItem, createOutboxItem, decide, enqueue, readyItems, resolveConflict, summarize } from "@linkos/domain";
+import { type OutboxItem, createOutboxItem, decide, enqueue, readyItems, resolveConflict, settle, summarize } from "@linkos/domain";
 
 const DB_NAME = "linkos-offline";
 const DB_VERSION = 1;
@@ -135,7 +135,9 @@ export async function queueRequest(input: { method: string; path: string; body: 
   if (!item) return null;
   const before = await listOutbox();
   const after = enqueue(before, item);
-  const merged = after.find((x) => !before.some((b) => b.id === x.id)) ?? after.find((x) => x.path === item.path && x.method === "PATCH");
+  // enqueue() returns the untouched records by reference: the one new/merged object is the record to persist
+  // (an older, already-attempted PATCH to the same path must not be picked instead of the merged one)
+  const merged = after.find((x) => !before.includes(x));
   if (merged) await putOutbox(merged);
   changed();
   void registerSync();
@@ -174,10 +176,11 @@ export function flushOutbox(): Promise<{ sent: number; remaining: number }> {
       for (const item of ready) {
         const res = await send(item);
         const d = decide(item, res, Date.now(), Math.random());
-        if (d.action === "done") {
-          await deleteOutbox(item.id);
-          sent++;
-        } else await putOutbox(d.item);
+        // re-read: a PATCH coalesced into this record while it was in flight must not be deleted/overwritten
+        const s = settle((await listOutbox()).find((x) => x.id === item.id), item, d);
+        if (s.action === "delete") await deleteOutbox(item.id);
+        else if (s.action === "put") await putOutbox(s.item);
+        if (d.action === "done") sent++;
         if ("networkError" in res) {
           offline = true;
           break;

@@ -73,7 +73,8 @@ export function parseBadge(lines: OcrLine[]): BadgeExtraction {
     }
   } else {
     // no name-like line: keep the card parser's guesses
-    for (const f of base.fields) if (["fullName", "company", "jobTitle", "department"].includes(f.key)) {
+    // (never the badge-type line: "연사"/"참관객" look like 2-syllable Korean names to the card parser)
+    for (const f of base.fields) if (["fullName", "company", "jobTitle", "department"].includes(f.key) && f.sourceLine !== typeLine?.i) {
       fields.push(f);
       used.add(f.sourceLine);
     }

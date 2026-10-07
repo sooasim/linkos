@@ -12,7 +12,7 @@ import { ActionCtas, type CardAction } from "@/components/ActionCtas";
 import { CardViewTracker } from "@/components/CardViewTracker";
 import { LivingCard } from "@/components/LivingCard";
 import { CARD_KEYS, type CardKey, type ReviewedCard, ReviewFields, initialFromParsed } from "@/components/ReviewFields";
-import { api } from "@/lib/client";
+import { ClientError, api } from "@/lib/client";
 import { trackClient, useExperiment } from "@/lib/flags";
 
 type Landing = {
@@ -153,7 +153,8 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
       setStep("done");
       celebrate();
     } catch (e) {
-      setError((e as Error).message);
+      // the client's network message is Korean-only; a foreign guest must understand why sending failed (F-177)
+      setError(e instanceof ClientError && e.code === "network_error" ? m.networkError : (e as Error).message);
       setStep("review");
     }
   };
@@ -205,7 +206,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
             </h1>
             <p className="mt-3 text-[15px] text-[var(--fg-mute)]">{fmt(m.captureBody, { name: first })}</p>
             <div className="mt-6">
-              <CardScanner onLines={onLines} onManual={() => { setInitial(emptyCard()); setConf({}); setOcrLines(null); setStep("review"); }} />
+              <CardScanner locale={locale} onLines={onLines} onManual={() => { setInitial(emptyCard()); setConf({}); setOcrLines(null); setStep("review"); }} />
             </div>
           </section>
         )}

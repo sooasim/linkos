@@ -41,6 +41,7 @@
 - 하드코딩 색 금지 — `var(--bg|--bg-elev|--bg-sunk|--fg|--fg-mute|--line|--accent|--accent-text|--accent-soft|--glass)` 와 `--color-*` 파스텔 토큰만 쓴다. 다크 모드는 토큰 재정의로 자동 지원.
 - 타이포: 디스플레이 = Instrument Serif(이탤릭 `<em>` 은 아이리스→로즈 그라디언트), UI = Inter Tight, 한글 = Pretendard. 큰 대비의 타이포 스케일.
 - 모션 레이어(`components/Fx.tsx`): `[data-reveal]` 스크롤 리빌, `.btn` 리플, `[data-tilt]` 홀로그래픽 틸트, `[data-confetti]` 파스텔 컨페티, 커서 스포트라이트·스크롤 진행바, `app/app/template.tsx` 페이지 전환, `.stagger`·`.glow-border`·`.stage-aurora`. 모두 점진적 향상(JS 없이도 내용 표시)이며 `prefers-reduced-motion` 시 비활성.
+- 배경 엠블럼 워터마크(`.marks`, `public/patterns/marks.svg`, 생성: `scripts/design/marks.py`): 기하학으로만 그린 **오리지널** 추상 문양. 실제 기업 로고·상표는 배경·템플릿·아이콘 어디에도 쓰지 않는다(상표권·제휴 오인 방지).
 - 주요 행동은 한 손 엄지 영역(하단)에 배치. 게스트 랜딩 LCP p75 < 2.5s → 랜딩에 무거운 JS/이미지 금지(모션은 CSS + 경량 IntersectionObserver).
 - 접근성: 색 대비 AA, 포커스 링, `prefers-reduced-motion` 준수, 모든 아이콘 버튼에 aria-label.
 

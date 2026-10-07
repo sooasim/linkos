@@ -72,6 +72,7 @@ export function ClaimFlow({ signedIn, oneTapClientId = null, appleEnabled = fals
   const g = preview?.guest ?? {};
   return (
     <main className="stage-ink grain min-h-dvh px-5 pb-12 pt-5">
+      <div aria-hidden className="marks" />
       {!signedIn && oneTapClientId && state === "ready" && <GoogleOneTap clientId={oneTapClientId} onCredential={onOneTap} />}
       <div className="mx-auto max-w-[520px]">
         <Logo />

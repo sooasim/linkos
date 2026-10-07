@@ -13,6 +13,7 @@ export default function EnterCodePage() {
   const valid = normalizeShortCode(code);
   return (
     <main className="stage-ink grain flex min-h-dvh flex-col px-6 pb-10 pt-6">
+      <div aria-hidden className="marks" />
       <Logo />
       <form
         className="my-auto w-full max-w-md animate-rise"

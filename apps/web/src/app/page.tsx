@@ -45,6 +45,7 @@ export default function Landing() {
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="stage-aurora grain relative min-h-dvh">
+        <div aria-hidden className="marks" />
         <div aria-hidden className="pointer-events-none absolute left-1/2 top-[42%] size-[880px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--line)] [animation:spin-slow_120s_linear_infinite]">
           <span className="absolute -top-1.5 left-1/2 size-3 rounded-full bg-[var(--color-iris-2)] shadow-[0_0_24px_6px_rgba(143,123,255,.45)]" />
         </div>
@@ -280,6 +281,7 @@ export default function Landing() {
 
       {/* ── Footer ───────────────────────────────────── */}
       <footer className="stage-aurora grain overflow-hidden">
+        <div aria-hidden className="marks" />
         <div className="mx-auto max-w-7xl px-5 pt-28 sm:px-8">
           <div className="flex flex-wrap items-end justify-between gap-8" data-reveal>
             <h2 className="display max-w-2xl text-[54px] sm:text-[80px]">

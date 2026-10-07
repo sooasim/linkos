@@ -137,6 +137,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
 
   return (
     <main lang={locale} className="stage-aurora grain relative min-h-dvh overflow-x-clip">
+      <div aria-hidden className="marks" />
             <div className="relative mx-auto flex min-h-dvh w-full max-w-[520px] flex-col px-5 pb-40 pt-5">
         <header className="flex items-center justify-between">
           <Logo />

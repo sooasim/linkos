@@ -228,6 +228,7 @@ export function LoginForm({
     <main className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       {oneTapClientId && step === "email" && <GoogleOneTap clientId={oneTapClientId} onCredential={(c) => oneTap(c, false)} />}
       <aside className="stage-ink grain relative hidden overflow-hidden p-12 lg:flex lg:flex-col">
+        <div aria-hidden className="marks" />
         <Logo />
         <div className="my-auto">
           <p className="eyebrow">Business Identity & Relationship OS</p>

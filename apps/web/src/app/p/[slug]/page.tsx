@@ -44,6 +44,7 @@ export default async function PublicProfile({ params }: { params: Promise<{ slug
   const actions = (await living.getActionCtas(c.id).catch(() => null))?.actions ?? [];
   return (
     <main className="stage-ink grain min-h-dvh px-5 pb-16 pt-5">
+      <div aria-hidden className="marks" />
       <div className="mx-auto max-w-[520px]">
         <header className="flex items-center justify-between">
           <Link href="/"><Logo /></Link>

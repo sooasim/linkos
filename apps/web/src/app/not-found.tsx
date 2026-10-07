@@ -4,6 +4,7 @@ import { Logo } from "@/components/Icon";
 export default function NotFound() {
   return (
     <main className="stage-ink grain flex min-h-dvh flex-col px-6 py-6">
+      <div aria-hidden className="marks" />
       <Logo />
       <div className="my-auto">
         <p className="display text-[30vw] leading-none bg-gradient-to-b from-[#c8bdff] to-[#ffd6e6] bg-clip-text text-transparent sm:text-[220px]">404</p>

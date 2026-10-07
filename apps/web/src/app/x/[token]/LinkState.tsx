@@ -13,6 +13,7 @@ export function LinkState({ code, locale = "ko" }: { code: string; locale?: Loca
   const c = COPY[code] ?? { title: m.errorT, body: m.errorB };
   return (
     <main lang={locale} className="stage-aurora grain flex min-h-dvh flex-col px-6 pb-10 pt-6">
+      <div aria-hidden className="marks" />
       <Logo />
       <div className="my-auto max-w-md animate-rise">
         <p className="eyebrow">LINKOS Exchange</p>

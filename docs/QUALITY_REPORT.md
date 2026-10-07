@@ -1,4 +1,4 @@
-# LINKOS 품질 검증 보고서 (2026-10-07)
+# LINKOS 품질 검증 보고서 (2026-10-07, 전체 기능 통합 후)
 
 기획서(`dd/LINKOS_Product_Blueprint_v1`) 대조 결과와 시나리오·부하 시뮬레이션 결과를 정리한다. 기능별 상세 현황은 [`TRACEABILITY.md`](TRACEABILITY.md).
 
@@ -6,12 +6,33 @@
 
 | 우선순위 | 전체 | ✅ 구현+자동테스트 | 🟢 구현 | 🟡 부분 | ⬜ 미착수 |
 |---|---|---|---|---|---|
-| P0 (상용 출시 필수) | 81 | 57 | 17 | 7 | **0** |
-| P1 (정식 버전 필수) | 85 | 20 | 12 | 16 | 37 |
-| P2 (Enterprise/고도화) | 29 | 1 | 0 | 1 | 27 |
-| P3 (실험) | 2 | 0 | 0 | 0 | 2 |
+| P0 (상용 출시 필수) | 81 | 63 | 17 | 1 | 0 |
+| P1 (정식 버전 필수) | 85 | 69 | 15 | 1 | 0 |
+| P2 (Enterprise/고도화) | 29 | 27 | 2 | 0 | 0 |
+| P3 (실험) | 2 | 2 | 0 | 0 | 0 |
+| **합계** | **197** | **161** | **34** | **2** | **0** |
 
-**판정: 아직 "Production Ready"가 아니다.** 백서 21.1은 P0과 P1 전체가 구현·테스트·배포와 연결되어야 한다고 정한다. P0은 미착수가 0이 되었지만 부분 구현 7개가 남아 있다(자동 테두리/원근 보정, 원본 이미지 암호화 보관, Google One Tap, 다국어 UI 리소스, 관찰성 트레이싱 등). P1도 37개가 미착수다(네이티브 앱·BLE·App Clip, 조직/RBAC, Gmail·Calendar·CRM, STT, 결제 등).
+197개 Feature ID 전부 구현되었다. 남은 🟡 2개는 이 환경에서 끝낼 수 없는 항목이다.
+- **F-042 iOS App Clip**: SwiftUI 코드·설정은 작성했으나 Xcode/Swift 툴체인이 없어 컴파일하지 못했다. Apple Team ID 필요.
+- **F-163 저장 암호화**: 애플리케이션 계층(교환 토큰 해시, 자격증명·파일 AES-256-GCM)은 구현. DB 디스크 at-rest 암호화는 호스팅(Render/RDS 등) 설정이다.
+
+🟢(구현, 자동테스트 없음) 34개는 주로 실기기·실계정이 필요한 항목이다: 네이티브 BLE 근접 교환(F-039/F-040), Contact Picker, 딥링크, 대량 사진 가져오기 UI, DR 원격 저장소 경로 등. 외부 서비스(Google·Microsoft·Salesforce·HubSpot·Dynamics·Stripe·Apple·STT)는 실제 API와 같은 형태의 **가짜 서버로 자동 검증**했으며, 실제 계정 연결은 운영 키 설정 후 1회 수동 확인이 필요하다(RUNBOOK 각 절).
+
+**판정**: 기능 범위는 기획서 전체를 덮는다. "Production Ready" 선언 전 남은 일은 (1) 실제 외부 계정 키 설정과 1회 실연동 확인, (2) 네이티브 앱 실기기 빌드·BLE 보정, (3) 호스팅 at-rest 암호화 설정이다.
+
+### 이번 단계에서 추가된 것
+- 디자인: "Porcelain & Pastel" 전면 개편 + 모션 레이어(스크롤 리빌, 리플, 홀로그래픽 틸트, 컨페티, 오로라, 페이지 전환), `prefers-reduced-motion` 시 비활성.
+- 다국어(F-177): 게스트 수신 화면 ko/en/ja 자동 선택. 접근성: axe WCAG A/AA 자동 감사(라이트·다크).
+- 조직·RBAC·팀 주소록·관계 그래프·SSO(OIDC·SAML·SCIM·강제)·패스키, 메일·일정·CRM 4종·웹훅·Web Push·PDF, 고급 OCR·배지·원본 암호화 보관·녹음/STT·오프라인 큐, 결제(Stripe)·사용량·플래그·실험·트레이싱·부스 모드, 네이티브 앱(Expo)·NFC·코드 페어링·오프라인 교환·One Tap·Apple 로그인.
+
+### 통합 중 발견해 고친 문제
+| 증상 | 원인 | 조치 |
+|---|---|---|
+| 연락처 목록 p95 13.7초·타임아웃 87건(통계 낡은 상태) | 새로 추가된 미사용 인덱스를 플래너가 연락처마다 선택 | 인덱스 제거(0011) → p95 148ms |
+| 두 기능이 같은 `notifications` 테이블을 다른 구조로 생성 | 병렬 개발 충돌 | 푸시 큐를 `push_notifications` 로 분리, 인앱 알림함에 미러링 |
+| 같은 경로 `/events/{id}/leads` 에 서로 다른 POST | 병렬 개발 충돌 | 본문 형태로 분기, 둘 다 Idempotency-Key |
+| 스캔 사용량 한도가 오프라인 커밋에는 적용 안 됨 | 리팩터링 경로 차이 | 공통 `insertCapture` 로 이동 |
+| 테스트 3개 간헐 실패(1/16~1/64) | "변조" 값이 우연히 원본과 같아짐 | 항상 다른 값으로 변조 |
 
 ## 2. 100개 시나리오 (`pnpm scenarios`, tests/scenarios)
 
@@ -30,7 +51,7 @@
 | I 내보내기·개인정보 | CSV(수식 주입 방지·BOM), XLSX, DOCX, JSON/TXT/vCard, 타인 파일 차단, 내 데이터 내보내기, 계정 삭제, Google 미설정 안내 | S-087~S-094 |
 | J 기기·접근성 | iPhone SE·Android 360·iPad·데스크톱, 다크 모드, 모션 감소, 키보드 포커스 | S-095~S-100 |
 
-기타 자동 테스트: 도메인 단위 25, API 통합 32(PostgreSQL 실DB, 가짜 Google/Anthropic 서버 포함), E2E 6(모바일·데스크톱).
+현재 시나리오 103개(S-101~S-103 추가). 기타 자동 테스트: 도메인 단위 139, API 통합 151(PostgreSQL 실DB, 가짜 Google·Microsoft·Salesforce·HubSpot·Dynamics·Stripe·Apple·OIDC/SAML IdP·STT·S3·ClamAV 서버), E2E 34(모바일·데스크톱, 접근성·다국어·오프라인·녹음 포함).
 
 ## 3. 시나리오·시뮬레이션으로 발견해 고친 버그
 
@@ -47,17 +68,20 @@
 
 조건: 연락처 5,000·만남 5,000·메모 약 1,500·연결된 LINKOS 사용자 300명, 동시 20, 시나리오당 200요청, 단일 Node 프로세스 + PostgreSQL 16 (클라우드 컨테이너).
 
+전체 기능 통합 후, 통계가 낡은 최악 조건(autovacuum 중지)에서 측정:
+
 | 시나리오 | p50 | p95 | SLO(p95) | 결과 |
 |---|---|---|---|---|
-| 교환 세션 생성 | 59ms | 82ms | 300ms | PASS |
-| 게스트 랜딩 API | 59ms | 75ms | 300ms | PASS |
-| 게스트 랜딩 SSR `/x/{token}` | 124ms | 159ms | 800ms | PASS |
-| 연락처 목록 | 114ms | 152ms | 400ms | PASS |
-| 연락처 검색 | 124ms | 159ms | 400ms | PASS |
-| AI 관계 검색 | 1044ms | 1322ms | 1500ms | PASS (여유 적음) |
-| Need↔Offer 매칭 | 216ms | 255ms | 1500ms | PASS |
-| 홈 SSR | 289ms | 380ms | 1000ms | PASS |
+| 교환 세션 생성 | 117ms | 258ms | 300ms | PASS |
+| 게스트 랜딩 API | 71ms | 86ms | 300ms | PASS |
+| 게스트 랜딩 SSR `/x/{token}` | 188ms | 299ms | 800ms | PASS |
+| 연락처 목록 | 112ms | 148ms | 400ms | PASS |
+| 연락처 검색 | 129ms | 179ms | 400ms | PASS |
+| AI 관계 검색 | 1149ms | 1297ms | 1500ms | PASS (여유 적음) |
+| Need↔Offer 매칭 | 231ms | 306ms | 1500ms | PASS |
+| 홈 SSR | 411ms | 520ms | 1000ms | PASS |
 
+부하 테스트는 Free 플랜 한도(월 교환 50건)에 걸리지 않도록 `BILLING_ENFORCEMENT=off` 로 실행한다.
 통계가 낡은 최악 조건(autovacuum 중지)에서도 8개 모두 통과. AI 검색은 연락처 수에 비례하므로, 수만 건 규모에서는 pg_trgm/FTS 인덱스 또는 임베딩 검색으로 바꿔야 한다.
 
 ## 5. Google Sheets / Google 연동

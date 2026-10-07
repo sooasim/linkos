@@ -1,6 +1,6 @@
 # LINKOS UI 프리뷰
 
-실제 프로덕션 빌드(`next build`)와 PostgreSQL에서 시드 데이터로 캡처한 화면입니다. 각 화면 아래 링크는 해당 소스 코드입니다.
+실제 프로덕션 빌드(`next build`)와 PostgreSQL에서 시드 데이터로 캡처한 화면입니다. 디자인: "Porcelain & Pastel" (흰 바탕 · 파스텔 · 아이리스 강조). 각 화면 아래 링크는 해당 소스 코드입니다.
 
 > 라이브로 직접 눌러보려면 [README의 실행 방법](../README.md#로컬-실행) 또는 [배포](../README.md#배포)를 참고하세요.
 
@@ -94,3 +94,33 @@
 [`apps/web/src/app/login/LoginForm.tsx`](../apps/web/src/app/login/LoginForm.tsx)
 
 <img src="screenshots/d-login.webp" alt="로그인 (데스크톱)" width="900">
+
+## 조직 · 소통 · 연동 · 결제 (추가 기능)
+
+<table>
+<tr>
+<td width="33%" valign="top"><img src="screenshots/m-guest-en.webp" alt="해외 수신자 — 영어 자동 표시 (ko/en/ja)" width="260"><br><b>해외 수신자 — 영어 자동 표시 (ko/en/ja)</b><br><a href="../apps/web/src/app/x/%5Btoken%5D/GuestFlow.tsx"><code>GuestFlow.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-messages.webp" alt="메시지 · 템플릿 · 후속 시퀀스" width="260"><br><b>메시지 · 템플릿 · 후속 시퀀스</b><br><a href="../apps/web/src/app/app/messages/Messages.tsx"><code>Messages.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-calendar.webp" alt="일정 · 예약 링크" width="260"><br><b>일정 · 예약 링크</b><br><a href="../apps/web/src/app/app/calendar/CalendarHub.tsx"><code>CalendarHub.tsx</code></a></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><img src="screenshots/m-app-inbox.webp" alt="알림함 · Living Update" width="260"><br><b>알림함 · Living Update</b><br><a href="../apps/web/src/app/app/inbox/InboxView.tsx"><code>InboxView.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-org.webp" alt="조직 워크스페이스" width="260"><br><b>조직 워크스페이스</b><br><a href="../apps/web/src/app/app/org/OrgHub.tsx"><code>OrgHub.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-team.webp" alt="팀 주소록 · 회사 리드" width="260"><br><b>팀 주소록 · 회사 리드</b><br><a href="../apps/web/src/app/app/team/TeamBook.tsx"><code>TeamBook.tsx</code></a></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><img src="screenshots/m-app-integrations.webp" alt="CRM · 자동화 (Microsoft·Salesforce·HubSpot·Dynamics·Webhook)" width="260"><br><b>CRM · 자동화 (Microsoft·Salesforce·HubSpot·Dynamics·Webhook)</b><br><a href="../apps/web/src/app/app/integrations/Integrations.tsx"><code>Integrations.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-billing.webp" alt="플랜 · 사용량 · 결제" width="260"><br><b>플랜 · 사용량 · 결제</b><br><a href="../apps/web/src/app/app/billing/BillingView.tsx"><code>BillingView.tsx</code></a></td>
+<td width="33%" valign="top"><img src="screenshots/m-app-sync.webp" alt="오프라인 동기화 · 충돌 해결" width="260"><br><b>오프라인 동기화 · 충돌 해결</b><br><a href="../apps/web/src/app/app/sync/SyncCenter.tsx"><code>SyncCenter.tsx</code></a></td>
+</tr>
+</table>
+
+### 관계 그래프 (데스크톱)
+[`apps/web/src/app/app/org/graph`](../apps/web/src/app/app/org/graph)
+
+<img src="screenshots/d-app-org-graph.webp" alt="관계 그래프" width="900">
+
+### CRM · 자동화 (데스크톱)
+[`apps/web/src/app/app/integrations/Integrations.tsx`](../apps/web/src/app/app/integrations/Integrations.tsx)
+
+<img src="screenshots/d-app-integrations.webp" alt="CRM · 자동화" width="900">

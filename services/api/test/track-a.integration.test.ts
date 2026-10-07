@@ -392,8 +392,8 @@ describe("F-133 관계 그래프 · F-134 Who Knows Whom", () => {
 
     const w = await network.whoKnows(ctx(boss.id), G, "삼성");
     expect(w.results.map((r: any) => r.memberName)).toEqual(["에이미", "벤"]);
-    expect(w.results[0].contacts[0]).toMatchObject({ name: "샘삼성", shared: true });
-    expect(w.results[1].contacts[0]).toMatchObject({ name: null, contactId: null, shared: false });
+    expect(w.results[0]!.contacts[0]).toMatchObject({ name: "샘삼성", shared: true });
+    expect(w.results[1]!.contacts[0]).toMatchObject({ name: null, contactId: null, shared: false });
     expect(await one("SELECT 1 FROM audit_logs WHERE organization_id=$1 AND action='org.who_knows'", [G])).toBeTruthy();
 
     // member opt-out and org policy "shared_only" remove personal aggregates

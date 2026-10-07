@@ -283,30 +283,34 @@ export async function whoKnows(ctx: Ctx, orgId: string, companyQuery: string) {
   const term = companyQuery.trim();
   if (term.length < 2) return { companies: [], results: [] };
   const policy = (await one<{ policies: OrgPolicies }>("SELECT policies FROM organizations WHERE id=$1", [orgId]))?.policies ?? {};
-  const companies = await q<{ id: string; name: string }>(
-    "SELECT id, name FROM companies WHERE name ILIKE $1 OR normalized_name ILIKE $1 ORDER BY length(name) LIMIT 20",
+  // candidate ids only — the global companies table is never echoed back unless one of this org's paths uses it
+  const candidates = await q<{ id: string; name: string }>(
+    "SELECT id, name FROM companies WHERE name ILIKE $1 OR normalized_name ILIKE $1 ORDER BY length(name) LIMIT 200",
     [`%${term.replace(/[%_\\]/g, "\\$&")}%`],
   );
-  if (!companies.length) return { companies: [], results: [] };
+  if (!candidates.length) return { companies: [], results: [] };
   const members = await q<{ user_id: string; name: string; graph_opt_out: boolean }>(
     `SELECT m.user_id, COALESCE(u.display_name, split_part(u.email,'@',1)) AS name, m.graph_opt_out FROM organization_members m JOIN users u ON u.id=m.user_id
      WHERE m.organization_id=$1 AND m.status='active'`,
     [orgId],
   );
   const M = new Map(members.map((m) => [m.user_id, m]));
-  const rows = await q<{ id: string; full_name: string; job_title: string | null; owner_user_id: string; organization_id: string | null; scope: string; strength: number | null }>(
-    `SELECT c.id, c.full_name, c.job_title, c.owner_user_id, c.organization_id, c.scope,
+  const rows = await q<{ id: string; company_id: string; full_name: string; job_title: string | null; owner_user_id: string; organization_id: string | null; scope: string; strength: number | null }>(
+    `SELECT c.id, c.company_id, c.full_name, c.job_title, c.owner_user_id, c.organization_id, c.scope,
        (SELECT rel.strength FROM relationships rel WHERE rel.owner_user_id=c.owner_user_id AND rel.contact_id=c.id) AS strength
      FROM contacts c WHERE c.company_id = ANY($1::uuid[]) AND c.owner_user_id = ANY($2::uuid[]) AND c.deleted_at IS NULL AND c.merged_into_id IS NULL LIMIT 2000`,
-    [companies.map((c) => c.id), members.map((m) => m.user_id)],
+    [candidates.map((c) => c.id), members.map((m) => m.user_id)],
   );
   const paths: KnowsPath[] = [];
+  const used = new Set<string>();
   for (const r of rows) {
     const m = M.get(r.owner_user_id)!;
     const shared = (r.organization_id === orgId && r.scope === "org") || r.owner_user_id === ctx.userId;
     if (!shared && (m.graph_opt_out || policy.graphPersonalExposure === "shared_only")) continue;
+    used.add(r.company_id);
     paths.push({ memberId: r.owner_user_id, memberName: m.name, contactId: r.id, contactName: r.full_name, jobTitle: r.job_title, strength: Number(r.strength ?? 0.3), shared });
   }
+  const companies = candidates.filter((c) => used.has(c.id)).slice(0, 20);
   await audit(pool(), ctx, "org.who_knows", "organization", orgId, { companies: companies.length, paths: paths.length }, orgId);
   return { companies, results: rankWhoKnows(paths), provenance: "ai_inferred" as const };
 }

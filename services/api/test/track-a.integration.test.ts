@@ -392,6 +392,9 @@ describe("F-133 관계 그래프 · F-134 Who Knows Whom", () => {
 
     const w = await network.whoKnows(ctx(boss.id), G, "삼성");
     expect(w.results.map((r: any) => r.memberName)).toEqual(["에이미", "벤"]);
+    // companies known only to other tenants are never echoed back
+    await contact((await signUp("outsider@graph-else.io")).id, "외부인", { company: "삼성바이오 외부전용" });
+    expect((await network.whoKnows(ctx(boss.id), G, "삼성")).companies.map((c: any) => c.name)).toEqual(["삼성전자"]);
     expect(w.results[0]!.contacts[0]).toMatchObject({ name: "샘삼성", shared: true });
     expect(w.results[1]!.contacts[0]).toMatchObject({ name: null, contactId: null, shared: false });
     expect(await one("SELECT 1 FROM audit_logs WHERE organization_id=$1 AND action='org.who_knows'", [G])).toBeTruthy();

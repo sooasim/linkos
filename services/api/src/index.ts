@@ -18,6 +18,7 @@ export * as assist from "./modules/assist";
 export * as org from "./modules/org";
 export * as network from "./modules/network";
 export * as enterprise from "./modules/enterprise";
+export * as saml from "./modules/saml";
 export * as intro from "./modules/intro";
 export * as growth from "./modules/growth";
 export * as passkey from "./modules/passkey";

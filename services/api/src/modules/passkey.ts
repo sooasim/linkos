@@ -15,6 +15,7 @@ import { one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, appOrigin, audit, log, rateLimit } from "../lib/platform";
 import { createSession } from "./identity";
+import { assertSsoAllowed } from "./ssoPolicy";
 
 const CHALLENGE_TTL = "5 minutes";
 
@@ -143,7 +144,10 @@ export async function verifyAuthentication(ctx: Ctx, input: z.infer<typeof login
     }
     if (!v.verified) throw unauthorized("패스키를 확인하지 못했습니다.");
     await c.query("UPDATE webauthn_credentials SET counter=$2, last_used_at=now() WHERE id=$1", [cred.id, v.authenticationInfo.newCounter]);
-    const token = await createSession(c, cred.user_id, ctx);
+    // F-008 sso_required (checked only after the passkey itself verified)
+    const owner = await one<{ email: string | null }>("SELECT email FROM users WHERE id=$1", [cred.user_id], c);
+    if (owner?.email) await assertSsoAllowed(c, owner.email, "passkey"); // F-008 sso_required
+    const token = await createSession(c, cred.user_id, ctx, null, "web", "passkey");
     await audit(c, { userId: cred.user_id }, "auth.login", "user", cred.user_id, { method: "passkey" });
     return { userId: cred.user_id, sessionToken: token };
   });

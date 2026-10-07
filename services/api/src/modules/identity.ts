@@ -1,6 +1,6 @@
 // identity module — F-001 회원가입/로그인(OTP, Google), F-002 게스트, F-003 Claim, F-007 세션 보안, F-009 동의 분리
 import { type KeyObject, createPublicKey, randomInt, verify as cryptoVerify } from "node:crypto";
-import { CONSENT_TYPES, type ConsentType, POLICY_VERSIONS, generateToken, missingRequiredConsents, normalizeEmail } from "@linkos/domain";
+import { CONSENT_TYPES, type ConsentType, type LoginMethod, POLICY_VERSIONS, generateToken, missingRequiredConsents, normalizeEmail } from "@linkos/domain";
 import type pg from "pg";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
@@ -8,6 +8,7 @@ import { ApiError, badRequest, unauthorized } from "../lib/errors";
 import { type Ctx, audit, hmac, log, rateLimit, sha256 } from "../lib/platform";
 import { sendMail } from "../lib/mail";
 import { track } from "../lib/metering";
+import { assertSsoAllowed } from "./ssoPolicy";
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ROTATE_AFTER_MS = 60 * 60 * 1000; // refresh rotation (F-007)
@@ -48,6 +49,7 @@ export async function requestOtp(ctx: Ctx, rawEmail: string): Promise<{ sent: tr
   if (!email) throw badRequest("invalid_email", "올바른 이메일을 입력하세요.");
   await rateLimit(`otp:email:${sha256(email)}`, 5, 600);
   await rateLimit(`otp:ip:${ctx.ip}`, 20, 600);
+  await assertSsoAllowed(pool(), email, "email_otp"); // F-008 sso_required: refuse before sending a code
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await q("INSERT INTO otp_codes (email, code_hash, expires_at) VALUES ($1,$2,$3)", [email, hmac(`${email}:${code}`), new Date(Date.now() + OTP_TTL_MS)]);
   const delivered = await sendMail(email, "LINKOS 로그인 코드", `LINKOS 로그인 코드: ${code}\n10분 안에 입력하세요. 요청하지 않았다면 무시하세요.`);
@@ -84,7 +86,7 @@ export async function verifyOtp(
   return tx(async (c) => {
     await c.query("UPDATE otp_codes SET consumed_at = now() WHERE id=$1", [row.id]);
     const { user, isNew } = await upsertUserByEmail(c, email, consents, displayName, "email_otp", email);
-    const sessionToken = await createSession(c, user.id, ctx, null, clientKind);
+    const sessionToken = await createSession(c, user.id, ctx, null, clientKind, "email_otp");
     await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "email_otp", client: clientKind });
     if (isNew) await track(c, "signup_completed", { userId: user.id }, { method: "email_otp" }); // F-188
     return { user, sessionToken, isNew };
@@ -99,6 +101,8 @@ export async function upsertUserByEmail(
   provider: string,
   providerSubject: string,
 ): Promise<{ user: UserRow; isNew: boolean }> {
+  // F-008: org policy sso_required — verified-domain e-mails must use the company IdP (owners keep OTP as break-glass)
+  if (provider === "email_otp" || provider === "google") await assertSsoAllowed(c, email, provider);
   const ident = await one<{ user_id: string }>("SELECT user_id FROM identities WHERE provider=$1 AND provider_subject=$2", [provider, providerSubject], c);
   let user = ident
     ? await one<UserRow>("SELECT * FROM users WHERE id=$1", [ident.user_id], c)
@@ -132,11 +136,23 @@ export async function upsertUserByEmail(
 /** "web" = httpOnly cookie, "native" = bearer token kept in the app's secure storage (apps/mobile, App Clip). */
 export type ClientKind = "web" | "native";
 
-export async function createSession(db: Db, userId: string, ctx: Pick<Ctx, "userAgent">, rotatedFrom: string | null = null, kind: ClientKind = "web"): Promise<string> {
+/**
+ * `method` records how the session was established (F-008: enabling sso_required revokes non-SSO sessions).
+ * Rotated sessions inherit the method of the session they replace.
+ */
+export async function createSession(
+  db: Db,
+  userId: string,
+  ctx: Pick<Ctx, "userAgent">,
+  rotatedFrom: string | null = null,
+  kind: ClientKind = "web",
+  method: LoginMethod | null = null,
+): Promise<string> {
   const token = generateToken(32);
   await db.query(
-    "INSERT INTO auth_sessions (user_id, refresh_hash, user_agent, device_label, expires_at, rotated_from, client_kind) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-    [userId, sha256(token), ctx.userAgent.slice(0, 300), deviceLabel(ctx.userAgent) + (kind === "native" ? " · 앱" : ""), new Date(Date.now() + SESSION_TTL_MS), rotatedFrom, kind],
+    `INSERT INTO auth_sessions (user_id, refresh_hash, user_agent, device_label, expires_at, rotated_from, client_kind, auth_method)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, COALESCE($8::text, (SELECT p.auth_method FROM auth_sessions p WHERE p.id = $6::uuid)))`,
+    [userId, sha256(token), ctx.userAgent.slice(0, 300), deviceLabel(ctx.userAgent) + (kind === "native" ? " · 앱" : ""), new Date(Date.now() + SESSION_TTL_MS), rotatedFrom, kind, method],
   );
   return token;
 }
@@ -343,7 +359,7 @@ export async function signInWithGoogleIdToken(
   if (!email) throw badRequest("invalid_email");
   return tx(async (c) => {
     const { user, isNew } = await upsertUserByEmail(c, email, consents, g.name, "google", g.sub);
-    const sessionToken = await createSession(c, user.id, ctx, null, clientKind);
+    const sessionToken = await createSession(c, user.id, ctx, null, clientKind, "google");
     await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "google_one_tap", client: clientKind });
     return { user, sessionToken, isNew };
   });

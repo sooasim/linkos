@@ -618,7 +618,7 @@ describe("F-008 B2B SSO (OIDC) + SCIM 2.0", () => {
       const S = (await org.createOrg(ctx(admin.id), { name: "SSO Corp" })).id;
       await org.addDomain(ctx(admin.id), S, "sso-corp.io");
       const cfg = await enterprise.saveSsoConfig(ctx(admin.id), S, { issuer: idp.issuer, clientId: "linkos-client", clientSecret: "s3cret", enabled: true, defaultRole: "member" });
-      expect(cfg).toMatchObject({ configured: true, enabled: true, hasClientSecret: true, saml: "not_supported" });
+      expect(cfg).toMatchObject({ configured: true, enabled: true, hasClientSecret: true, saml: { configured: false, enabled: false }, ssoRequired: false });
       expect(JSON.stringify(cfg)).not.toContain("s3cret");
 
       const start = await enterprise.ssoStart(ctx(null), { email: "new.hire@sso-corp.io", next: "/app/org" });

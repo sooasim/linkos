@@ -1,5 +1,5 @@
 // enterprise module — F-135 활동 대시보드, F-139 정책 강제(설정), F-136 Data Retention(+worker purge), F-140 API 키,
-// F-008 B2B SSO (per-org OIDC, PKCE + nonce, JWKS-verified id_token) + SCIM 2.0 provisioning.
+// F-008 B2B SSO (per-org OIDC, PKCE + nonce, JWKS-verified id_token; SAML 2.0 in ./saml) + SCIM 2.0 provisioning.
 import { createHash, randomBytes } from "node:crypto";
 import {
   API_KEY_SCOPES,
@@ -22,10 +22,12 @@ import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, appOrigin, audit, log, rateLimit, sha256 } from "../lib/platform";
-import { createSession, upsertUserByEmail } from "./identity";
 import { seal, unseal } from "./integration";
 import { handleMemberDeparture, requireOrg } from "./org";
 import { contactInput, insertContact } from "./relationship";
+import { samlStart } from "./saml";
+import { assertOrgEmailDomain, completeSsoLogin } from "./ssoLogin";
+import { SSO_AVAILABLE_SQL } from "./ssoPolicy";
 
 // ---------- F-135 ----------
 export async function orgActivity(ctx: Ctx, orgId: string, days = 30) {
@@ -297,7 +299,8 @@ export async function saveSsoConfig(ctx: Ctx, orgId: string, input: z.infer<type
 
 async function getSsoConfigInternal(orgId: string, db: Db) {
   const r = await one<any>("SELECT issuer, client_id, enabled, default_role, encrypted_client_secret IS NOT NULL AS has_secret, scim_token_hash IS NOT NULL AS has_scim FROM sso_configs WHERE organization_id=$1", [orgId], db);
-  const o = await one<{ slug: string }>("SELECT slug FROM organizations WHERE id=$1", [orgId], db);
+  const o = await one<{ slug: string; sso_required: boolean }>("SELECT slug, sso_required FROM organizations WHERE id=$1", [orgId], db);
+  const saml = await one<{ enabled: boolean; has_scim: boolean }>("SELECT enabled, scim_token_hash IS NOT NULL AS has_scim FROM saml_configs WHERE organization_id=$1", [orgId], db);
   return {
     configured: Boolean(r),
     issuer: r?.issuer ?? null,
@@ -305,11 +308,13 @@ async function getSsoConfigInternal(orgId: string, db: Db) {
     enabled: r?.enabled ?? false,
     defaultRole: r?.default_role ?? "member",
     hasClientSecret: r?.has_secret ?? false,
-    scimEnabled: r?.has_scim ?? false,
+    scimEnabled: Boolean(r?.has_scim || saml?.has_scim),
     redirectUri: `${appOrigin()}/api/v1/auth/sso/callback`,
     loginUrl: `${appOrigin()}/api/v1/auth/sso/start?org=${o?.slug ?? ""}`,
     scimBaseUrl: `${appOrigin()}/scim/v2`,
-    saml: "not_supported",
+    saml: { configured: Boolean(saml), enabled: saml?.enabled ?? false },
+    /** org policy: verified-domain users must use SSO (owners keep e-mail OTP as break-glass) */
+    ssoRequired: o?.sso_required ?? false,
   };
 }
 
@@ -322,8 +327,11 @@ export async function rotateScimToken(ctx: Ctx, orgId: string) {
   return tx(async (c) => {
     await requireOrg(orgId, ctx.userId, "sso.manage", c);
     const token = `scim_${generateToken(32)}`;
-    const r = await c.query("UPDATE sso_configs SET scim_token_hash=$2, updated_at=now() WHERE organization_id=$1", [orgId, sha256(token)]);
-    if (!r.rowCount) throw badRequest("sso_not_configured", "먼저 SSO(OIDC) 설정을 저장하세요.");
+    // the token lives on the OIDC config when there is one, otherwise on the SAML config; the other copy is cleared
+    let r = await c.query("UPDATE sso_configs SET scim_token_hash=$2, updated_at=now() WHERE organization_id=$1", [orgId, sha256(token)]);
+    if (r.rowCount) await c.query("UPDATE saml_configs SET scim_token_hash=NULL WHERE organization_id=$1", [orgId]);
+    else r = await c.query("UPDATE saml_configs SET scim_token_hash=$2, updated_at=now() WHERE organization_id=$1", [orgId, sha256(token)]);
+    if (!r.rowCount) throw badRequest("sso_not_configured", "먼저 SSO(OIDC 또는 SAML) 설정을 저장하세요.");
     await audit(c, ctx, "scim.token_rotated", "organization", orgId, {}, orgId);
     return { token };
   });
@@ -351,15 +359,22 @@ async function discover(issuer: string): Promise<Discovery> {
 const b64url = (b: Buffer) => b.toString("base64url");
 
 /** GET /auth/sso/start?org=slug | ?email=… → redirect URL to the org's IdP (PKCE S256 + nonce + one-time state). */
-export async function ssoStart(ctx: Ctx, opts: { org?: string | null; email?: string | null; next?: string | null }) {
+export async function ssoStart(
+  ctx: Ctx,
+  opts: { org?: string | null; email?: string | null; next?: string | null; consent?: boolean; browserBinding?: string | null },
+) {
   await rateLimit(`sso:start:${ctx.ip}`, 30, 600);
-  let org: { id: string } | null = null;
-  if (opts.org) org = await one<{ id: string }>("SELECT o.id FROM organizations o JOIN sso_configs s ON s.organization_id=o.id AND s.enabled WHERE o.slug=$1", [opts.org]);
+  type Found = { id: string; oidc: boolean };
+  const pick = `SELECT o.id, EXISTS (SELECT 1 FROM sso_configs s WHERE s.organization_id=o.id AND s.enabled) AS oidc FROM organizations o`;
+  let org: Found | null = null;
+  if (opts.org) org = await one<Found>(`${pick} WHERE o.slug=$1 AND ${SSO_AVAILABLE_SQL}`, [opts.org]);
   else if (opts.email) {
     const d = emailDomain(normalizeEmail(opts.email) ?? "");
-    if (d) org = await one<{ id: string }>("SELECT o.id FROM organizations o JOIN sso_configs s ON s.organization_id=o.id AND s.enabled WHERE $1 = ANY(o.verified_domains) LIMIT 1", [d]);
+    if (d) org = await one<Found>(`${pick} WHERE $1 = ANY(o.verified_domains) AND ${SSO_AVAILABLE_SQL} LIMIT 1`, [d]);
   }
   if (!org) throw notFound("sso");
+  // OIDC wins when both connections are enabled; otherwise SAML 2.0 (SP-initiated, HTTP-Redirect)
+  if (!org.oidc) return samlStart(ctx, org.id, { next: opts.next, consent: opts.consent, browserBinding: opts.browserBinding });
   const cfg = await one<{ issuer: string; client_id: string }>("SELECT issuer, client_id FROM sso_configs WHERE organization_id=$1", [org.id]);
   const disc = await discover(cfg!.issuer);
   const state = generateToken(32);
@@ -431,25 +446,20 @@ export async function ssoCallback(ctx: Ctx, input: { code: string; state: string
   if (claims.nonce !== st.nonce) throw new ApiError(401, "sso_nonce_mismatch");
   const email = normalizeEmail(claims.email ?? "");
   if (!email || claims.email_verified === false || !claims.sub) throw new ApiError(401, "sso_email_missing", "SSO 공급자가 확인된 이메일을 주지 않았습니다.");
-  const org = await one<{ verified_domains: string[] }>("SELECT verified_domains FROM organizations WHERE id=$1", [st.organization_id]);
-  if (!org!.verified_domains.length || !org!.verified_domains.includes(emailDomain(email)!)) {
-    throw new ApiError(403, "sso_domain_not_allowed", "이 조직의 인증된 도메인 이메일만 SSO로 로그인할 수 있습니다.");
-  }
-  return tx(async (c) => {
-    const { user, isNew } = await upsertUserByEmail(c, email, input.consents, claims.name, `oidc:${st.organization_id}`, claims.sub!);
-    const m = await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2", [st.organization_id, user.id], c);
-    if (m?.status !== "active") {
-      await c.query(
-        `INSERT INTO organization_members (organization_id, user_id, role, status, join_source) VALUES ($1,$2,$3,'active','sso')
-         ON CONFLICT (organization_id, user_id) DO UPDATE SET status='active', role=EXCLUDED.role, join_source='sso', joined_at=now(), left_at=NULL`,
-        [st.organization_id, user.id, cfg.default_role],
-      );
-    }
-    await c.query("UPDATE users SET active_org_id=COALESCE(active_org_id,$2) WHERE id=$1", [user.id, st.organization_id]);
-    const token = await createSession(c, user.id, ctx);
-    await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "oidc_sso" }, st.organization_id);
-    return { sessionToken: token, userId: user.id, isNew, next: st.next_path };
-  });
+  await assertOrgEmailDomain(st.organization_id, email);
+  const r = await tx((c) =>
+    completeSsoLogin(c, ctx, {
+      orgId: st.organization_id,
+      email,
+      name: claims.name,
+      provider: `oidc:${st.organization_id}`,
+      subject: claims.sub!,
+      consents: input.consents,
+      defaultRole: cfg.default_role,
+      method: "oidc_sso",
+    }),
+  );
+  return { ...r, next: st.next_path };
 }
 
 // ---------- F-008 SCIM 2.0 ----------
@@ -469,7 +479,10 @@ export class ScimError extends Error {
 export async function scimAuth(header: string | null): Promise<string> {
   const token = header?.replace(/^Bearer\s+/i, "").trim();
   if (!token || !token.startsWith("scim_")) throw new ScimError(401, "SCIM bearer token required");
-  const r = await one<{ organization_id: string }>("SELECT organization_id FROM sso_configs WHERE scim_token_hash=$1", [sha256(token)]);
+  const r = await one<{ organization_id: string }>(
+    "SELECT organization_id FROM sso_configs WHERE scim_token_hash=$1 UNION ALL SELECT organization_id FROM saml_configs WHERE scim_token_hash=$1 LIMIT 1",
+    [sha256(token)],
+  );
   if (!r) throw new ScimError(401, "invalid SCIM token");
   await rateLimit(`scim:${r.organization_id}`, 1200, 60).catch(() => {
     throw new ScimError(429, "too many requests");
@@ -548,7 +561,9 @@ export async function scimCreate(orgId: string, body: unknown) {
     if (existing?.status === "active") throw new ScimError(409, "User already exists", "uniqueness");
     if (!u) u = await one<{ id: string }>("INSERT INTO users (email, display_name) VALUES ($1,$2) RETURNING id", [email, scimDisplayName(b)], c);
     await c.query("INSERT INTO identities (user_id, provider, provider_subject) VALUES ($1,$2,$3) ON CONFLICT (provider, provider_subject) DO NOTHING", [u!.id, `scim:${orgId}`, b.externalId ?? email]);
-    const role = (await one<{ default_role: OrgRole }>("SELECT default_role FROM sso_configs WHERE organization_id=$1", [orgId], c))?.default_role ?? "member";
+    const role =
+      (await one<{ default_role: OrgRole }>("SELECT default_role FROM sso_configs WHERE organization_id=$1 UNION ALL SELECT default_role FROM saml_configs WHERE organization_id=$1 LIMIT 1", [orgId], c))
+        ?.default_role ?? "member";
     await c.query(
       `INSERT INTO organization_members (organization_id, user_id, role, status, join_source) VALUES ($1,$2,$3,$4,'scim')
        ON CONFLICT (organization_id, user_id) DO UPDATE SET status=EXCLUDED.status, join_source='scim', joined_at=now(), left_at=NULL`,

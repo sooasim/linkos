@@ -34,3 +34,4 @@ export * from "./mime";
 export * from "./fieldMapping";
 export * from "./webhook";
 export * from "./sso";
+export * from "./crmDeals";

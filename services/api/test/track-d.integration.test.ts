@@ -165,7 +165,7 @@ describe("F-193/F-194 Stripe checkout, portal, webhooks", () => {
     const evt = { id: `evt_cs_${stamp}`, type: "checkout.session.completed", created: now(), data: { object: { mode: "subscription", customer: cust, subscription: subId, client_reference_id: u.id, metadata: { plan: "pro", subject_type: "user", subject_id: u.id } } } };
     const good = signed(evt);
     // bad signature / wrong secret / replayed timestamp
-    await expect(billing.handleStripeWebhook(good.body, good.sig.replace(/v1=./, "v1=0"))).rejects.toMatchObject({ code: "invalid_signature" });
+    await expect(billing.handleStripeWebhook(good.body, good.sig.replace(/v1=(.)/, (_m, c: string) => `v1=${c === "0" ? "1" : "0"}`))).rejects.toMatchObject({ code: "invalid_signature" });
     await expect(billing.handleStripeWebhook(good.body, signed(evt, "whsec_other").sig)).rejects.toMatchObject({ code: "invalid_signature" });
     await expect(billing.handleStripeWebhook(good.body, signed(evt, WH_SECRET, now() - 3600).sig)).rejects.toMatchObject({ code: "invalid_signature" });
     await expect(billing.handleStripeWebhook(good.body + " ", good.sig)).rejects.toMatchObject({ code: "invalid_signature" });

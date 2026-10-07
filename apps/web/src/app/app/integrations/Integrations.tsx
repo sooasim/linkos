@@ -8,7 +8,7 @@ const NAMES: Record<string, string> = { microsoft: "Outlook / Microsoft 365", sa
 const LOCAL: [string, string][] = [["firstName", "이름(First)"], ["lastName", "성(Last)"], ["fullName", "전체 이름"], ["company", "회사"], ["jobTitle", "직책"], ["department", "부서"], ["email", "이메일"], ["phone", "전화"], ["address", "주소"], ["website", "웹사이트"], ["linkosId", "LINKOS ID"]];
 const STATUS: Record<string, string> = { queued: "대기", retry: "재시도 예정", done: "완료", dead: "실패", conflict: "충돌", skipped: "건너뜀" };
 
-function Section({ title, icon, children }: { title: string; icon: "link" | "layers" | "chart" | "bolt"; children: React.ReactNode }) {
+function Section({ title, icon, children }: { title: string; icon: "link" | "layers" | "chart" | "bolt" | "building"; children: React.ReactNode }) {
   return (
     <section className="surface space-y-4 p-5">
       <h2 className="flex items-center gap-2 text-[17px] font-semibold"><Icon name={icon} size={19} />{title}</h2>
@@ -38,6 +38,9 @@ export function Integrations() {
           {providers.map((p) => <ProviderCard key={p.provider} p={p} onChange={() => { load(); setJournalKey((k) => k + 1); }} />)}
         </ul>
       </Section>
+      {providers.some((p) => p.provider === "hubspot" && p.status === "active") && (
+        <HubspotObjects provider={providers.find((p) => p.provider === "hubspot")} onChange={() => setJournalKey((k) => k + 1)} />
+      )}
       <Journal key={journalKey} />
       <Webhooks />
     </div>
@@ -172,7 +175,7 @@ function Journal() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="chip">{NAMES[e.provider] ?? e.provider}</span>
                 <span className={`chip ${e.status === "conflict" || e.status === "dead" ? "!text-[var(--color-ember)]" : ""}`}>{STATUS[e.status] ?? e.status}</span>
-                <span className="font-medium">{e.contact?.fullName ?? (e.meetingId ? "미팅 노트" : e.jobType)}</span>
+                <span className="font-medium">{e.deal ? `딜 · ${e.deal.name ?? ""}` : e.jobType === "crm.company.upsert" ? `회사 · ${e.contact?.fullName ?? ""}` : (e.contact?.fullName ?? (e.meetingId ? "미팅 노트" : e.jobType))}</span>
                 <span className="text-[var(--fg-mute)]">{e.jobType} · 시도 {e.attempts} · {relTime(e.finishedAt ?? e.scheduledAt)}</span>
               </div>
               {e.external && <p className="text-[12.5px] text-[var(--fg-mute)]">외부 ID {e.external.id}{e.external.etag ? ` · etag ${String(e.external.etag).slice(0, 24)}` : ""}{e.external.url ? <> · <a className="underline" href={e.external.url} target="_blank" rel="noopener noreferrer">열기</a></> : null}</p>}
@@ -290,5 +293,126 @@ function Webhooks() {
         {err && <p className="text-[13px] text-[var(--color-ember)]" role="alert">{err}</p>}
       </div>
     </Section>
+  );
+}
+
+// ---------- F-121 HubSpot 회사·딜 (F-127 매핑 + 파이프라인/단계 매핑) ----------
+const COMPANY_LOCAL: Record<string, string> = { companyName: "회사명", domain: "도메인", website: "웹사이트" };
+const DEAL_LOCAL: Record<string, string> = { dealName: "딜 이름", amount: "금액", closeDate: "마감 예정일", description: "설명" };
+
+function HubspotObjects({ provider, onChange }: { provider: any; onChange: () => void }) {
+  const [s, setS] = useState<any>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState<"company" | "deal" | null>(null);
+  const ok = provider?.capabilities?.companies && provider?.capabilities?.deals;
+  useEffect(() => {
+    if (ok) api("/integrations/hubspot/deal-settings").then(setS).catch(() => undefined);
+  }, [ok]);
+  const reconnect = async () => {
+    try {
+      window.location.href = (await api<{ url: string }>("/integrations/hubspot/connect", { body: {} })).url;
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  const syncCompanies = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api<{ queued: number; total: number; companies: number; statuses: Record<string, number> }>("/integrations/hubspot/companies/sync", { body: {}, offline: false });
+      const conflicts = r.statuses.conflict ?? 0;
+      setMsg(`회사가 있는 연락처 ${r.total}명 중 ${r.queued}건 처리 · 연결된 HubSpot 회사 ${r.companies}개${conflicts ? ` · 충돌 ${conflicts}건은 Sync Journal에서 결정하세요` : ""}`);
+      onChange();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section title="HubSpot 회사·딜" icon="building">
+      <p className="text-[13px] text-[var(--fg-mute)]">회사는 도메인으로 중복을 막고(무료 메일 도메인은 제외) 연락처와 연결합니다. HubSpot에 이미 있는 회사는 덮어쓰지 않고 연결만 합니다. 딜은 미팅 화면에서 초안으로 만들고, 승인한 내용만 HubSpot에 보냅니다.</p>
+      {!ok ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip !text-[var(--color-ember)]">권한 필요</span>
+          <span className="text-[13px]">회사·딜 권한이 없는 연결입니다.</span>
+          <button className="btn btn-ink !min-h-9 text-[13px]" onClick={reconnect}>다시 연결</button>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-signal !min-h-9 text-[13px]" onClick={syncCompanies} disabled={busy} data-testid="hubspot-company-sync">{busy ? "동기화 중…" : "회사 동기화"}</button>
+            <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => setEdit(edit === "company" ? null : "company")}>회사 필드 매핑</button>
+            <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => setEdit(edit === "deal" ? null : "deal")}>딜 필드·파이프라인 매핑</button>
+          </div>
+          {s && !edit && (
+            <p className="text-[12.5px] text-[var(--fg-mute)]">
+              파이프라인 <code>{s.deal.pipeline.pipeline}</code> · {s.stages.map((st: any) => `${st.label}→${s.deal.pipeline.stages[st.id]}`).join(" · ")}
+            </p>
+          )}
+          {s && edit && <ObjectMappingEditor key={edit} object={edit} settings={s} onSaved={setS} />}
+        </>
+      )}
+      {msg && <p className="text-[13px]" role="status">{msg}</p>}
+    </Section>
+  );
+}
+
+function ObjectMappingEditor({ object, settings, onSaved }: { object: "company" | "deal"; settings: any; onSaved: (s: any) => void }) {
+  const cfg = settings[object];
+  const labels = object === "company" ? COMPANY_LOCAL : DEAL_LOCAL;
+  const [rows, setRows] = useState<{ local: string; remote: string }[]>(cfg.entries);
+  const [pipeline, setPipeline] = useState<string>(object === "deal" ? cfg.pipeline.pipeline : "");
+  const [stages, setStages] = useState<Record<string, string>>(object === "deal" ? cfg.pipeline.stages : {});
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const save = async () => {
+    setErr(null);
+    setOk(false);
+    try {
+      const r = await api("/integrations/hubspot/deal-settings", { method: "PUT", offline: false, body: { object, entries: rows.filter((x) => x.remote), ...(object === "deal" ? { pipeline: { pipeline, stages } } : {}) } });
+      onSaved(r);
+      setOk(true);
+    } catch (e) {
+      const d = (e as { details?: string[] }).details;
+      setErr(Array.isArray(d) ? d.join(", ") : (e as Error).message);
+    }
+  };
+  return (
+    <div className="space-y-2" aria-label={object === "company" ? "회사 필드 매핑" : "딜 필드 매핑"}>
+      <p className="text-[12.5px] text-[var(--fg-mute)]">{cfg.isDefault ? "기본 매핑 사용 중" : "사용자 매핑"} · 비어 있는 값은 보내지 않습니다.{object === "deal" ? " pipeline·dealstage 는 아래 단계 매핑으로 정해집니다." : ""}</p>
+      {rows.map((r, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <select className="field !min-h-9 text-[13px]" value={r.local} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, local: e.target.value } : x)))} aria-label="LINKOS 필드">
+            {cfg.localFields.map((k: string) => <option key={k} value={k}>{labels[k] ?? k}</option>)}
+          </select>
+          <Icon name="arrow" size={14} className="shrink-0 opacity-50" />
+          <input className="field !min-h-9 text-[13px]" value={r.remote} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, remote: e.target.value } : x)))} aria-label="HubSpot 속성" />
+          <button aria-label="행 삭제" className="shrink-0 text-[var(--fg-mute)]" onClick={() => setRows(rows.filter((_, j) => j !== i))}><Icon name="x" size={16} /></button>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-2">
+        <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => setRows([...rows, { local: cfg.localFields[0], remote: "" }])}><Icon name="plus" size={14} />필드 추가</button>
+        <button className="btn btn-ghost !min-h-9 text-[13px]" onClick={() => { setRows(cfg.defaults); if (object === "deal") { setPipeline(cfg.defaultPipeline.pipeline); setStages(cfg.defaultPipeline.stages); } }}>기본값으로</button>
+      </div>
+      {object === "deal" && (
+        <div className="space-y-2 rounded-[14px] border border-[var(--line)] p-3">
+          <label className="block text-[13px]">HubSpot 파이프라인 ID
+            <input className="field !min-h-9 text-[13px]" value={pipeline} onChange={(e) => setPipeline(e.target.value)} />
+          </label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {settings.stages.map((st: any) => (
+              <label key={st.id} className="block text-[13px]">LINKOS ‘{st.label}’ → HubSpot 단계 ID
+                <input className="field !min-h-9 text-[13px]" value={stages[st.id] ?? ""} onChange={(e) => setStages({ ...stages, [st.id]: e.target.value })} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      <button className="btn btn-signal !min-h-9 text-[13px]" onClick={save}>매핑 저장</button>
+      {err && <p className="text-[13px] text-[var(--color-ember)]" role="alert">{err}</p>}
+      {ok && <p className="text-[13px]" role="status">저장했어요.</p>}
+    </div>
   );
 }

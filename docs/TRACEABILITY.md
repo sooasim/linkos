@@ -8,24 +8,24 @@
 
 | 우선순위 | 전체 | ✅ T | 🟢 I | 🟡 P | ⬜ N |
 |---|---|---|---|---|---|
-| P0 | 81 | 62 | 17 | 2 | 0 |
+| P0 | 81 | 63 | 17 | 1 | 0 |
 | P1 | 85 | 69 | 15 | 1 | 0 |
-| P2 | 29 | 25 | 2 | 2 | 0 |
+| P2 | 29 | 27 | 2 | 0 | 0 |
 | P3 | 2 | 2 | 0 | 0 | 0 |
-| 합계 | 197 | 158 | 34 | 5 | 0 |
+| 합계 | 197 | 161 | 34 | 2 | 0 |
 
 ## IAM · Identity & Onboarding
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| F-001 | P0 | 회원가입/로그인 | ✅ 구현+자동테스트 | /login | /auth/otp, /auth/verify, /auth/google | identity | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, tests/scenarios S-001~S-006 | Email OTP + Google OIDC. Apple Sign-in 미구현 |
+| F-001 | P0 | 회원가입/로그인 | ✅ 구현+자동테스트 | /login | /auth/otp, /auth/verify, /auth/google, /auth/apple, /auth/passkey/* | identity, apple, passkey | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, tests/scenarios S-001~S-006, services/api/test/apple.integration.test.ts | Email OTP + Google OIDC + Sign in with Apple + 패스키 |
 | F-002 | P0 | 게스트 세션 | ✅ 구현+자동테스트 | /x/[token], /c/[code] | /exchange/sessions/{token} | handoff | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
 | F-003 | P0 | 계정 Claim | ✅ 구현+자동테스트 | /claim | /guest/claim | handoff.claimGuest | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
 | F-004 | P1 | 조직 가입 | ✅ 구현+자동테스트 | /join/[token], /app/org/members | /orgs/{id}/invites | modules/org.ts | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts | 이메일 바인딩 초대·만료·회수, 인증 도메인 자동가입/승인 |
 | F-005 | P1 | 다중 프로필 | 🟢 구현 | /app/me/edit?new=1 | /profiles | card |  |  |
 | F-006 | P1 | Passkey | ✅ 구현+자동테스트 | /login, /app/settings | /auth/passkey/* | modules/passkey.ts (@simplewebauthn) | services/api/test/track-a.integration.test.ts | ES256 소프트 인증기로 등록·로그인·재사용·origin·카운터 검증. 실브라우저 플로우는 수동 검증 필요 |
 | F-007 | P0 | 세션 보안 | ✅ 구현+자동테스트 | /app/settings | /me/devices | identity.resolveSession | services/api/test/api.integration.test.ts, tests/scenarios S-004,S-006,S-010 | refresh rotation + reuse detection + device revoke |
-| F-008 | P2 | B2B SSO | 🟡 부분 | /login (회사 SSO) | /auth/sso/*, /scim/v2/* | modules/enterprise.ts | services/api/test/track-a.integration.test.ts | OIDC(PKCE·nonce·JWKS)+SCIM 2.0 구현·테스트. SAML 미구현, SSO 강제(OTP 차단) 미구현 |
+| F-008 | P2 | B2B SSO | ✅ 구현+자동테스트 | /login (회사 SSO), /app/org/settings | /auth/sso/*, /sso/saml/{orgId}/{metadata,acs}, /scim/v2/* | modules/enterprise.ts, saml.ts (@node-saml/node-saml), ssoLogin.ts, ssoPolicy.ts | services/api/test/saml.integration.test.ts, services/api/test/track-a.integration.test.ts, packages/domain/test/sso.test.ts | OIDC + SAML 2.0(SP-initiated, 서명·XSW·재생 방어, 인증서 교체) + SCIM + sso_required 강제(Owner OTP break-glass). IdP-initiated·SLO·암호화 assertion 미지원 |
 | F-009 | P0 | 연령/약관 동의 | ✅ 구현+자동테스트 | /login (consent step) | /auth/verify, /me/consents | identity | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
 ## CAP · Capture & OCR
 
@@ -93,7 +93,7 @@
 | F-057 | P2 | Contact Picker 보조 | 🟢 구현 | /x/[token] |  | GuestFlow Contact Picker |  | 지원 브라우저에서만 버튼 표시. 브라우저 미검증 |
 | F-058 | P0 | 회신 동의 | ✅ 구현+자동테스트 | ReviewFields(selectable) | /exchange/sessions/{token}/reply | handoff | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts | 체크한 필드만 전송 |
 | F-059 | P0 | 가입 후 Claim | ✅ 구현+자동테스트 | /claim | /guest/claim | handoff | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
-| F-060 | P0 | One Tap 가입 | 🟡 부분 | /login, /claim | /auth/google/onetap | modules/identity.ts | services/api/test/track-e.integration.test.ts | Google One Tap ID 토큰 검증(JWKS) 테스트. Apple 로그인 미구현 |
+| F-060 | P0 | One Tap 가입 | ✅ 구현+자동테스트 | /login, /claim | /auth/google/onetap, /auth/apple, /auth/apple/callback | modules/identity.ts, modules/apple.ts | services/api/test/track-e.integration.test.ts, services/api/test/apple.integration.test.ts | Google One Tap + Sign in with Apple(form_post, nonce, ES256 client secret, 신규 가입 동의 단계). 가짜 서버로 검증 — 실제 Apple/Google 계정은 스테이징 수동 확인 필요 |
 | F-061 | P0 | 프로필 자동완성 | ✅ 구현+자동테스트 | /claim | /guest/claim | handoff.claimGuest | services/api/test/api.integration.test.ts | 초안으로 Living Card 자동 생성 |
 | F-062 | P1 | Offer/Need 2문항 | 🟢 구현 | GuestFlow, CardEditor |  |  |  |  |
 | F-063 | P1 | 첫 공유 유도 | 🟢 구현 | ExchangeConsole '다음 사람과 교환' |  |  |  |  |
@@ -174,7 +174,7 @@
 | F-118 | P1 | Google Calendar | ✅ 구현+자동테스트 | /app/calendar | /calendar/* | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 생성·수정·삭제·free/busy (가짜 서버) |
 | F-119 | P2 | Outlook/Microsoft | ✅ 구현+자동테스트 | /app/integrations | /integrations/microsoft/* | modules/crm.ts | services/api/test/track-b.integration.test.ts | 푸시 전용(Outlook 연락처 가져오기 없음). 가짜 Graph 서버로 검증 |
 | F-120 | P2 | Salesforce | ✅ 구현+자동테스트 | /app/integrations | /integrations/salesforce/* | modules/crm.ts | services/api/test/track-b.integration.test.ts | Contact/Lead upsert, 충돌 처리. 실계정 미검증 |
-| F-121 | P2 | HubSpot | 🟡 부분 | /app/integrations | /integrations/hubspot/* | modules/crm.ts | services/api/test/track-b.integration.test.ts | Contacts+미팅 노트. Company/Deal 동기화 미구현 |
+| F-121 | P2 | HubSpot | ✅ 구현+자동테스트 | /app/integrations, /app/meetings/[id] | /integrations/hubspot/*, /integrations/{provider}/{companies/sync,deals,deal-settings} | modules/crm.ts, modules/crmHubspot.ts, packages/domain/src/crmDeals.ts | services/api/test/track-b.integration.test.ts, services/api/test/hubspot-deals.integration.test.ts, packages/domain/test/crmDeals.test.ts | Contacts·미팅 노트·회사(도메인 중복판정·연결)·딜(초안→사용자 승인 후에만 전송). 가짜 HubSpot 서버로 검증 |
 | F-122 | P2 | Dynamics | ✅ 구현+자동테스트 | /app/integrations | /integrations/dynamics/* | modules/crm.ts | services/api/test/track-b.integration.test.ts | Contacts/Leads, If-Match, 중복 감지→충돌. 실계정 미검증 |
 | F-123 | P2 | Webhook/Zapier/Make | ✅ 구현+자동테스트 | /app/integrations | /webhooks | modules/webhooks.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | HMAC 서명, 백오프, SSRF 가드(DNS 재검사), 20회 실패 시 비활성 |
 | F-124 | P0 | Excel/CSV | ✅ 구현+자동테스트 | /app/settings | /exports | integration.renderExport | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-087,S-088 | XLSX + CSV(수식 주입 방지) |

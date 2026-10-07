@@ -39,7 +39,7 @@ describe("Google integration (fake Google)", () => {
     expect(url).not.toContain("auth/spreadsheets"); // least privilege
     const state = new URL(url).searchParams.get("state")!;
     expect(integration.verifyState(state)).toMatchObject({ purpose: "sheets", userId: uid });
-    expect(() => integration.verifyState(state.replace(/.$/, "x"))).toThrow();
+    expect(() => integration.verifyState(state.replace(/.$/, (c) => (c === "x" ? "y" : "x")))).toThrow();
     const { tok, user: gu } = await integration.exchangeGoogleCode("code-abc");
     expect(gu.email).toBe("fake@gmail.com");
     await integration.storeGoogleAccount(uid, tok);

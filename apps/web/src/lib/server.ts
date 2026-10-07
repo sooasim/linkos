@@ -14,7 +14,7 @@ export function cookieOptions(maxAge = SESSION_MAX_AGE) {
   return { httpOnly: true, secure: (process.env.APP_ORIGIN ?? "").startsWith("https:"), sameSite: "lax" as const, path: "/", maxAge };
 }
 
-function clientIp(h: Headers): string {
+export function clientIp(h: Headers): string {
   return (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "0.0.0.0").trim();
 }
 

@@ -1,4 +1,5 @@
 // crm module — F-119 Outlook/Microsoft, F-120 Salesforce, F-121 HubSpot, F-122 Dynamics 365, F-127 필드 매핑, F-128 Sync Journal, F-088 CRM 연결.
+// F-121 HubSpot Company/Deal sync lives in ./crmHubspot (jobs dispatched from runSyncJob below).
 // OAuth(서명된 state) → 자격증명은 vault(seal)로 암호화 저장 → 변경은 sync_jobs 로 직렬 처리(계정별 advisory lock, integration.processSyncJobs).
 // 원칙: 외부 레코드는 etag/If-Match/If-Unmodified-Since 로만 갱신하고, 충돌 시 조용히 덮어쓰지 않는다(status=conflict → 사용자 결정).
 import {
@@ -79,7 +80,7 @@ function tokenUrl(p: CrmProvider): string {
 export function graphBase(): string {
   return fake("microsoft") ? `${fake("microsoft")}/graph/v1.0` : "https://graph.microsoft.com/v1.0";
 }
-function hubspotBase(): string {
+export function hubspotBase(): string {
   return fake("hubspot") ? `${fake("hubspot")}/hs` : "https://api.hubapi.com";
 }
 
@@ -90,7 +91,8 @@ function scopesFor(p: CrmProvider, meta: AccountMeta): string[] {
     case "salesforce":
       return ["api", "refresh_token"];
     case "hubspot":
-      return ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write"];
+      // F-121: companies + deals for Company/Deal sync (accounts connected before need to reconnect — see crmHubspot.hubspotScopesOk)
+      return ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write", "crm.objects.companies.read", "crm.objects.companies.write", "crm.objects.deals.read", "crm.objects.deals.write"];
     case "dynamics":
       return [`${meta.orgUrl}/user_impersonation`, "offline_access"];
   }
@@ -270,7 +272,7 @@ export async function providerFetch(a: Account, url: string, init: RequestInit =
   return res;
 }
 
-async function failed(res: Response, p: CrmProvider, what: string): Promise<never> {
+export async function failed(res: Response, p: CrmProvider, what: string): Promise<never> {
   const text = (await res.text().catch(() => "")).slice(0, 200);
   throw new ApiError(res.status, `${p}_${res.status}`, `${what} ${res.status}${text ? `: ${text}` : ""}`);
 }
@@ -365,7 +367,7 @@ function httpDate(iso: string | null): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toUTCString();
 }
 
-async function upsertRecord(a: Account, object: CrmObject, contactId: string, payload: { force?: boolean; linkExternalId?: string }): Promise<Upserted> {
+export async function upsertRecord(a: Account, object: CrmObject, contactId: string, payload: { force?: boolean; linkExternalId?: string }): Promise<Upserted> {
   const contact = await getContactRow(a.user_id, contactId); // ownership: the contact must belong to the account owner
   const { entries, externalIdField } = await loadMapping(a.user_id, a.provider, object);
   const { values, missingRequired } = applyMapping(a.provider, object, entries, contact);
@@ -599,6 +601,14 @@ export async function runSyncJob(accountId: string, job: { id: string; job_type:
       return upsertRecord(a, "lead", job.payload.contactId, job.payload);
     case "crm.note.upsert":
       return upsertMeetingNote(a, job.payload.meetingId, job.payload.contactId);
+    case "crm.company.upsert": {
+      const { runCompanyJob } = await import("./crmHubspot");
+      return runCompanyJob(a, job.payload);
+    }
+    case "crm.deal.upsert": {
+      const { runDealJob } = await import("./crmHubspot");
+      return runDealJob(a, job.payload);
+    }
     case "calendar.event.upsert": {
       const { runCalendarJob } = await import("./calendar");
       return runCalendarJob(a.id, a.provider as string, job.payload);
@@ -619,7 +629,15 @@ export async function crmStatus(userId: string) {
       status: r?.status ?? "disconnected",
       account: r ? { email: r.metadata?.accountEmail ?? null, instanceUrl: r.metadata?.instanceUrl ?? r.metadata?.orgUrl ?? null } : null,
       objects: CRM_OBJECTS.filter((o) => supportsObject(p, o)),
-      capabilities: { contacts: true, notes: p !== "microsoft", calendar: p === "microsoft", mail: p === "microsoft" && Boolean(r?.scopes?.includes("Mail.Send")) },
+      capabilities: {
+        contacts: true,
+        notes: p !== "microsoft",
+        calendar: p === "microsoft",
+        mail: p === "microsoft" && Boolean(r?.scopes?.includes("Mail.Send")),
+        // F-121 HubSpot Company/Deal sync (needs the companies/deals scopes granted at connect time)
+        companies: p === "hubspot" && Boolean(r?.scopes?.includes("crm.objects.companies.write")),
+        deals: p === "hubspot" && Boolean(r?.scopes?.includes("crm.objects.deals.write")),
+      },
       updatedAt: r?.updated_at ?? null,
     };
   });
@@ -654,12 +672,13 @@ export async function syncJournal(userId: string, f: z.infer<typeof journalQuery
   }
   const rows = await q<any>(
     `SELECT j.id, j.job_type, j.status, j.attempt_count, j.last_error, j.scheduled_at, j.finished_at, j.external_id AS job_external_id, j.resolution, j.payload,
-       a.provider, em.external_id, em.external_etag, em.remote_url, em.last_synced_at, c.full_name
+       a.provider, em.external_id, em.external_etag, em.remote_url, em.last_synced_at, c.full_name, d.name AS deal_name
      FROM integration_accounts a
      JOIN LATERAL (SELECT * FROM sync_jobs j WHERE j.integration_account_id = a.id ${jobFilter} ORDER BY j.scheduled_at DESC LIMIT $2) j ON true
      LEFT JOIN contacts c ON c.id = NULLIF(j.payload->>'contactId','')::uuid AND c.owner_user_id = a.user_id
-     LEFT JOIN external_mappings em ON em.integration_account_id = a.id AND em.local_id = NULLIF(j.payload->>'contactId','')::uuid
-       AND em.entity_type = CASE j.job_type WHEN 'crm.lead.upsert' THEN 'lead' ELSE 'contact' END
+     LEFT JOIN crm_deals d ON d.id = NULLIF(j.payload->>'dealId','')::uuid AND d.owner_user_id = a.user_id
+     LEFT JOIN external_mappings em ON em.integration_account_id = a.id AND em.local_id = COALESCE(NULLIF(j.payload->>'contactId',''), NULLIF(j.payload->>'dealId',''))::uuid
+       AND em.entity_type = CASE j.job_type WHEN 'crm.lead.upsert' THEN 'lead' WHEN 'crm.deal.upsert' THEN 'deal' WHEN 'crm.company.upsert' THEN '-' ELSE 'contact' END
      WHERE a.user_id = $1 ${acctFilter}
      ORDER BY j.scheduled_at DESC LIMIT $2`,
     params,
@@ -682,6 +701,7 @@ export async function syncJournal(userId: string, f: z.infer<typeof journalQuery
       resolution: r.resolution,
       contact: r.payload?.contactId ? { id: r.payload.contactId, fullName: r.full_name } : null,
       meetingId: r.payload?.meetingId ?? null,
+      deal: r.payload?.dealId ? { id: r.payload.dealId, name: r.deal_name ?? null } : null,
       external: r.external_id || r.job_external_id ? { id: r.external_id ?? r.job_external_id, etag: r.external_etag, url: r.remote_url, lastSyncedAt: r.last_synced_at } : null,
       canRetry: r.status === "dead",
       canResolve: r.status === "conflict",

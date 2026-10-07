@@ -37,9 +37,11 @@
 - 실시간 교환 상태는 SSE(`/api/v1/exchange/sessions/{token}/events`).
 
 ## 5. 디자인 시스템 규칙 (packages/ui 토큰 = `apps/web/src/app/globals.css`)
-- 컨셉: "Editorial Ink & Paper" — 잉크(#0E0E10) 배경, 종이(#F4F1EA) 카드, 시그널 라임(#C8F03C) 단일 강조색, 보조 오렌지(#FF5A1F).
-- 타이포: 디스플레이 = Instrument Serif(이탤릭 강조), UI = Inter Tight, 한글 = Pretendard. 큰 대비의 타이포 스케일.
-- 주요 행동은 한 손 엄지 영역(하단)에 배치. 게스트 랜딩 LCP p75 < 2.5s → 랜딩에 무거운 JS/이미지 금지.
+- 컨셉: "Porcelain & Pastel" — 흰 도자기 배경(#FCFCFE), 잉크 텍스트(#1B1B24), 파스텔 표면(라벤더 #ECE8FF · 민트 #DCF5EA · 피치 #FFE8DD · 스카이 #DCEBFF · 버터 #FFF4D2 · 로즈 #FDE6EF), 단일 강조색 아이리스(#6C5CE7, 텍스트용 #5B4BD6). 경고/오류는 코랄(#E8664A).
+- 하드코딩 색 금지 — `var(--bg|--bg-elev|--bg-sunk|--fg|--fg-mute|--line|--accent|--accent-text|--accent-soft|--glass)` 와 `--color-*` 파스텔 토큰만 쓴다. 다크 모드는 토큰 재정의로 자동 지원.
+- 타이포: 디스플레이 = Instrument Serif(이탤릭 `<em>` 은 아이리스→로즈 그라디언트), UI = Inter Tight, 한글 = Pretendard. 큰 대비의 타이포 스케일.
+- 모션 레이어(`components/Fx.tsx`): `[data-reveal]` 스크롤 리빌, `.btn` 리플, `[data-tilt]` 홀로그래픽 틸트, `[data-confetti]` 파스텔 컨페티, 커서 스포트라이트·스크롤 진행바, `app/app/template.tsx` 페이지 전환, `.stagger`·`.glow-border`·`.stage-aurora`. 모두 점진적 향상(JS 없이도 내용 표시)이며 `prefers-reduced-motion` 시 비활성.
+- 주요 행동은 한 손 엄지 영역(하단)에 배치. 게스트 랜딩 LCP p75 < 2.5s → 랜딩에 무거운 JS/이미지 금지(모션은 CSS + 경량 IntersectionObserver).
 - 접근성: 색 대비 AA, 포커스 링, `prefers-reduced-motion` 준수, 모든 아이콘 버튼에 aria-label.
 
 ## 6. 작업 방법

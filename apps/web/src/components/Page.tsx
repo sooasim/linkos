@@ -33,8 +33,8 @@ export function Empty({ title, body, action }: { title: string; body?: string; a
 export function Avatar({ name, size = 44 }: { name: string; size?: number }) {
   const initial = (name.trim()[0] ?? "?").toUpperCase();
   const hue = [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 4;
-  const bg = ["#c8f03c", "#ff5a1f", "#8fb8ff", "#0e0e10"][hue];
-  const fg = hue === 3 ? "#f4f1ea" : "#0e0e10";
+  const bg = ["#e6e1ff", "#ffe2d6", "#d9eaff", "#d8f3e7"][hue];
+  const fg = "#2a2550";
   return (
     <span className="display grid shrink-0 place-items-center rounded-full" style={{ width: size, height: size, background: bg, color: fg, fontSize: size * 0.48 }} aria-hidden>
       {initial}

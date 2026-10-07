@@ -188,7 +188,7 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
           </span>
           <h2 className="display mt-4 text-[40px]">교환 완료</h2>
           {status!.received.slice(0, 1).map((r) => (
-            <Link key={r.contactId} href={`/app/people/${r.contactId}`} className="mx-auto mt-4 flex max-w-xs items-center gap-3 rounded-2xl bg-white/5 p-3 text-left">
+            <Link key={r.contactId} href={`/app/people/${r.contactId}`} className="mx-auto mt-4 flex max-w-xs items-center gap-3 rounded-2xl bg-[var(--bg-sunk)] p-3 text-left">
               <Avatar name={r.fullName} />
               <span>
                 <span className="block font-semibold">{r.fullName}</span>

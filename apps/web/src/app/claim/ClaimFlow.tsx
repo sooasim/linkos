@@ -93,7 +93,7 @@ export function ClaimFlow({ signedIn }: { signedIn: boolean }) {
                 가입하고 소유하기 <Icon name="arrow" size={18} />
               </Link>
             )}
-            {error && <p role="alert" className="mt-4 text-[14px] text-[#ffb59a]">{error}</p>}
+            {error && <p role="alert" className="mt-4 text-[14px] text-[var(--color-ember)]">{error}</p>}
           </div>
         )}
       </div>

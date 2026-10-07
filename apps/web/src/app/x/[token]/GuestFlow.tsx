@@ -150,7 +150,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard }: { token: str
                 선택한 항목을 <b>{landing.sender.name}</b>님에게 보내는 데 동의합니다. 교환 기록은 <Link href="/legal/privacy" className="underline">개인정보 처리방침</Link>에 따라 보관됩니다.
               </span>
             </label>
-            {error && <p role="alert" className="mt-3 rounded-2xl bg-[var(--color-ember)]/15 px-4 py-3 text-[14px] text-[#ffb59a]">{error}</p>}
+            {error && <p role="alert" className="mt-3 rounded-2xl bg-[var(--color-ember)]/15 px-4 py-3 text-[14px] text-[var(--color-ember)]">{error}</p>}
           </section>
         )}
 
@@ -186,7 +186,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard }: { token: str
       </div>
 
       {(step === "view" || step === "review" || step === "sending") && (
-        <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[var(--color-ink)] via-[var(--color-ink)]/95 to-transparent px-5 pt-10 safe-bottom">
+        <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)]/95 to-transparent px-5 pt-10 safe-bottom">
           <div className="mx-auto w-full max-w-[520px]">
             {step === "view" && landing.acceptsReply && (
               <button onClick={startReply} className="btn btn-signal btn-lg w-full" data-testid="reply-cta">

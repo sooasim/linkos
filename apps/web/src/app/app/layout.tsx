@@ -8,7 +8,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { userId } = await getViewer();
   if (!userId) redirect("/login?next=/app");
   return (
-    <div className="flex min-h-dvh">
+    <div className="stage-aurora flex min-h-dvh">
       <SideNav />
       <main className="mx-auto w-full max-w-3xl flex-1 px-5 pb-36 pt-6 sm:px-8 lg:pb-16 lg:pt-10">{children}</main>
       <Dock />

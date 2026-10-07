@@ -41,12 +41,12 @@ test("S-097 iPad 가로: 로그인 화면 2단 레이아웃", async ({ browser }
   await ctx.close();
 });
 
-test("S-098 다크 모드 선호 시 앱 배경이 잉크색", async ({ browser }) => {
+test("S-098 다크 모드 선호 시 앱 배경이 어두운 잉크색", async ({ browser }) => {
   const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await page.goto("/legal/terms");
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(bg).toBe("rgb(14, 14, 16)");
+  expect(bg).toBe("rgb(15, 15, 23)");
   await ctx.close();
 });
 

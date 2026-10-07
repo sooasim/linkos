@@ -54,8 +54,14 @@ export function Logo({ className = "", mono = false }: { className?: string; mon
   return (
     <span className={`inline-flex items-center gap-2 font-semibold tracking-tight ${className}`}>
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="lk-g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#8f7bff" />
+            <stop offset="1" stopColor="#f08fb4" />
+          </linearGradient>
+        </defs>
         <rect x="3" y="8" width="17" height="12" rx="3.5" fill="none" stroke="currentColor" strokeWidth="2.2" transform="rotate(-12 11.5 14)" />
-        <rect x="12" y="12" width="17" height="12" rx="3.5" fill={mono ? "currentColor" : "#c8f03c"} stroke={mono ? "currentColor" : "#c8f03c"} strokeWidth="2.2" transform="rotate(8 20.5 18)" />
+        <rect x="12" y="12" width="17" height="12" rx="3.5" fill={mono ? "currentColor" : "url(#lk-g)"} stroke={mono ? "currentColor" : "url(#lk-g)"} strokeWidth="2.2" transform="rotate(8 20.5 18)" />
       </svg>
       <span className="text-[17px] leading-none">LINKOS</span>
     </span>

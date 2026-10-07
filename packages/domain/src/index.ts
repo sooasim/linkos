@@ -11,3 +11,7 @@ export * from "./redact";
 export * from "./events";
 export * from "./introduction";
 export * from "./vcard";
+export * from "./hmac";
+export * from "./offline";
+export * from "./pairing";
+export * from "./acoustic";

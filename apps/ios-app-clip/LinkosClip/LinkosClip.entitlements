@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Clip invocation from https://linkos.app/x/*, /c/*, /n/* (see apps/web/public/.well-known/apple-app-site-association;
+	     replace TEAMID there with the Apple Developer Team ID, and linkos.app here with the production domain). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>appclips:linkos.app</string>
+	</array>
+	<!-- The full app that this clip belongs to (bundle id app.linkos.ios, see apps/mobile/app.config.ts). -->
+	<key>com.apple.developer.parent-application-identifiers</key>
+	<array>
+		<string>$(AppIdentifierPrefix)app.linkos.ios</string>
+	</array>
+	<!-- Shared with the full app: the guest claim token is handed over after install (Claim comes after exchange). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.linkos.shared</string>
+	</array>
+</dict>
+</plist>

@@ -1,8 +1,12 @@
 "use client";
-// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036)
+// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + F-021 템플릿·아이콘 꾸미기
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
 import { CardScanner, type OcrLineOut } from "@/components/CardScanner";
+import { type DesignState, cleanOptions, designFromState, initialDesignState, withGlyph } from "@/components/cardTemplates/designState";
+import { TemplateStudio } from "@/components/cardTemplates/TemplateStudio";
+import { GlyphButton } from "@/components/iconBank/GlyphButton";
 import { Icon } from "@/components/Icon";
 import { CardFace, OfferNeed } from "@/components/LivingCard";
 import { PageHeader } from "@/components/Page";
@@ -37,7 +41,7 @@ const AUDIENCES = [
   ["recruiting", "채용"],
 ] as const;
 
-function ListEditor({ label, items, onChange, placeholder, max = 10 }: { label: string; items: string[]; onChange: (v: string[]) => void; placeholder: string; max?: number }) {
+function ListEditor({ label, items, onChange, placeholder, max = 10, addon }: { label: string; items: string[]; onChange: (v: string[]) => void; placeholder: string; max?: number; addon?: React.ReactNode }) {
   const [draft, setDraft] = useState("");
   const add = () => {
     const v = draft.trim();
@@ -46,7 +50,14 @@ function ListEditor({ label, items, onChange, placeholder, max = 10 }: { label: 
   };
   return (
     <div>
-      <span className="label">{label}</span>
+      {addon ? (
+        <div className="mb-1.5 flex items-center gap-2">
+          {addon}
+          <span className="label !mb-0">{label}</span>
+        </div>
+      ) : (
+        <span className="label">{label}</span>
+      )}
       <div className="flex flex-wrap gap-2">
         {items.map((it) => (
           <span key={it} className="chip">
@@ -67,8 +78,15 @@ function ListEditor({ label, items, onChange, placeholder, max = 10 }: { label: 
   );
 }
 
-export function CardEditor({ profile, onboarding }: { profile: any | null; onboarding: boolean }) {
+type GlyphMapKey = "fieldIcons" | "keywordBadges" | "sectionIcons";
+
+export function CardEditor({ profile, onboarding, initialTab = "info" }: { profile: any | null; onboarding: boolean; initialTab?: "info" | "template" }) {
   const router = useRouter();
+  const [tab, setTab] = useState<"info" | "template">(initialTab);
+  const [design, setDesign] = useState<DesignState>(() => initialDesignState(profile?.design, profile?.templateOptions));
+  const glyphOf = (ref: string | undefined) => (ref ? (design.glyphs[ref] ?? null) : null);
+  const setGlyph = (map: GlyphMapKey, key: string, g: ResolvedGlyph | null) =>
+    setDesign((s) => ({ ...withGlyph(s, g), options: { ...s.options, [map]: { ...(s.options[map] ?? {}), [key]: g?.ref } } }));
   const [p, setP] = useState(() => ({
     name: profile?.name ?? "",
     company: profile?.company ?? "",
@@ -90,6 +108,8 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof typeof p>(k: K, v: (typeof p)[K]) => setP((s) => ({ ...s, [k]: v }));
+  // the card face shows what an exchange recipient sees (public + business fields)
+  const previewFields = p.fields.filter((f) => f.value.trim() && (f.visibility === "public" || f.visibility === "business"));
 
   const fromScan = async (lines: OcrLineOut[]) => {
     const r = await api<{ fields: { key: string; value: string }[] }>("/capture/parse", { body: { lines: lines.map((l) => ({ text: l.text, confidence: l.confidence })) } });
@@ -115,6 +135,8 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
       fields: p.fields.filter((f) => f.value.trim()),
       deep: { ...p.deep, projects: (p.deep.projects ?? []).filter((x: any) => x.title) },
       variants: p.variants.filter((v) => v.headline).map((v) => ({ audience: v.audience, headline: v.headline, isDefault: v.isDefault })),
+      templateId: design.template?.id ?? null,
+      templateOptions: cleanOptions(design, p.keywords),
       version: profile?.version,
     };
     try {
@@ -133,8 +155,33 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
     <div>
       <PageHeader back={onboarding ? undefined : "/app/me"} eyebrow={onboarding ? "Welcome · 1분이면 충분해요" : "Card Editor"} title={profile ? <>카드 <em>편집</em></> : <>내 <em>Living Card</em> 만들기</>} />
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-8">
+      <div role="tablist" aria-label="편집 단계" className="surface mb-6 flex p-1">
+        {(
+          [
+            ["info", "카드 정보"],
+            ["template", "템플릿 · 꾸미기"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} type="button" role="tab" id={`edit-tab-${k}`} aria-controls={`edit-panel-${k}`} aria-selected={tab === k} onClick={() => setTab(k)} data-testid={`edit-tab-${k}`} className={`flex-1 rounded-[16px] py-2.5 text-[14px] font-semibold transition ${tab === k ? "bg-[var(--fg)] text-[var(--bg)]" : "text-[var(--fg-mute)]"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {tab === "template" ? (
+          <div role="tabpanel" id="edit-panel-template" aria-labelledby="edit-tab-template" className="space-y-6">
+            <TemplateStudio
+              profile={{ name: p.name, company: p.company, jobTitle: p.jobTitle, headline: p.headline, keywords: p.keywords, industries: p.industries, bioShort: p.bioShort, fields: previewFields }}
+              state={design}
+              onChange={setDesign}
+            />
+            <a href="/app/me/templates" className="btn btn-ghost w-full">
+              <Icon name="layers" size={16} /> 전체 화면 갤러리에서 보기
+            </a>
+          </div>
+        ) : (
+        <div role="tabpanel" id="edit-panel-info" aria-labelledby="edit-tab-info" className="space-y-8">
           {scan ? (
             <section className="space-y-3">
               <p className="text-[15px] text-[var(--fg-mute)]">종이 명함이 있다면 촬영해서 바로 채워보세요.</p>
@@ -163,6 +210,17 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
               </label>
             </div>
             <ListEditor label="핵심 키워드 (최대 3개)" items={p.keywords} onChange={(v) => set("keywords", v)} placeholder="예: 의료AI" max={3} />
+            {p.keywords.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" aria-label="키워드 배지">
+                <span className="text-[13px] text-[var(--fg-mute)]">키워드 배지</span>
+                {p.keywords.map((k) => (
+                  <span key={k} className="inline-flex items-center gap-1.5">
+                    <GlyphButton compact label={`‘${k}’ 키워드 배지`} value={glyphOf(design.options.keywordBadges?.[k])} onChange={(g) => setGlyph("keywordBadges", k, g)} />
+                    <span className="text-[13px]">#{k}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             <div>
               <span className="label">카드 테마</span>
               <div className="flex gap-2">
@@ -176,12 +234,13 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
           <section className="space-y-3">
             <h2 className="eyebrow">연락처 · 공개범위</h2>
             {p.fields.map((f, i) => (
-              <div key={i} className="surface grid grid-cols-[110px_1fr_auto] items-center gap-2 p-2 sm:grid-cols-[120px_1fr_130px_auto]">
+              <div key={i} className="surface grid grid-cols-[auto_110px_1fr_auto] items-center gap-2 p-2 sm:grid-cols-[auto_120px_1fr_130px_auto]">
+                <GlyphButton compact label={`${FIELD_TYPES.find(([v]) => v === f.type)?.[1] ?? f.type} 아이콘`} value={glyphOf(design.options.fieldIcons?.[f.type])} onChange={(g) => setGlyph("fieldIcons", f.type, g)} />
                 <select className="field !min-h-11 !py-2 !text-[14px]" value={f.type} aria-label="항목 종류" onChange={(e) => set("fields", p.fields.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))}>
                   {FIELD_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
                 <input className="field !min-h-11 !py-2" value={f.value} aria-label="값" onChange={(e) => set("fields", p.fields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} />
-                <select className="field col-span-2 !min-h-11 !py-2 !text-[14px] sm:col-span-1" value={f.visibility} aria-label="공개범위" onChange={(e) => set("fields", p.fields.map((x, j) => (j === i ? { ...x, visibility: e.target.value as Vis } : x)))}>
+                <select className="field col-span-3 !min-h-11 !py-2 !text-[14px] sm:col-span-1" value={f.visibility} aria-label="공개범위" onChange={(e) => set("fields", p.fields.map((x, j) => (j === i ? { ...x, visibility: e.target.value as Vis } : x)))}>
                   {VIS.map((v) => <option key={v.v} value={v.v}>{v.label} · {v.hint}</option>)}
                 </select>
                 <button type="button" aria-label="항목 삭제" className="grid size-11 place-items-center text-[var(--fg-mute)]" onClick={() => set("fields", p.fields.filter((_, j) => j !== i))}>
@@ -210,7 +269,14 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
 
           <section className="space-y-4">
             <h2 className="eyebrow">딥 프로필</h2>
-            <ListEditor label="프로젝트" items={(p.deep.projects ?? []).map((x: any) => x.title)} onChange={(v) => set("deep", { ...p.deep, projects: v.map((title) => ({ title })) })} placeholder="진행 중인 프로젝트" max={12} />
+            <ListEditor
+              label="프로젝트"
+              addon={<GlyphButton compact label="프로젝트 섹션 아이콘" value={glyphOf(design.options.sectionIcons?.projects)} onChange={(g) => setGlyph("sectionIcons", "projects", g)} />}
+              items={(p.deep.projects ?? []).map((x: any) => x.title)}
+              onChange={(v) => set("deep", { ...p.deep, projects: v.map((title) => ({ title })) })}
+              placeholder="진행 중인 프로젝트"
+              max={12}
+            />
             {(
               [
                 ["achievements", "성과"],
@@ -221,7 +287,15 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
                 ["languages", "언어"],
               ] as const
             ).map(([k, label]) => (
-              <ListEditor key={k} label={label} items={p.deep[k] ?? []} onChange={(v) => set("deep", { ...p.deep, [k]: v })} placeholder={label} max={12} />
+              <ListEditor
+                key={k}
+                label={label}
+                addon={<GlyphButton compact label={`${label} 섹션 아이콘`} value={glyphOf(design.options.sectionIcons?.[k])} onChange={(g) => setGlyph("sectionIcons", k, g)} />}
+                items={p.deep[k] ?? []}
+                onChange={(v) => set("deep", { ...p.deep, [k]: v })}
+                placeholder={label}
+                max={12}
+              />
             ))}
             {profile?.id && (
               <a href="/app/me/media" className="btn btn-ghost w-full">
@@ -254,10 +328,12 @@ export function CardEditor({ profile, onboarding }: { profile: any | null; onboa
 
           {profile && <CardIntel profileId={profile.id} hasVariants={(profile.variants ?? []).length > 0} />}
         </div>
+        )}
 
         <aside className="lg:sticky lg:top-10 lg:self-start">
           <p className="eyebrow mb-3">미리보기</p>
-          <CardFace card={{ ...p, fields: [] }} />
+          <CardFace card={{ ...p, fields: previewFields, design: designFromState(design) }} />
+          {design.template && <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">템플릿 · {design.template.name.ko}</p>}
           <div className="mt-4">
             <OfferNeed offers={p.offers} needs={p.needs} />
           </div>

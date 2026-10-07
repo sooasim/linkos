@@ -247,6 +247,32 @@ export function assertCardDesign(input: Pick<ProfileInput, "templateId" | "templ
   if (relevant.length) throw designError(relevant);
 }
 
+export const profileTemplateInput = z.object({
+  templateId: z.string().regex(/^[a-z][a-z0-9-]{2,40}$/).nullable(),
+  templateOptions: templateOptionsInput.default({}),
+  version: z.number().int().optional(),
+});
+
+/** F-021: apply a template (gallery "적용") without resending the whole profile. Same validation + event as saveProfile. */
+export async function setProfileTemplate(ctx: Ctx, profileId: string, input: z.infer<typeof profileTemplateInput>): Promise<FullProfile> {
+  if (!ctx.userId) throw unauthorized();
+  const errs = validateCardDesign(input.templateId, input.templateOptions);
+  if (errs.length) throw designError(errs);
+  return tx(async (c) => {
+    const cur = await one<any>("SELECT id, user_id, version, template_id, template_options FROM profiles WHERE id=$1 FOR UPDATE", [profileId], c);
+    if (!cur) throw notFound("profile");
+    if (cur.user_id !== ctx.userId) throw forbidden();
+    if (input.version !== undefined && input.version !== cur.version) {
+      throw conflict("version_conflict", "다른 기기에서 먼저 수정되었습니다. 최신 내용을 확인하세요.", { serverVersion: cur.version });
+    }
+    const version = cur.version + 1;
+    await c.query("UPDATE profiles SET template_id=$2, template_options=$3, version=$4, updated_at=now() WHERE id=$1", [profileId, input.templateId, JSON.stringify(input.templateOptions), version]);
+    await emit(c, "profile.updated", "profile", profileId, { profile_id: profileId, changed_fields: ["template"], version });
+    await audit(c, ctx, "profile.template_updated", "profile", profileId, { templateId: input.templateId });
+    return (await loadProfile(profileId, c))!;
+  });
+}
+
 async function syncTexts(c: Db, table: "offers" | "needs", profileId: string, texts: string[]) {
   const existing = await q<{ id: string; text: string }>(`SELECT id, text FROM ${table} WHERE profile_id=$1`, [profileId], c);
   const keep = new Set(texts);

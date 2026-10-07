@@ -41,6 +41,13 @@ export default async function MePage() {
           </span>
           <Icon name="eye" />
         </Link>
+        <Link href="/app/me/templates" className="surface flex items-center justify-between p-4" data-testid="open-templates">
+          <span>
+            <span className="block text-[15px] font-semibold">명함 템플릿</span>
+            <span className="block text-[13px] text-[var(--fg-mute)]">50가지 디자인 · 아이콘으로 꾸미기</span>
+          </span>
+          <Icon name="layers" />
+        </Link>
         <div className="surface p-4">
           <span className="block text-[15px] font-semibold">프로필 {profiles.length}개</span>
           <span className="block text-[13px] text-[var(--fg-mute)]">개인/회사/역할별로 분리할 수 있어요</span>

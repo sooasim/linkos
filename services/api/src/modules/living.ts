@@ -319,7 +319,9 @@ export async function getOwnActionCtas(ctx: Ctx, profileId: string) {
   if (!ctx.userId) throw unauthorized();
   const p = await one<{ action_ctas: Partial<ActionCtas> }>("SELECT action_ctas FROM profiles WHERE id=$1 AND user_id=$2", [profileId, ctx.userId]);
   if (!p) throw notFound("profile");
-  return actionCtasInput.parse(p.action_ctas ?? {});
+  const v = actionCtasInput.parse(p.action_ctas ?? {});
+  // F-021: resolved icons for the owner's editor preview (refs stay in each CTA's `icon`)
+  return { ...v, glyphs: Object.fromEntries(ACTION_KINDS.map((k) => [k, resolveGlyph(v[k].icon)])) };
 }
 
 export const actionRequestInput = z.object({

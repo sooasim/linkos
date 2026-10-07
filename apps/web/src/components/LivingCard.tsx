@@ -1,6 +1,10 @@
 "use client";
 import { CARD_MESSAGES, type Locale, fmt, toVCard } from "@linkos/domain";
-import { useRef, useState } from "react";
+import type { ResolvedCardDesign } from "@linkos/domain/cardDesign";
+import { useState } from "react";
+import { Glyph } from "./cardTemplates/Glyph";
+import { TemplateCard } from "./cardTemplates/TemplateCard";
+import { useTilt } from "./cardTemplates/useTilt";
 import { Icon, type IconName } from "./Icon";
 
 export interface CardData {
@@ -11,6 +15,8 @@ export interface CardData {
   bioShort?: string | null;
   keywords?: string[];
   theme?: string;
+  /** F-021: server-resolved template + icons (null/absent → classic theme card) */
+  design?: ResolvedCardDesign | null;
   fields?: { type: string; label?: string | null; value: string; visibility?: string }[];
   offers?: string[];
   needs?: string[];
@@ -28,28 +34,22 @@ function hrefFor(type: string, value: string): string | null {
   return null;
 }
 
-/** The physical-feeling card object with pointer tilt + sheen. 3초 카드 (F-022). */
+/** The physical-feeling card object with pointer tilt + sheen. 3초 카드 (F-022). F-021: a chosen template renders via TemplateCard. */
 export function CardFace({ card, size = "lg", interactive = true }: { card: CardData; size?: "sm" | "lg"; interactive?: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
+  if (card.design?.template) return <TemplateCard card={card} design={card.design} size={size} interactive={interactive} />;
+  return <ThemeCardFace card={card} size={size} interactive={interactive} />;
+}
+
+function ThemeCardFace({ card, size, interactive }: { card: CardData; size: "sm" | "lg"; interactive: boolean }) {
+  const { ref, onPointerMove, onPointerLeave } = useTilt<HTMLDivElement>(interactive);
   const theme = card.theme ?? "ink";
-  const onMove = (e: React.PointerEvent) => {
-    if (!interactive || !ref.current || e.pointerType === "touch") return;
-    const r = ref.current.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    ref.current.style.transform = `perspective(900px) rotateY(${x * 10}deg) rotateX(${-y * 10}deg)`;
-    ref.current.style.setProperty("--sx", `${x * 60}%`);
-    ref.current.style.setProperty("--sy", `${y * 60}%`);
-  };
-  const reset = () => {
-    if (ref.current) ref.current.style.transform = "";
-  };
   const big = size === "lg";
+  const design = card.design;
   return (
     <div
       ref={ref}
-      onPointerMove={onMove}
-      onPointerLeave={reset}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
       className={`card-object theme-${theme} grain ${big ? "aspect-[1.62/1] w-full p-6 sm:p-7" : "aspect-[1.62/1] w-full p-4"}`}
       data-testid="card-face"
     >
@@ -59,10 +59,14 @@ export function CardFace({ card, size = "lg", interactive = true }: { card: Card
           <div className="min-w-0">
             <p className={`truncate font-medium opacity-70 ${big ? "text-[13px]" : "text-[11px]"}`}>{card.company ?? " "}</p>
           </div>
-          <svg width={big ? 30 : 22} height={big ? 30 : 22} viewBox="0 0 32 32" aria-hidden="true" className="shrink-0 opacity-80">
-            <rect x="3" y="8" width="17" height="12" rx="3.5" fill="none" stroke="currentColor" strokeWidth="2" transform="rotate(-12 11.5 14)" />
-            <rect x="12" y="12" width="17" height="12" rx="3.5" fill="currentColor" opacity=".9" transform="rotate(8 20.5 18)" />
-          </svg>
+          {design?.icon ? (
+            <Glyph glyph={design.icon} size={big ? 30 : 22} className="opacity-90" />
+          ) : (
+            <svg width={big ? 30 : 22} height={big ? 30 : 22} viewBox="0 0 32 32" aria-hidden="true" className="shrink-0 opacity-80">
+              <rect x="3" y="8" width="17" height="12" rx="3.5" fill="none" stroke="currentColor" strokeWidth="2" transform="rotate(-12 11.5 14)" />
+              <rect x="12" y="12" width="17" height="12" rx="3.5" fill="currentColor" opacity=".9" transform="rotate(8 20.5 18)" />
+            </svg>
+          )}
         </div>
         <div>
           <h2 className={`display ${big ? "text-[44px] sm:text-[52px]" : "text-[28px]"} leading-[0.95]`}>{card.name}</h2>
@@ -70,8 +74,9 @@ export function CardFace({ card, size = "lg", interactive = true }: { card: Card
           {card.keywords?.length ? (
             <div className={`mt-3 flex flex-wrap gap-1.5 ${big ? "" : "hidden"}`}>
               {card.keywords.slice(0, 3).map((k) => (
-                <span key={k} className="rounded-full border border-current/25 px-2.5 py-0.5 text-[12px] font-medium opacity-85">
-                  #{k}
+                <span key={k} className="inline-flex items-center gap-1 rounded-full border border-current/25 px-2.5 py-0.5 text-[12px] font-medium opacity-85">
+                  {design?.keywordBadges[k] ? <Glyph glyph={design.keywordBadges[k]} size={13} /> : "#"}
+                  {k}
                 </span>
               ))}
             </div>
@@ -97,16 +102,19 @@ export function LivingCard({ card, showActions = true, locale = "ko" }: { card: 
     URL.revokeObjectURL(a.href);
   };
   const deep = card.deep ?? {};
-  const deepSections: [string, string[]][] = [
-    [L.projects, (deep.projects ?? []).map((p: any) => (p.status ? `${p.title} · ${p.status}` : p.title))],
-    [L.achievements, deep.achievements ?? []],
-    [L.services, deep.services ?? []],
-    [L.assets, deep.assets ?? []],
-    [L.network, deep.network ?? []],
-    [L.interests, deep.interests ?? []],
-    [L.languages, deep.languages ?? []],
-    [L.certifications, deep.certifications ?? []],
-  ].filter(([, v]) => (v as string[]).length) as [string, string[]][];
+  const deepSections = (
+    [
+      ["projects", L.projects, (deep.projects ?? []).map((p: any) => (p.status ? `${p.title} · ${p.status}` : p.title))],
+      ["achievements", L.achievements, deep.achievements ?? []],
+      ["services", L.services, deep.services ?? []],
+      ["assets", L.assets, deep.assets ?? []],
+      ["network", L.network, deep.network ?? []],
+      ["interests", L.interests, deep.interests ?? []],
+      ["languages", L.languages, deep.languages ?? []],
+      ["certifications", L.certifications, deep.certifications ?? []],
+    ] as [string, string, string[]][]
+  ).filter(([, , v]) => v.length);
+  const glyphs = card.design;
 
   return (
     <div className="space-y-4">
@@ -139,7 +147,7 @@ export function LivingCard({ card, showActions = true, locale = "ko" }: { card: 
             const inner = (
               <>
                 <span className="grid size-10 place-items-center rounded-full bg-[color-mix(in_srgb,var(--fg)_7%,transparent)]">
-                  <Icon name={FIELD_ICON[f.type] ?? "link"} size={18} />
+                  {glyphs?.fieldIcons[f.type] ? <Glyph glyph={glyphs.fieldIcons[f.type]!} size={18} /> : <Icon name={FIELD_ICON[f.type] ?? "link"} size={18} />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[11px] uppercase tracking-[0.14em] text-[var(--fg-mute)]">{f.label || f.type}</span>
@@ -181,9 +189,12 @@ export function LivingCard({ card, showActions = true, locale = "ko" }: { card: 
       {tab === "deep" && (
         <div className="space-y-3 animate-fade">
           {deepSections.length === 0 && <p className="text-sm text-[var(--fg-mute)]">{L.noDeep}</p>}
-          {deepSections.map(([title, items]) => (
-            <section key={title} className="surface p-4">
-              <h4 className="eyebrow mb-2">{title}</h4>
+          {deepSections.map(([key, title, items]) => (
+            <section key={key} className="surface p-4">
+              <h4 className="eyebrow mb-2 flex items-center gap-1.5">
+                {glyphs?.sectionIcons[key] ? <Glyph glyph={glyphs.sectionIcons[key]!} size={15} /> : null}
+                {title}
+              </h4>
               <ul className="space-y-1.5 text-[15px]">
                 {items.map((x, i) => (
                   <li key={i} className="flex gap-2">

@@ -2,6 +2,7 @@
 // UX-005~UX-008: 수신 → "내 명함도 보내기" → 촬영/직접입력 → 검토·동의 → 교환 완료 → (그 다음에) Claim
 import Link from "next/link";
 import { GUEST_MESSAGES, LOCALES, LOCALE_NAMES, type Locale, fmt } from "@linkos/domain";
+import type { ResolvedCardDesign } from "@linkos/domain/cardDesign";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
@@ -20,7 +21,7 @@ type Landing = {
   isGroup: boolean;
   placeLabel: string | null;
   expiresAt: string;
-  sender: { id: string; name: string; company: string | null; jobTitle: string | null; headline: string | null; bioShort: string | null; keywords: string[]; theme: string; fields: { type: string; label: string | null; value: string }[]; offers: string[]; needs: string[]; deep: Record<string, unknown> | null; hiddenFields: number };
+  sender: { id: string; name: string; company: string | null; jobTitle: string | null; headline: string | null; bioShort: string | null; keywords: string[]; theme: string; design?: ResolvedCardDesign | null; fields: { type: string; label: string | null; value: string }[]; offers: string[]; needs: string[]; deep: Record<string, unknown> | null; hiddenFields: number };
 };
 
 type Step = "view" | "capture" | "review" | "sending" | "done";

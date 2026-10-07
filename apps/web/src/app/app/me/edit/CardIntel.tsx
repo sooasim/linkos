@@ -1,15 +1,20 @@
 "use client";
 // F-036 Action Card 설정 + F-032 AI Adaptive Card (제안 → 소유자 확인)
 import { useEffect, useState } from "react";
+import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
+import { GlyphButton } from "@/components/iconBank/GlyphButton";
 import { AiLabel } from "@/components/Page";
 import { api } from "@/lib/client";
 
-type Ctas = { booking: { enabled: boolean; url?: string | null }; quote: { enabled: boolean }; proposal: { enabled: boolean }; nda: { enabled: boolean } };
+type Cta = { enabled: boolean; icon?: string | null };
+type Ctas = { booking: Cta & { url?: string | null }; quote: Cta; proposal: Cta; nda: Cta };
+type CtaKind = keyof Ctas;
 const LABEL: Record<keyof Ctas, string> = { booking: "미팅 예약", quote: "견적 요청", proposal: "제안 요청", nda: "NDA 요청" };
 const AUD_KO: Record<string, string> = { investor: "투자자", customer: "고객", partner: "파트너", recruiting: "채용", general: "일반" };
 
 export function CardIntel({ profileId, hasVariants }: { profileId: string; hasVariants: boolean }) {
   const [ctas, setCtas] = useState<Ctas | null>(null);
+  const [glyphs, setGlyphs] = useState<Partial<Record<CtaKind, ResolvedGlyph | null>>>({});
   const [saved, setSaved] = useState(false);
   const [ctx, setCtx] = useState("");
   const [sug, setSug] = useState<{ audience: string; highlights: string[]; reasons: string[]; provenance: string } | null>(null);
@@ -17,14 +22,19 @@ export function CardIntel({ profileId, hasVariants }: { profileId: string; hasVa
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Ctas>(`/profiles/${profileId}/actions`).then(setCtas).catch(() => setCtas(null));
+    api<Ctas & { glyphs?: Partial<Record<CtaKind, ResolvedGlyph | null>> }>(`/profiles/${profileId}/actions`)
+      .then(({ glyphs: g, ...c }) => {
+        setCtas(c);
+        setGlyphs(g ?? {});
+      })
+      .catch(() => setCtas(null));
   }, [profileId]);
 
   const saveCtas = async (next: Ctas) => {
     setCtas(next);
     setSaved(false);
     try {
-      await api(`/profiles/${profileId}/actions`, { method: "PUT", body: { ...next, booking: { enabled: next.booking.enabled, url: next.booking.url || null } } });
+      await api(`/profiles/${profileId}/actions`, { method: "PUT", body: { ...next, booking: { enabled: next.booking.enabled, url: next.booking.url || null, icon: next.booking.icon ?? null } } });
       setSaved(true);
     } catch (e) {
       setMsg((e as Error).message);
@@ -57,6 +67,15 @@ export function CardIntel({ profileId, hasVariants }: { profileId: string; hasVa
         {ctas &&
           (Object.keys(LABEL) as (keyof Ctas)[]).map((k) => (
             <div key={k} className="surface flex flex-wrap items-center gap-3 p-3">
+              <GlyphButton
+                compact
+                label={`${LABEL[k]} 버튼 아이콘`}
+                value={glyphs[k] ?? null}
+                onChange={(g) => {
+                  setGlyphs({ ...glyphs, [k]: g });
+                  void saveCtas({ ...ctas, [k]: { ...ctas[k], icon: g?.ref ?? null } });
+                }}
+              />
               <label className="flex items-center gap-3 text-[15px]">
                 <input type="checkbox" className="size-5 accent-[var(--color-ink)]" checked={ctas[k].enabled} onChange={(e) => saveCtas({ ...ctas, [k]: { ...ctas[k], enabled: e.target.checked } })} />
                 {LABEL[k]}

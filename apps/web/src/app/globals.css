@@ -704,3 +704,41 @@ html.fx [data-reveal].is-in {
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* ── card templates ── (F-021 TemplateCard / gallery / IconPicker)
+   Structural rules only: every template color arrives as an inline CSS variable from the card's own data. */
+.tc-wrap {
+  container-type: inline-size;
+}
+.tc-lazy {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .tc-foil {
+    background-image: var(--tc-foil);
+    background-size: 240% 100%;
+    background-position: 0% 50%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: tc-foil 9s ease-in-out infinite alternate;
+  }
+  .card-object:hover .tc-foil {
+    animation-duration: 2.6s;
+  }
+}
+@keyframes tc-foil {
+  to {
+    background-position: 100% 50%;
+  }
+}
+.tc-glass {
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-foil {
+    animation: none;
+  }
+}

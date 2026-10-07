@@ -7,6 +7,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./cardTemplateSchema": "./src/cardTemplateSchema.ts",
     "./cardTemplates": "./src/cardTemplates.ts",
     "./cardDesign": "./src/cardDesign.ts",
     "./iconBank": "./src/iconBank.ts",

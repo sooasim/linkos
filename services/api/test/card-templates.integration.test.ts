@@ -181,3 +181,19 @@ describe("F-036 Action CTA icons", () => {
     expect(living.actionCtasInput.safeParse({ quote: { enabled: true, icon: "e:🧾🧾" } }).success).toBe(false);
   });
 });
+
+describe("F-021 setProfileTemplate (gallery apply)", () => {
+  it("applies a template with options, bumps the version and validates like saveProfile", async () => {
+    const cur = (await card.loadProfile(profileId))!;
+    const r = await card.setProfileTemplate(ctx(userId), profileId, card.profileTemplateInput.parse({ templateId: "pastel-mint", templateOptions: { monogram: "HG" }, version: cur.version }));
+    expect(r.templateId).toBe("pastel-mint");
+    expect(r.version).toBe(cur.version + 1);
+    expect(r.name).toBe(cur.name); // other fields untouched
+    await expect(card.setProfileTemplate(ctx(userId), profileId, card.profileTemplateInput.parse({ templateId: "nope-nope" }))).rejects.toMatchObject({ status: 400, code: "unknown_template" });
+    await expect(card.setProfileTemplate(ctx(userId), profileId, card.profileTemplateInput.parse({ templateId: "pastel-mint", version: cur.version }))).rejects.toMatchObject({ status: 409 });
+    const other = (await signUp(`other${Date.now()}@linkos.test`)).user.id;
+    await expect(card.setProfileTemplate(ctx(other), profileId, card.profileTemplateInput.parse({ templateId: "pastel-mint" }))).rejects.toMatchObject({ status: 403 });
+    const logged = await one<{ action: string }>("SELECT action FROM audit_logs WHERE entity_id=$1 AND action='profile.template_updated' LIMIT 1", [profileId]);
+    expect(logged?.action).toBe("profile.template_updated");
+  });
+});

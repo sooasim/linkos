@@ -10,7 +10,20 @@ export interface FakeCrm {
   calls: { method: string; path: string; body: any; headers: Record<string, string | string[] | undefined> }[];
   ms: { contacts: Map<string, Rec>; events: Map<string, Rec>; mail: Rec[]; busy: { start: string; end: string }[] };
   sf: { records: Map<string, Rec>; expireAccess: () => void; touch: (id: string) => void };
-  hs: { contacts: Map<string, Rec>; notes: Map<string, Rec>; touch: (id: string) => void };
+  hs: {
+    contacts: Map<string, Rec>;
+    notes: Map<string, Rec>;
+    /** F-121 Company/Deal sync */
+    companies: Map<string, Rec>;
+    deals: Map<string, Rec>;
+    /** v4 default associations: "contacts:501->companies:502" */
+    associations: Set<string>;
+    touch: (id: string) => void;
+    /** a HubSpot user edits a company/deal → updatedAt moves */
+    touchAny: (id: string, props?: Record<string, string>) => void;
+    /** seed a pre-existing HubSpot company (dedupe tests) */
+    seedCompany: (props: Record<string, string>) => Rec;
+  };
   dyn: { records: Map<string, Rec>; touch: (id: string) => void };
   close: () => Promise<void>;
 }
@@ -24,6 +37,10 @@ export async function startFakeCrm(): Promise<FakeCrm> {
   const sfRecords = new Map<string, Rec>();
   const hsContacts = new Map<string, Rec>();
   const hsNotes = new Map<string, Rec>();
+  const hsCompanies = new Map<string, Rec>();
+  const hsDeals = new Map<string, Rec>();
+  const hsAssoc = new Set<string>();
+  const hsStores: Record<string, Map<string, Rec>> = { contacts: hsContacts, notes: hsNotes, companies: hsCompanies, deals: hsDeals };
   const dynRecords = new Map<string, Rec>();
   let n = 0;
   let clock = Date.parse("2026-10-01T00:00:00Z");
@@ -172,10 +189,33 @@ export async function startFakeCrm(): Promise<FakeCrm> {
       return send(200, { access_token: tokens.hs, refresh_token: "hs-refresh", expires_in: 1800, token_type: "bearer" });
     }
     if (p.startsWith("/hs/oauth/v1/access-tokens/")) return send(200, { hub_id: 4242, user: "owner@hub.test", scopes: ["oauth"] });
+    if (p.startsWith("/hs/crm/v4/objects/")) {
+      // PUT /crm/v4/objects/{from}/{id}/associations/default/{to}/{toId}
+      if (!bearer("hs")) return send(401, { status: "error", category: "INVALID_AUTHENTICATION" });
+      const [, , , , , from, fromId, kw, def, to, toId] = p.split("/");
+      if (m !== "PUT" || kw !== "associations" || def !== "default") return send(404, { status: "error" });
+      if (!hsStores[from!]?.get(fromId!) || !hsStores[to!]?.get(toId!)) return send(404, { status: "error", category: "OBJECT_NOT_FOUND" });
+      hsAssoc.add(`${from}:${fromId}->${to}:${toId}`);
+      return send(200, { status: "COMPLETE", results: [{ from: { id: fromId }, to: { id: toId } }] });
+    }
     if (p.startsWith("/hs/crm/v3/objects/")) {
       if (!bearer("hs")) return send(401, { status: "error", category: "INVALID_AUTHENTICATION" });
       const [, , , , , obj, id] = p.split("/");
-      const store = obj === "notes" ? hsNotes : hsContacts;
+      const store = hsStores[obj!];
+      if (!store) return send(404, { status: "error", category: "OBJECT_NOT_FOUND" });
+      if (id === "search" && m === "POST") {
+        const f = body?.filterGroups?.[0]?.filters?.[0] as { propertyName: string; operator: string; value: string } | undefined;
+        const results = [...store.values()].filter((r) => f && f.operator === "EQ" && String(r.properties[f.propertyName] ?? "").toLowerCase() === String(f.value).toLowerCase());
+        return send(200, { total: results.length, results: results.slice(0, body?.limit ?? 10).map((r) => ({ id: r.id, properties: r.properties, updatedAt: r.updatedAt })) });
+      }
+      if (obj === "deals" && m === "POST" && !id) {
+        if (!body?.properties?.dealname || !body?.properties?.pipeline || !body?.properties?.dealstage) return send(400, { status: "error", category: "VALIDATION_ERROR", message: "dealname/pipeline/dealstage required" });
+        for (const a of body.associations ?? []) {
+          const typeId = a.types?.[0]?.associationTypeId;
+          const target = typeId === 3 ? hsContacts : typeId === 5 || typeId === 341 ? hsCompanies : null;
+          if (!target?.get(a.to?.id)) return send(400, { status: "error", category: "VALIDATION_ERROR", message: `bad association ${typeId}:${a.to?.id}` });
+        }
+      }
       if (!id && m === "POST") {
         if (obj === "contacts") {
           const dup = [...hsContacts.values()].find((c) => c.properties.email && c.properties.email === body.properties.email);
@@ -240,9 +280,23 @@ export async function startFakeCrm(): Promise<FakeCrm> {
     hs: {
       contacts: hsContacts,
       notes: hsNotes,
+      companies: hsCompanies,
+      deals: hsDeals,
+      associations: hsAssoc,
       touch: (id) => {
         const r = hsContacts.get(id);
         if (r) r.updatedAt = tick();
+      },
+      touchAny: (id, props) => {
+        const r = hsCompanies.get(id) ?? hsDeals.get(id) ?? hsContacts.get(id);
+        if (!r) return;
+        if (props) Object.assign(r.properties, props);
+        r.updatedAt = tick();
+      },
+      seedCompany: (props) => {
+        const rec = { id: String(500 + ++n), properties: { ...props }, updatedAt: tick() };
+        hsCompanies.set(rec.id, rec);
+        return rec;
       },
     },
     dyn: {

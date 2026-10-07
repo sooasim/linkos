@@ -40,3 +40,4 @@ export * as calendar from "./modules/calendar";
 export * as crm from "./modules/crm";
 export * as push from "./modules/push";
 export * as webhooks from "./modules/webhooks";
+export * as crmHubspot from "./modules/crmHubspot";

@@ -1,6 +1,7 @@
 "use client";
-// Meeting card entry point: F-087 일정 후보 (from the extracted next-meeting wording) + F-088 CRM 연결.
+// Meeting card entry point: F-087 일정 후보 (from the extracted next-meeting wording) + F-088 CRM 연결 + F-121 HubSpot 딜(승인 필요).
 import { useCallback, useEffect, useState } from "react";
+import { HubspotDealPanel } from "@/components/HubspotDeal";
 import { Icon } from "@/components/Icon";
 import { type Candidate, CandidateCard } from "@/components/Scheduling";
 import { api } from "@/lib/client";
@@ -9,7 +10,7 @@ export function MeetingFollowThrough({ meetingId, hint }: { meetingId: string; h
   const [text, setText] = useState(hint ?? "");
   const [cands, setCands] = useState<Candidate[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
-  const [crms, setCrms] = useState<{ provider: string; status: string; capabilities: { notes: boolean } }[]>([]);
+  const [crms, setCrms] = useState<{ provider: string; status: string; capabilities: { notes: boolean; deals?: boolean } }[]>([]);
   const [crmMsg, setCrmMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => api<{ candidates: Candidate[] }>(`/calendar/candidates?meetingId=${meetingId}`).then((r) => setCands(r.candidates)), [meetingId]);
@@ -64,6 +65,7 @@ export function MeetingFollowThrough({ meetingId, hint }: { meetingId: string; h
             {crms.map((c) => <button key={c.provider} className="btn btn-ghost !min-h-10 text-[14px]" onClick={() => attach(c.provider)}>{c.provider === "salesforce" ? "Salesforce" : c.provider === "hubspot" ? "HubSpot" : "Dynamics 365"}</button>)}
           </div>
           {crmMsg && <p className="text-[13.5px]" role="status">{crmMsg}</p>}
+          {crms.some((c) => c.provider === "hubspot" && c.capabilities.deals) && <HubspotDealPanel meetingId={meetingId} />}
         </section>
       )}
     </>

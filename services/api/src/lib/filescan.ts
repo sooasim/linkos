@@ -50,9 +50,9 @@ export interface InspectedUpload {
 }
 
 async function reencodeImage(buf: Buffer, type: string): Promise<{ bytes: Buffer; type: string } | null> {
-  let sharp: typeof import("sharp") | null = null;
+  let sharp: (typeof import("sharp"))["default"] | null = null;
   try {
-    sharp = (await import("sharp")).default as unknown as typeof import("sharp");
+    sharp = (await import("sharp")).default;
   } catch {
     return null;
   }

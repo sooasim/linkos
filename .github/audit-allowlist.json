@@ -1,47 +1,4 @@
 {
   "$comment": "Reviewed, time-boxed exceptions for scripts/audit-gate.mjs (pnpm audit --prod, high/critical). Every entry needs a reason and an expiry; an expired entry fails CI again.",
-  "advisories": [
-    {
-      "id": "GHSA-f88m-g3jw-g9cj",
-      "package": "sharp",
-      "expires": "2026-11-08",
-      "reason": "Upgrade to sharp >=0.35.5 (libvips/librsvg bump) needs image-pipeline regression testing; tracked, time-boxed. Review exposure (SVG/untrusted image decoding) before extending."
-    },
-    {
-      "id": "GHSA-rgj7-g3m4-5g8c",
-      "package": "sharp",
-      "expires": "2026-11-08",
-      "reason": "Upgrade to sharp >=0.35.5 (libvips/librsvg bump) needs image-pipeline regression testing; tracked, time-boxed. Review exposure (SVG/untrusted image decoding) before extending."
-    },
-    {
-      "id": "GHSA-wq5f-xc86-pv6w",
-      "package": "sharp",
-      "expires": "2026-11-08",
-      "reason": "Upgrade to sharp >=0.35.5 (libvips/librsvg bump) needs image-pipeline regression testing; tracked, time-boxed. Review exposure (SVG/untrusted image decoding) before extending."
-    },
-    {
-      "id": "GHSA-p6gq-j5cr-w38f",
-      "package": "nodemailer",
-      "expires": "2026-11-08",
-      "reason": "nodemailer 7 -> >=10.0.6 is a major upgrade; tracked, time-boxed. Transport is the server-configured SMTP_URL only. Review before extending."
-    },
-    {
-      "id": "GHSA-2x7j-588g-ccc2",
-      "package": "nodemailer",
-      "expires": "2026-11-08",
-      "reason": "nodemailer 7 -> >=10.0.6 is a major upgrade; tracked, time-boxed. Transport is the server-configured SMTP_URL only. Review before extending."
-    },
-    {
-      "id": "GHSA-v53p-9fqp-m79j",
-      "package": "nodemailer",
-      "expires": "2026-11-08",
-      "reason": "nodemailer 7 -> >=10.0.6 is a major upgrade; tracked, time-boxed. Transport is the server-configured SMTP_URL only. Review before extending."
-    },
-    {
-      "id": "GHSA-r7g4-qg5f-qqm2",
-      "package": "nodemailer",
-      "expires": "2026-11-08",
-      "reason": "nodemailer 7 -> >=10.0.6 is a major upgrade; tracked, time-boxed. Transport is the server-configured SMTP_URL only. Review before extending."
-    }
-  ]
+  "advisories": []
 }

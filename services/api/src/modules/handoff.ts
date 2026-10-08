@@ -91,6 +91,14 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
   if (!profileId) throw new ApiError(422, "profile_required", "먼저 내 명함(Living Card)을 만들어 주세요.");
   const prof = await one<{ user_id: string }>("SELECT user_id FROM profiles WHERE id=$1", [profileId]);
   if (prof?.user_id !== userId) throw notFound("profile");
+  // F-143 현장 교환: an exchange tagged with an event must come from one of its attendees; the event name becomes the
+  // default place label so the guest sees where they met and every resulting Encounter carries event_id.
+  const context = { ...(input.context ?? {}) };
+  if (context.eventId) {
+    const ev = await one<{ name: string }>("SELECT e.name FROM events e JOIN event_attendees ea ON ea.event_id = e.id AND ea.user_id = $2 WHERE e.id = $1", [context.eventId, userId]);
+    if (!ev) throw notFound("event");
+    if (!context.placeLabel) context.placeLabel = ev.name.slice(0, 120);
+  }
 
   const cap: CapabilityVector = { ...DEFAULT_CAPABILITIES, ...input.capabilities } as CapabilityVector;
   // F-044: a registered, active NFC accessory adds the NFC step even if this browser never saw the settings toggle
@@ -122,7 +130,7 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
     const row = await one<SessionRow>(
       `INSERT INTO exchange_sessions (sender_user_id, sender_profile_id, token_hash, state, expires_at, selected_channel, short_code, short_code_expires_at, is_group, max_uses, channel_plan, context)
        VALUES ($1,$2,$3,'CHANNEL_SELECTED',$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [userId, profileId, tokenHash, expiresAt, plan[0], shortCode, shortCode ? new Date(Date.now() + Math.min(ttl, input.group ? ttl : SHORT_CODE_TTL_MS)) : null, input.group, input.group ? (input.maxUses ?? 200) : 1, plan, JSON.stringify(input.context ?? {})],
+      [userId, profileId, tokenHash, expiresAt, plan[0], shortCode, shortCode ? new Date(Date.now() + Math.min(ttl, input.group ? ttl : SHORT_CODE_TTL_MS)) : null, input.group, input.group ? (input.maxUses ?? 200) : 1, plan, JSON.stringify(context)],
       c,
     );
     await emit(c, "exchange.session.created", "exchange_session", row!.id, {
@@ -132,7 +140,7 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
       expires_at: expiresAt.toISOString(),
     });
     await audit(c, ctx, "exchange.session_created", "exchange_session", row!.id, { group: input.group });
-    await track(c, "exchange_created", { userId }, { channel: plan[0], group: input.group, at_event: !!input.context?.eventId });
+    await track(c, "exchange_created", { userId }, { channel: plan[0], group: input.group, at_event: !!context.eventId });
     const origin = appOrigin();
     return {
       sessionId: row!.id,
@@ -143,6 +151,8 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
       channelPlan: plan,
       expiresAt: expiresAt.toISOString(),
       state: row!.state,
+      eventId: context.eventId ?? null,
+      placeLabel: context.placeLabel ?? null,
     };
   });
 }
@@ -427,7 +437,9 @@ export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, inpu
 
     if (ctx.userId) {
       // Signed-in receiver: reverse relationship right away
-      const rev = await insertContact(c, ctx.userId, cardToContact(senderCard), { linkedUserId: s.sender_user_id, exchangeSessionId: s.id, encounterSource: "exchange" });
+      // F-143: the receiver's Encounter is tagged with the event only when they attend it too (no event leak otherwise)
+      const atEvent = s.context?.eventId ? Boolean(await one("SELECT 1 FROM event_attendees WHERE event_id=$1 AND user_id=$2", [s.context.eventId, ctx.userId], c)) : false;
+      const rev = await insertContact(c, ctx.userId, atEvent ? { ...cardToContact(senderCard), encounter: { placeLabel: s.context?.placeLabel, eventId: s.context?.eventId } } : cardToContact(senderCard), { linkedUserId: s.sender_user_id, exchangeSessionId: s.id, encounterSource: "exchange" });
       relationshipIds.push(rev.relationshipId);
       receiverContactId = rev.contactId;
       await recordConsents(c, ctx.userId, [{ type: "exchange", granted: true }], { session: s.id, fields: input.sharedFields });

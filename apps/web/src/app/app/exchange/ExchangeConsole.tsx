@@ -1,5 +1,8 @@
 "use client";
 // Adaptive Handoff Engine client: capability detection → server ladder → auto-advance → QR (final).
+// UX-002 교환 시작: 공유 · 받기 · 스캔 · 그룹 교환 (QR is never a start option — only the ladder's last step).
+// F-143 현장 교환: an event-tagged session (?event=) files every resulting Encounter under the event.
+// F-080 음성 메모: the done card links straight to the new contact's private note box.
 import { CHANNEL_LABEL_KO, CHANNEL_TIMEOUT_MS, type Channel } from "@linkos/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -153,7 +156,7 @@ function AcousticSender({ code }: { code: string }) {
   );
 }
 
-export function ExchangeConsole({ group, name }: { group: boolean; name: string }) {
+export function ExchangeConsole({ group, name, event = null }: { group: boolean; name: string; event?: { id: string; name: string } | null }) {
   const [session, setSession] = useState<Session | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -169,14 +172,15 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
     setError(null);
     setStatus(null);
     try {
-      const s = await api<Session>("/exchange/sessions", { body: { capabilities: detectCapabilities(peerOnWeb), group, context: place ? { placeLabel: place } : {} }, idempotencyKey: uid() });
+      const context = { ...(place ? { placeLabel: place } : {}), ...(event ? { eventId: event.id } : {}) };
+      const s = await api<Session>("/exchange/sessions", { body: { capabilities: detectCapabilities(peerOnWeb), group, context }, idempotencyKey: uid() });
       setSession(s);
       setChannel(s.channelPlan[0] ?? "qr");
       startedAt.current = Date.now();
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [group, place, peerOnWeb]);
+  }, [group, place, peerOnWeb, event]);
 
   // auto-advance timer per channel (F-048)
   useEffect(() => {
@@ -265,9 +269,18 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
   if (!session) {
     return (
       <div className="mt-8 space-y-4 animate-rise delay-1">
+        {event && (
+          <p className="flex flex-wrap items-center gap-2 rounded-2xl bg-[var(--accent-soft)] px-4 py-3 text-[14px]" data-testid="exchange-event-tag">
+            <Icon name="flag" size={16} />
+            <span className="min-w-0 flex-1">
+              <b>{event.name}</b> 행사로 교환해요 — 받은 명함은 이 행사 리드로 모여요
+            </span>
+            <Link href="/app/exchange" className="text-[13px] font-semibold underline-offset-4 hover:underline">태그 해제</Link>
+          </p>
+        )}
         <label className="block">
           <span className="label">어디서 만났나요? (선택)</span>
-          <input className="field" placeholder="예: 코엑스 메디컬 엑스포" value={place} onChange={(e) => setPlace(e.target.value)} maxLength={120} />
+          <input className="field" placeholder={event ? event.name : "예: 코엑스 메디컬 엑스포"} value={place} onChange={(e) => setPlace(e.target.value)} maxLength={120} />
         </label>
         {!group && (
           <label className="flex items-start gap-3 rounded-2xl border border-[var(--line)] p-3 text-[14px]">
@@ -275,13 +288,28 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
             <span>상대도 LINKOS 교환 화면의 <b>받기 모드</b>를 열었어요 (4자리 코드로 페어링)</span>
           </label>
         )}
-        <button onClick={start} className="btn btn-signal btn-lg w-full" data-testid="start-exchange">
-          <Icon name="exchange" size={20} /> {group ? "그룹 교환 링크 만들기" : "교환 시작"}
-        </button>
-        {!group && (
-          <button onClick={() => setReceiving(true)} className="btn btn-ghost w-full" data-testid="receive-mode-start">
-            <Icon name="download" size={18} /> 받기 모드 — 상대 화면에서 받기
-          </button>
+        {group ? (
+          <>
+            <button onClick={start} className="btn btn-signal btn-lg w-full" data-testid="start-exchange">
+              <Icon name="exchange" size={20} /> 그룹 교환 링크 만들기
+            </button>
+            <Link href={event ? `/app/exchange?event=${event.id}` : "/app/exchange"} className="btn btn-ghost w-full">1:1 교환으로 돌아가기</Link>
+          </>
+        ) : (
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="교환 방법" data-testid="exchange-ctas">
+            <button onClick={start} className="btn btn-signal btn-lg col-span-2 w-full" data-testid="start-exchange">
+              <Icon name="share" size={20} /> 공유 · 교환 시작
+            </button>
+            <button onClick={() => setReceiving(true)} className="btn btn-ghost flex-col !gap-1 !py-3" data-testid="receive-mode-start" aria-label="받기 모드 — 상대 화면에서 받기">
+              <Icon name="download" size={20} /> <span className="text-[14px]">받기</span>
+            </button>
+            <Link href="/app/scan" className="btn btn-ghost flex-col !gap-1 !py-3" data-testid="exchange-scan" aria-label="스캔 — 종이 명함 촬영">
+              <Icon name="scan" size={20} /> <span className="text-[14px]">스캔</span>
+            </Link>
+            <Link href={event ? `/app/exchange?group=1&event=${event.id}` : "/app/exchange?group=1"} className="btn btn-ghost col-span-2 w-full" data-testid="exchange-group" aria-label="그룹 교환 — 여러 명과 한 링크로">
+              <Icon name="people" size={18} /> 그룹 교환 · 여러 명과 한 링크로
+            </Link>
+          </div>
         )}
         <p className="text-center text-[12.5px] text-[var(--fg-mute)]">상대는 가입 없이 열어보고 바로 명함을 보낼 수 있어요. 링크는 {group ? "12시간" : "15분"} 후 만료됩니다.</p>
         {error && <p role="alert" className="text-[14px] text-[var(--color-ember)]">{error}</p>}
@@ -331,7 +359,17 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
             </Link>
           ))}
           <p className="mt-4 text-[14px] text-[var(--fg-mute)]">감사 인사 초안을 후속 할 일에 넣어 두었어요.</p>
-          <button onClick={start} className="btn btn-signal mt-5">다음 사람과 교환</button>
+          {/* F-080: capture the context while it is fresh — opens the new contact's private note box (voice dictation there) */}
+          <div className="mx-auto mt-5 flex max-w-xs flex-col gap-2">
+            <Link
+              href={status!.received[0] ? `/app/people/${status!.received[0].contactId}?voice=1#note` : "/app/people"}
+              className="btn btn-ghost w-full"
+              data-testid="exchange-voice-note"
+            >
+              <Icon name="mic" size={18} /> 음성 메모 남기기
+            </Link>
+            <button onClick={start} className="btn btn-signal w-full">다음 사람과 교환</button>
+          </div>
         </section>
       ) : (
         <section className="surface p-5 animate-rise" aria-live="polite">

@@ -38,6 +38,14 @@ function contactPicker(): ContactsManager | null {
 
 const emptyCard = () => Object.fromEntries(CARD_KEYS.map((k) => [k, ""])) as Record<CardKey, string>;
 
+// UX-006 optional back side (F-011): same on-device OCR (lazy-loaded by CardScanner only when a photo is taken);
+// the back's lines are appended to the front's before parsing, exactly like /app/scan.
+const BACK_SIDE: Record<Locale, { toggle: string; front: string; back: string; skip: string }> = {
+  ko: { toggle: "뒷면도 있어요 (앞·뒤 합치기)", front: "앞면을 먼저 촬영하세요.", back: "이제 뒷면을 촬영하세요. (선택)", skip: "뒷면 없이 진행" },
+  en: { toggle: "My card has a back side (merge both)", front: "Take the front first.", back: "Now the back side (optional).", skip: "Continue without the back" },
+  ja: { toggle: "裏面もあります（表裏を統合）", front: "まず表面を撮影してください。", back: "次に裏面を撮影してください（任意）。", skip: "裏面なしで続ける" },
+};
+
 export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], locale = "ko" }: { token: string; landing: Landing; signedIn: boolean; viewerCard: Record<string, string> | null; actions?: CardAction[]; locale?: Locale }) {
   const m = GUEST_MESSAGES[locale];
   const router = useRouter();
@@ -49,6 +57,9 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
   const [initial, setInitial] = useState<Record<CardKey, string>>(emptyCard());
   const [conf, setConf] = useState<Partial<Record<CardKey, number>>>({});
   const [ocrLines, setOcrLines] = useState<OcrLineOut[] | null>(null);
+  const [twoSided, setTwoSided] = useState(false);
+  const [frontLines, setFrontLines] = useState<OcrLineOut[] | null>(null);
+  const bs = BACK_SIDE[locale] ?? BACK_SIDE.ko;
   const [reviewed, setReviewed] = useState<ReviewedCard | null>(null);
   const [consent, setConsent] = useState(false);
   const [extra, setExtra] = useState({ message: "", offer: "", need: "" });
@@ -113,6 +124,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
   };
 
   const onLines = async (lines: OcrLineOut[]) => {
+    setFrontLines(null);
     setOcrLines(lines);
     try {
       const parsed = await api<{ fields: { key: string; value: string; confidence: number }[] }>("/capture/parse", { body: { lines: lines.map((l) => ({ text: l.text, confidence: l.confidence })) } });
@@ -176,7 +188,7 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
             </label>
           )}
           {step !== "view" && step !== "done" && (
-            <button onClick={() => setStep(step === "review" && !viewerCard ? "capture" : "view")} className="btn btn-ghost !min-h-10 !px-3 text-[14px]" aria-label={m.back}>
+            <button onClick={() => { setFrontLines(null); setStep(step === "review" && !viewerCard ? "capture" : "view"); }} className="btn btn-ghost !min-h-10 !px-3 text-[14px]" aria-label={m.back}>
               <Icon name="back" size={16} /> {m.back}
             </button>
           )}
@@ -205,9 +217,22 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
               {m.captureTitle} <em>{m.captureEm}</em>
             </h1>
             <p className="mt-3 text-[15px] text-[var(--fg-mute)]">{fmt(m.captureBody, { name: first })}</p>
-            <div className="mt-6">
-              <CardScanner locale={locale} onLines={onLines} onManual={() => { setInitial(emptyCard()); setConf({}); setOcrLines(null); setStep("review"); }} />
-            </div>
+            {!frontLines ? (
+              <div className="mt-6 space-y-3">
+                <label className="flex items-center gap-3 text-[14.5px]">
+                  <input type="checkbox" className="size-5 shrink-0 accent-[var(--accent)]" checked={twoSided} onChange={(e) => setTwoSided(e.target.checked)} data-testid="guest-two-sided" />
+                  {bs.toggle}
+                </label>
+                {twoSided && <p className="text-[14px] text-[var(--fg-mute)]">{bs.front}</p>}
+                <CardScanner locale={locale} onLines={(l) => (twoSided ? setFrontLines(l) : void onLines(l))} onManual={() => { setInitial(emptyCard()); setConf({}); setOcrLines(null); setStep("review"); }} />
+              </div>
+            ) : (
+              <div className="mt-6 space-y-3" data-testid="guest-back-step">
+                <p className="text-[15px] font-semibold">{bs.back}</p>
+                <CardScanner key="back" locale={locale} onLines={(b) => void onLines([...frontLines, ...b])} />
+                <button type="button" onClick={() => void onLines(frontLines)} className="btn btn-ghost w-full" data-testid="guest-skip-back">{bs.skip}</button>
+              </div>
+            )}
           </section>
         )}
 

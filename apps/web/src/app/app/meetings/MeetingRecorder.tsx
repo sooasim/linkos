@@ -1,6 +1,7 @@
 "use client";
 // F-081 회의 녹음: 동의가 기록된 뒤에만 마이크를 연다. MediaRecorder 를 파트(~50초)마다 다시 시작해
 // 각 파트가 독립적으로 재생·전사 가능한 파일이 되게 하고, 녹음 중에 순서대로 업로드한다(중복 업로드는 서버가 무시).
+// UX-015 마커: 녹음 중 "마커"를 누르면 녹음 시작 기준 시각(+선택 라벨)이 저장되어 전사 타임라인에 표시된다.
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { api, upload } from "@/lib/client";
@@ -13,11 +14,14 @@ function pickMime(): string {
 
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-export function MeetingRecorder({ meetingId, consentGranted, onFinished }: { meetingId: string; consentGranted: boolean; onFinished: () => void }) {
+export function MeetingRecorder({ meetingId, consentGranted, onFinished, onMarker }: { meetingId: string; consentGranted: boolean; onFinished: () => void; onMarker?: () => void }) {
   const [state, setState] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [parts, setParts] = useState({ uploaded: 0, total: 0, failed: 0 });
   const [msg, setMsg] = useState<string | null>(null);
+  const [markLabel, setMarkLabel] = useState("");
+  const [marks, setMarks] = useState<{ id: string; offsetMs: number; label: string | null }[]>([]);
+  const [markBusy, setMarkBusy] = useState(false);
   const r = useRef<{ stream: MediaStream | null; rec: MediaRecorder | null; recId: string | null; seq: number; startedAt: number; partStart: number; stopping: boolean; uploads: Promise<void>[]; timer: number | null; partTimer: number | null; mime: string; partMs: number }>({
     stream: null, rec: null, recId: null, seq: 0, startedAt: 0, partStart: 0, stopping: false, uploads: [], timer: null, partTimer: null, mime: "", partMs: 50_000,
   });
@@ -87,6 +91,7 @@ export function MeetingRecorder({ meetingId, consentGranted, onFinished }: { mee
       s.stopping = false;
       s.startedAt = Date.now();
       setParts({ uploaded: 0, total: 0, failed: 0 });
+      setMarks([]);
       setElapsed(0);
       s.timer = window.setInterval(() => setElapsed((Date.now() - s.startedAt) / 1000), 500);
       startPart();
@@ -95,6 +100,23 @@ export function MeetingRecorder({ meetingId, consentGranted, onFinished }: { mee
     } catch (e) {
       setState("idle");
       setMsg((e as Error).name === "NotAllowedError" ? "마이크 권한이 거부되었어요." : (e as Error).message);
+    }
+  };
+
+  const addMarker = async () => {
+    const s = r.current;
+    if (!s.recId || markBusy) return;
+    const offsetMs = Math.max(0, Date.now() - s.startedAt);
+    setMarkBusy(true);
+    try {
+      const m = await api<{ id: string; offsetMs: number; label: string | null }>(`/meetings/${meetingId}/markers`, { body: { recordingId: s.recId, offsetMs, label: markLabel.trim() || null }, offline: false });
+      setMarks((cur) => [...cur, m]);
+      setMarkLabel("");
+      onMarker?.();
+    } catch (e) {
+      setMsg(`마커를 저장하지 못했어요 — ${(e as Error).message}`);
+    } finally {
+      setMarkBusy(false);
     }
   };
 
@@ -136,7 +158,25 @@ export function MeetingRecorder({ meetingId, consentGranted, onFinished }: { mee
             {state === "stopping" ? "마무리 중…" : "녹음 종료"}
           </button>
         </div>
-      ) : (
+      ) : null}
+      {state === "recording" && (
+        <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void addMarker(); }} aria-label="녹음 마커">
+          <input className="field !min-h-10 min-w-0 flex-1 !py-1" placeholder="마커 라벨 (선택) · 예: 가격 이야기" maxLength={80} value={markLabel} onChange={(e) => setMarkLabel(e.target.value)} aria-label="마커 라벨 (선택)" />
+          <button type="submit" className="btn btn-ink !min-h-10" disabled={markBusy} data-testid="record-marker" aria-label="마커 남기기 (지금 시점)">
+            <Icon name="flag" size={16} /> 마커
+          </button>
+        </form>
+      )}
+      {marks.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="남긴 마커" data-testid="record-markers">
+          {marks.map((m) => (
+            <li key={m.id} className="chip !text-[12px]">
+              <Icon name="flag" size={12} /> <span className="num">{mmss(m.offsetMs / 1000)}</span>{m.label ? ` · ${m.label}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {state === "recording" || state === "stopping" ? null : (
         <button type="button" className="btn btn-ink" onClick={start} disabled={!consentGranted || state === "starting"} data-testid="record-start">
           <Icon name="mic" size={16} /> {state === "starting" ? "준비 중…" : "녹음 시작"}
         </button>

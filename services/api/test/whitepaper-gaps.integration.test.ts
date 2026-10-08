@@ -4,6 +4,7 @@
 // §20 RUM web vitals · event catalog consumers (guest.claimed, meeting.actions.extracted, privacy.deletion.requested).
 import { createCipheriv, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { encounterMaintenance } from "./encounterMaintenance";
 import { type FakeApple, startFakeApple } from "./fakeApple";
 import { type FakeGoogle, startFakeGoogle } from "./fakeGoogle";
 
@@ -275,7 +276,7 @@ describe("F-188 §23 KPIs + §20 RUM", () => {
     const peer = await user("kpipeer");
     const old = await relationship.createContact(ctx(me.id), { fullName: "지난달", source: "manual", provenance: {} });
     await q("UPDATE contacts SET created_at = now() - interval '45 days' WHERE id=$1", [old.contactId]);
-    await q("UPDATE encounters SET occurred_at = now() - interval '45 days' WHERE contact_id=$1", [old.contactId]);
+    await encounterMaintenance("UPDATE encounters SET occurred_at = now() - interval '45 days' WHERE contact_id=$1", [old.contactId]);
     let r = await analytics.retentionKpi(me.id, 30);
     expect(r).toMatchObject({ previousActive: 1 });
     // the signup-month activity of `me` is all old except what we add now
@@ -298,7 +299,7 @@ describe("F-188 §23 KPIs + §20 RUM", () => {
     const idle = await relationship.createContact(ctx(me.id), { fullName: "휴면고객", source: "manual", provenance: {} });
     await q("UPDATE contacts SET organization_id=$2, scope='org', ownership='company' WHERE id = ANY($1::uuid[])", [[shared.contactId, idle.contactId], o.id]);
     await q("UPDATE contacts SET updated_at = now() - interval '90 days' WHERE id=$1", [idle.contactId]);
-    await q("UPDATE encounters SET occurred_at = now() - interval '90 days' WHERE contact_id=$1", [idle.contactId]);
+    await encounterMaintenance("UPDATE encounters SET occurred_at = now() - interval '90 days' WHERE contact_id=$1", [idle.contactId]);
     expect(await analytics.enterpriseActiveRelationships([o.id], 30)).toMatchObject({ organizations: 1, orgRelationships: 2, activeRelationships: 1, activeRate: 50 });
 
     const k = await analytics.exchangeKpis(me.id, 30);

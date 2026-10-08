@@ -2,6 +2,8 @@
 // F-125 export period + fact-only reports · F-137/F-166 내 활동 기록 paging · F-129 org delete (owner only)
 // F-134/F-138 my membership prefs · F-076 team note delete · F-106 draft cancel · F-110 push history reason
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { grantSeats } from "./seats";
+import { encounterMaintenance } from "./encounterMaintenance";
 
 process.env.DATABASE_URL ??= "postgres://linkos:linkos@localhost:5432/linkos";
 process.env.RATE_LIMIT_DISABLED = "1";
@@ -35,7 +37,7 @@ beforeAll(async () => {
   newContact = (await relationship.createContact(ctx(me.id), relationship.contactInput.parse({ fullName: "새 연락처", company: "새회사", encounter: { placeLabel: "행사" } }))).contactId;
   // backdate the old contact and drop its creation encounter so only created_at decides
   await q("UPDATE contacts SET created_at='2024-03-01T00:00:00Z' WHERE id=$1", [oldContact]);
-  await q("DELETE FROM encounters WHERE contact_id=$1", [oldContact]);
+  await encounterMaintenance("DELETE FROM encounters WHERE contact_id=$1", [oldContact]);
 });
 afterAll(async () => {
   for (let i = 0; i < 50 && (await relayOutbox(500)) > 0; i++);
@@ -132,6 +134,7 @@ describe("F-129 / F-134 / F-138 / F-076 org", () => {
     const member = await user("orgmember");
     await card.saveProfile(ctx(member.id), { ...base, name: "멤버" });
     const o = await org.createOrg(ctx(owner.id), { name: `설정 테스트 ${stamp}` });
+    await grantSeats(o.id);
     const inv = await org.createInvite(ctx(owner.id), o.id, { role: "member", maxUses: 1, ttlDays: 1 });
     await org.acceptInvite(ctx(member.id), inv.token);
 

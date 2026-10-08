@@ -60,11 +60,10 @@ function declaredStatuses(src: string, method: string): Set<number> {
 
 /**
  * Known, documented deviations from the blueprint status codes (not silently accepted: a new deviation fails).
- * - createRecording: 201 + upload URL (the recording row exists synchronously; processing is async afterwards).
- * (Semantic, not status-code, deviation: exportMyData answers 202 but returns the export synchronously in the body
- *  instead of queueing a job — tracked in the report, not asserted here.)
+ * None today: createRecording answers 202 (Processing) and exportMyData 202 with a queued job (status + signed download
+ * at /me/privacy/export/{id}).
  */
-const KNOWN_STATUS_DEVIATIONS: Record<string, number> = { createRecording: 201 };
+const KNOWN_STATUS_DEVIATIONS: Record<string, number> = {};
 
 describe("OpenAPI contract (04_OPENAPI.yaml ↔ apps/web/src/app/api/v1)", () => {
   it("parses the blueprint", () => {

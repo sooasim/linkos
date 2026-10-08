@@ -17,7 +17,7 @@ export interface MatchProfile {
   matchingOptOut?: boolean;
   /** privacy signals feeding privacy_penalty (all optional) */
   privacy?: {
-    /** 0..1 share of the candidate's Offer/Need fields that are not visible to the viewer's audience */
+    /** 0..1 share of the candidate's profile fields hidden from the viewer by the field ACL (acl.restrictedFieldRatio) */
     restrictedFieldRatio?: number;
   };
 }

@@ -26,7 +26,9 @@ import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, conflict, forbidden, gone, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, appOrigin, audit, emit, rateLimit } from "../lib/platform";
+import { assertCrmSyncPolicy, enqueueRequiredCrmSync } from "./policy";
 import { recordReferral } from "./referral";
+import { assertSeatAvailable } from "./billing";
 import { contactInput, insertContact } from "./relationship";
 
 export interface Membership {
@@ -238,15 +240,26 @@ export async function joinByDomain(ctx: Ctx, orgId: string) {
     if (decision === "none") throw notFound("organization");
     const cur = await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2", [orgId, userId], c);
     if (cur?.status === "active") return { status: "active" };
+    if (decision === "join") await lockSeat(c, orgId); // F-191 (approval mode takes the seat at approval time)
     await addMember(c, orgId, userId, "member", { source: "domain", status: decision === "join" ? "active" : "pending" });
     await audit(c, ctx, decision === "join" ? "org.member_joined" : "org.join_requested", "organization", orgId, { via: "domain" }, orgId);
     return { status: decision === "join" ? "active" : "pending" };
   });
 }
 
+/**
+ * F-191 seat entitlement: serialize joins per org (row lock on the organization) and refuse with 402 + upgrade info
+ * when the plan's seats are all taken.
+ */
+async function lockSeat(c: Db, orgId: string) {
+  await c.query("SELECT 1 FROM organizations WHERE id=$1 FOR UPDATE", [orgId]);
+  await assertSeatAvailable(orgId, c);
+}
+
 export async function approveMember(ctx: Ctx, orgId: string, targetUserId: string, approve: boolean) {
   return tx(async (c) => {
     await requireOrg(orgId, ctx.userId, "members.approve", c);
+    if (approve && (await one("SELECT 1 FROM organization_members WHERE organization_id=$1 AND user_id=$2 AND status='pending'", [orgId, targetUserId], c))) await lockSeat(c, orgId);
     const r = await c.query(
       approve
         ? "UPDATE organization_members SET status='active', joined_at=now() WHERE organization_id=$1 AND user_id=$2 AND status='pending'"
@@ -337,6 +350,7 @@ export async function acceptInvite(ctx: Ctx, token: string) {
       const me = await one<{ email: string | null }>("SELECT email FROM users WHERE id=$1", [userId], c);
       if (normalizeEmail(me?.email ?? "") !== inv.email) throw forbidden("이 초대는 다른 이메일 주소로 발송되었습니다.");
     }
+    await lockSeat(c, inv.organization_id); // F-191
     await addMember(c, inv.organization_id, userId, inv.role, { source: "invite", invitedBy: inv.created_by });
     await c.query("UPDATE org_invites SET use_count = use_count + 1 WHERE id=$1", [inv.id]);
     await c.query("UPDATE users SET active_org_id = COALESCE(active_org_id, $2) WHERE id=$1", [userId, inv.organization_id]);
@@ -446,6 +460,7 @@ export async function handleMemberDeparture(c: pg.PoolClient, orgId: string, lea
 async function transferContact(c: pg.PoolClient, contactId: string, from: string, to: string) {
   await c.query("UPDATE contacts SET owner_user_id=$3, version=version+1, updated_at=now() WHERE id=$1 AND owner_user_id=$2", [contactId, from, to]);
   await c.query("UPDATE relationships SET owner_user_id=$3 WHERE contact_id=$1 AND owner_user_id=$2", [contactId, from, to]);
+  // §9: Encounters are append-only — only the owner moves with the lead (the DB trigger refuses content changes)
   await c.query("UPDATE encounters SET owner_user_id=$3 WHERE contact_id=$1 AND owner_user_id=$2", [contactId, from, to]);
   await c.query("DELETE FROM contact_tags WHERE contact_id=$1", [contactId]); // tags are per-owner labels
   await emit(c, "contact.updated", "contact", contactId, { contact_id: contactId, changed_fields: ["owner"] });
@@ -525,7 +540,10 @@ export async function listTeamContacts(ctx: Ctx, orgId: string, opts: { query?: 
      WHERE ${where} ORDER BY c.updated_at DESC LIMIT $${params.length}`,
     params,
   );
-  return rows.map((r) => teamDto(r, can(me.role, "contacts.read_pii")));
+  const pii = can(me.role, "contacts.read_pii");
+  // F-166 대량 조회 감사: team bulk reads are audited with counts and filter kinds only — no query text, no PII
+  await audit(pool(), ctx, "org.team_contacts_read", "organization", orgId, { rows: rows.length, pii, filtered: Boolean(opts.query), ownership: opts.ownership ?? null, byOwner: Boolean(opts.ownerId) }, orgId);
+  return rows.map((r) => teamDto(r, pii));
 }
 
 export async function getTeamContact(ctx: Ctx, orgId: string, contactId: string) {
@@ -554,13 +572,16 @@ export async function shareContacts(ctx: Ctx, orgId: string, input: z.infer<type
     );
     if (rows.length !== new Set(input.contactIds).size) throw notFound("contact");
     if (rows.some((r) => r.organization_id && r.organization_id !== orgId)) throw conflict("shared_elsewhere", "다른 조직에 공유된 연락처가 포함되어 있습니다.");
+    // F-139: giving contacts to the company requires the org's CRM sync to be satisfiable by the owner (422 otherwise)
+    if (input.asCompanyLead) await assertCrmSyncPolicy(orgId, ctx.userId!, c);
     await c.query(
       `UPDATE contacts SET organization_id=$2, scope='org', ownership = CASE WHEN $4 THEN 'company' ELSE ownership END,
          shared_by=COALESCE(shared_by,$3), shared_at=COALESCE(shared_at, now()), updated_at=now() WHERE id = ANY($1::uuid[])`,
       [input.contactIds, orgId, ctx.userId, input.asCompanyLead],
     );
-    await audit(c, ctx, "org.contacts_shared", "organization", orgId, { count: rows.length, asCompanyLead: input.asCompanyLead }, orgId);
-    return { shared: rows.length };
+    const crm = input.asCompanyLead ? await enqueueCrmSyncFor(c, rows.map((r) => r.id)) : null;
+    await audit(c, ctx, "org.contacts_shared", "organization", orgId, { count: rows.length, asCompanyLead: input.asCompanyLead, ...(crm ? { crmQueued: crm.queued } : {}) }, orgId);
+    return { shared: rows.length, ...(crm?.required ? { crmSync: { queued: crm.queued } } : {}) };
   });
 }
 
@@ -577,6 +598,18 @@ export async function unshareContact(ctx: Ctx, orgId: string, contactId: string)
   });
 }
 
+/** F-139: queue the CRM push the org policy requires for each company contact (same transaction → outbox-safe). */
+async function enqueueCrmSyncFor(c: pg.PoolClient, contactIds: string[]): Promise<{ required: boolean; queued: number }> {
+  let required = false;
+  let queued = 0;
+  for (const id of contactIds) {
+    const d = await enqueueRequiredCrmSync(c, id);
+    required ||= d.required;
+    if (d.queued) queued++;
+  }
+  return { required, queued };
+}
+
 export const leadInput = contactInput.extend({ assigneeUserId: z.string().uuid().nullish() });
 
 /** F-132 회사 소유 리드 생성: the organization owns it; the 담당자 is owner_user_id. */
@@ -590,11 +623,14 @@ export async function createLead(ctx: Ctx, orgId: string, input: z.infer<typeof 
       if (!t || !can(t.role, "contacts.write")) throw badRequest("invalid_assignee");
       assignee = input.assigneeUserId;
     }
+    // F-139: a company lead must be syncable to the 담당자's CRM when the org requires it
+    await assertCrmSyncPolicy(orgId, assignee, c);
     const { assigneeUserId: _a, ...contact } = input;
     const ids = await insertContact(c, assignee, contact);
     await c.query("UPDATE contacts SET organization_id=$2, scope='org', ownership='company', shared_by=$3, shared_at=now() WHERE id=$1", [ids.contactId, orgId, ctx.userId]);
-    await audit(c, ctx, "org.lead_created", "contact", ids.contactId, { assignee }, orgId);
-    return { contactId: ids.contactId, assigneeUserId: assignee };
+    const crm = await enqueueCrmSyncFor(c, [ids.contactId]);
+    await audit(c, ctx, "org.lead_created", "contact", ids.contactId, { assignee, ...(crm.required ? { crmQueued: crm.queued } : {}) }, orgId);
+    return { contactId: ids.contactId, assigneeUserId: assignee, ...(crm.required ? { crmSync: { queued: crm.queued } } : {}) };
   });
 }
 
@@ -607,7 +643,11 @@ export async function assignLead(ctx: Ctx, orgId: string, contactId: string, toU
     if (r.ownership !== "company") throw conflict("personal_contact", "개인 연락처는 재배정할 수 없습니다. 회사 리드로 전환된 연락처만 가능합니다.");
     const t = await one<{ role: OrgRole }>("SELECT role FROM organization_members WHERE organization_id=$1 AND user_id=$2 AND status='active'", [orgId, toUserId], c);
     if (!t || !can(t.role, "contacts.write")) throw badRequest("invalid_assignee", "활성 멤버(member 이상)에게만 배정할 수 있습니다.");
-    if (r.owner_user_id !== toUserId) await transferContact(c, contactId, r.owner_user_id, toUserId);
+    if (r.owner_user_id !== toUserId) {
+      await assertCrmSyncPolicy(orgId, toUserId, c); // F-139: the new 담당자 must be able to keep the lead in the CRM
+      await transferContact(c, contactId, r.owner_user_id, toUserId);
+      await enqueueCrmSyncFor(c, [contactId]);
+    }
     await audit(c, ctx, "org.lead_assigned", "contact", contactId, { from: r.owner_user_id, to: toUserId }, orgId);
     return { contactId, ownerUserId: toUserId };
   });
@@ -617,9 +657,11 @@ export async function assignLead(ctx: Ctx, orgId: string, contactId: string, toU
 export async function convertToCompanyLead(ctx: Ctx, orgId: string, contactId: string) {
   return tx(async (c) => {
     await requireOrg(orgId, ctx.userId, "contacts.share", c);
+    await assertCrmSyncPolicy(orgId, ctx.userId!, c); // F-139
     const r = await c.query("UPDATE contacts SET ownership='company', updated_at=now() WHERE id=$1 AND organization_id=$2 AND scope='org' AND owner_user_id=$3 AND ownership='personal'", [contactId, orgId, ctx.userId]);
     if (!r.rowCount) throw notFound("contact");
-    await audit(c, ctx, "org.lead_converted", "contact", contactId, {}, orgId);
+    const crm = await enqueueCrmSyncFor(c, [contactId]);
+    await audit(c, ctx, "org.lead_converted", "contact", contactId, crm.required ? { crmQueued: crm.queued } : {}, orgId);
     return { contactId, ownership: "company" };
   });
 }

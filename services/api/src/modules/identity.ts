@@ -26,11 +26,21 @@ export interface UserRow {
 
 export const consentInput = z.array(z.object({ type: z.enum(CONSENT_TYPES), granted: z.boolean() })).default([]);
 
-export async function recordConsents(db: Db, userId: string, decisions: { type: ConsentType; granted: boolean }[], context: Record<string, unknown> = {}) {
+/**
+ * F-161 consent ledger (append-only, per consent type + policy_version). `userId` is null for a guest (no account yet):
+ * such a record is keyed by `links.guestClaimId` and linked to the user when the guest claims (handoff.claimGuest).
+ */
+export async function recordConsents(
+  db: Db,
+  userId: string | null,
+  decisions: { type: ConsentType; granted: boolean }[],
+  context: Record<string, unknown> = {},
+  links: { guestClaimId?: string | null; exchangeSessionId?: string | null } = {},
+) {
   for (const d of decisions) {
     await db.query(
-      "INSERT INTO consent_records (subject_user_id, consent_type, policy_version, granted, context) VALUES ($1,$2,$3,$4,$5)",
-      [userId, d.type, POLICY_VERSIONS[d.type], d.granted, JSON.stringify(context)],
+      "INSERT INTO consent_records (subject_user_id, consent_type, policy_version, granted, context, guest_claim_id, exchange_session_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+      [userId, d.type, POLICY_VERSIONS[d.type], d.granted, JSON.stringify(context), links.guestClaimId ?? null, links.exchangeSessionId ?? null],
     );
   }
 }

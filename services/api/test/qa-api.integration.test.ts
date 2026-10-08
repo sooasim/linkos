@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { ZodType } from "zod";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { grantSeats } from "./seats";
 
 process.env.DATABASE_URL ??= "postgres://linkos:linkos@localhost:5432/linkos_test";
 process.env.RATE_LIMIT_DISABLED = "1";
@@ -71,6 +72,7 @@ beforeAll(async () => {
   fx.messageA = (await comms.createMessage(ctx(A), { contactId: fx.contactA, channel: "email", body: "초안", language: "ko", provenance: "user" })).id;
   fx.sequenceA = (await comms.createSequence(ctx(A), { contactId: fx.contactA, name: "seq", timezone: "Asia/Seoul", steps: [{ dayOffset: 1, kind: "check_in", channel: "email" }] })).id;
   fx.orgA = (await org.createOrg(ctx(A), { name: `QA Org ${RUN}` })).id;
+  await grantSeats(fx.orgA);
   const inv = await org.createInvite(ctx(A), fx.orgA, { role: "member", maxUses: 5, ttlDays: 7 });
   fx.inviteA = inv.id;
   await org.acceptInvite(ctx(C), inv.token);

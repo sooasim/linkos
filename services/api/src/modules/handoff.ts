@@ -9,8 +9,10 @@ import {
   type ExchangeState,
   GROUP_EXCHANGE_TTL_MS,
   SHORT_CODE_TTL_MS,
+  InvalidTransitionError,
   acceptsReply,
   canTransition,
+  creationPath,
   generateExchangeCode,
   generateToken,
   hashToken,
@@ -18,6 +20,10 @@ import {
   minimizeOcrLines,
   normalizeShortCode,
   planChannels,
+  replyPath,
+  reviewPath,
+  syncOutcome,
+  walkTransitions,
 } from "@linkos/domain";
 import type pg from "pg";
 import { z } from "zod";
@@ -79,6 +85,7 @@ export interface SessionRow {
   use_count: number;
   channel_plan: string[];
   receiver_opened_at: Date | null;
+  synced_at?: Date | null;
   context: Record<string, any>;
   created_at: Date;
 }
@@ -127,12 +134,15 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
         }
       }
     }
+    // §3.1: the row is born CREATED (token/TTL/policy) and walks CREATED → DISCOVERING (capability vector evaluated) →
+    // CHANNEL_SELECTED (plan decided) inside this transaction; every hop is kept in state_history.
     const row = await one<SessionRow>(
-      `INSERT INTO exchange_sessions (sender_user_id, sender_profile_id, token_hash, state, expires_at, selected_channel, short_code, short_code_expires_at, is_group, max_uses, channel_plan, context)
-       VALUES ($1,$2,$3,'CHANNEL_SELECTED',$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [userId, profileId, tokenHash, expiresAt, plan[0], shortCode, shortCode ? new Date(Date.now() + Math.min(ttl, input.group ? ttl : SHORT_CODE_TTL_MS)) : null, input.group, input.group ? (input.maxUses ?? 200) : 1, plan, JSON.stringify(context)],
+      `INSERT INTO exchange_sessions (sender_user_id, sender_profile_id, token_hash, state, expires_at, selected_channel, short_code, short_code_expires_at, is_group, max_uses, channel_plan, context, state_history)
+       VALUES ($1,$2,$3,'CREATED',$4,$5,$6,$7,$8,$9,$10,$11, jsonb_build_array(jsonb_build_object('from', NULL, 'to', 'CREATED', 'at', now()))) RETURNING *`,
+      [userId, profileId, tokenHash, expiresAt, plan[0] ?? null, shortCode, shortCode ? new Date(Date.now() + Math.min(ttl, input.group ? ttl : SHORT_CODE_TTL_MS)) : null, input.group, input.group ? (input.maxUses ?? 200) : 1, plan, JSON.stringify(context)],
       c,
     );
+    await walkState(c, row!, creationPath(plan.length > 0));
     await emit(c, "exchange.session.created", "exchange_session", row!.id, {
       session_id: row!.id,
       sender_id: userId,
@@ -200,11 +210,27 @@ async function findSession(tokenOrCode: string, db: Db = pool(), forUpdate = fal
   return row;
 }
 
-export async function setState(db: Db, s: SessionRow, to: ExchangeState) {
+/** One §3.1 transition, validated by the domain machine and appended to state_history. */
+export async function setState(db: Db, s: Pick<SessionRow, "id" | "state">, to: ExchangeState) {
   if (s.state === to) return;
   if (!canTransition(s.state, to)) throw conflict("invalid_state", `exchange is ${s.state}`);
-  await db.query("UPDATE exchange_sessions SET state=$2, updated_at=now() WHERE id=$1", [s.id, to]);
+  await db.query(
+    "UPDATE exchange_sessions SET state=$2, state_history = state_history || jsonb_build_array(jsonb_build_object('from', $3::text, 'to', $2::text, 'at', now())), updated_at=now() WHERE id=$1",
+    [s.id, to, s.state],
+  );
   s.state = to;
+}
+
+/** Walk a multi-hop path (validated up front, so an illegal path writes nothing). */
+export async function walkState(db: Db, s: Pick<SessionRow, "id" | "state">, path: readonly ExchangeState[]) {
+  let steps;
+  try {
+    steps = walkTransitions(s.state, path);
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) throw conflict("invalid_state", `exchange is ${s.state}`);
+    throw e;
+  }
+  for (const step of steps) await setState(db, s, step.to);
 }
 
 /** Sender-side: record a handoff attempt outcome and advance the ladder (F-048 자동 폴백). */
@@ -276,7 +302,12 @@ export async function getSenderSessionStatus(ctx: Ctx, sessionId: string) {
 export async function getGuestSessionStatus(tokenOrCode: string, ctx: Ctx, opts: { rateLimited?: boolean } = {}) {
   // only the opening request is rate limited; polls inside an already-open stream are not (venue Wi-Fi shares one IP)
   if (opts.rateLimited !== false) await rateLimit(`xch:status:${ctx.ip}`, 120, 60);
-  const s = await findSessionGuarded(tokenOrCode, ctx);
+  return guestStatusOf(await findSessionGuarded(tokenOrCode, ctx));
+}
+
+export type GuestSessionStatus = ReturnType<typeof guestStatusOf>;
+
+function guestStatusOf(s: Pick<SessionRow, "state" | "expires_at">) {
   const terminal = ["REVOKED", "CANCELLED"].includes(s.state);
   const expired = !terminal && s.expires_at.getTime() < Date.now() && !["EXCHANGED", "CLAIM_PENDING", "CLAIMED", "SYNCED"].includes(s.state);
   return {
@@ -284,6 +315,78 @@ export async function getGuestSessionStatus(tokenOrCode: string, ctx: Ctx, opts:
     acceptsReply: acceptsReply(s.state, s.expires_at),
     expiresAt: s.expires_at.toISOString(),
   };
+}
+
+/**
+ * 백서 §20 propagation p95 < 1s: the guest stream polls at this interval (the sender stream uses 800ms too). Each poll
+ * is a primary-key lookup of two columns, so the DB cost per open stream is one index probe per 800ms.
+ */
+export const GUEST_SSE_POLL_MS = 800;
+
+/**
+ * Open a guest status stream: the token/code is resolved (and rate limited) once; later polls read the session by its
+ * primary key. Resolving by id also keeps the stream alive after a 4-digit code is released on completion.
+ */
+export async function openGuestStatusStream(tokenOrCode: string, ctx: Ctx): Promise<{ first: GuestSessionStatus; poll: () => Promise<GuestSessionStatus> }> {
+  await rateLimit(`xch:status:${ctx.ip}`, 120, 60);
+  const s = await findSessionGuarded(tokenOrCode, ctx);
+  return {
+    first: guestStatusOf(s),
+    poll: async () => {
+      const r = await one<{ state: ExchangeState; expires_at: Date }>("SELECT state, expires_at FROM exchange_sessions WHERE id=$1", [s.id]);
+      if (!r) throw notFound("exchange");
+      return guestStatusOf(r);
+    },
+  };
+}
+
+/**
+ * §3.1 CONSENT_PENDING ("보낼 필드 미리보기"): the guest reached the review/consent step. Only the state moves — the
+ * draft reply stays on the guest's device until they send it (data minimization), so nothing personal is stored here.
+ */
+export async function reviewExchange(tokenOrCode: string, ctx: Ctx) {
+  await rateLimit(`xch:review:${ctx.ip}`, 60, 600);
+  return tx(async (c) => {
+    const s = await findSessionGuarded(tokenOrCode, ctx, c, true);
+    if (s.state === "REVOKED" || s.state === "CANCELLED") throw gone("exchange_revoked", "보낸 사람이 교환을 취소했습니다.");
+    if (!acceptsReply(s.state, s.expires_at)) {
+      if (s.expires_at.getTime() < Date.now()) throw gone("exchange_expired", "교환 링크가 만료되었습니다.");
+      throw conflict("already_exchanged", "이미 교환이 완료된 링크입니다.");
+    }
+    const path = reviewPath(s.state);
+    if (path?.length) {
+      await walkState(c, s, path);
+      await c.query("UPDATE exchange_sessions SET receiver_opened_at = COALESCE(receiver_opened_at, now()) WHERE id=$1", [s.id]);
+    }
+    return guestStatusOf(s);
+  });
+}
+
+/**
+ * §3.1 SYNCED ("외부 주소록/CRM 비동기 완료"): called by the integration worker after a contact upsert succeeded. Every
+ * exchange session that produced this contact (encounters.exchange_session_id) advances to SYNCED when the machine
+ * allows it; a session still waiting for the guest's claim remembers the sync (synced_at) and enters SYNCED after CLAIMED.
+ */
+export async function markExchangeSynced(contactId: string): Promise<{ synced: number; deferred: number }> {
+  return tx(async (c) => {
+    const sessions = await q<SessionRow>(
+      "SELECT * FROM exchange_sessions WHERE id IN (SELECT exchange_session_id FROM encounters WHERE contact_id=$1 AND exchange_session_id IS NOT NULL) FOR UPDATE",
+      [contactId],
+      c,
+    );
+    let synced = 0;
+    let deferred = 0;
+    for (const s of sessions) {
+      const outcome = syncOutcome(s.state);
+      if (!outcome) continue;
+      await c.query("UPDATE exchange_sessions SET synced_at = COALESCE(synced_at, now()) WHERE id=$1", [s.id]);
+      if (outcome === "SYNCED") {
+        await setState(c, s, "SYNCED");
+        synced++;
+      } else deferred++;
+    }
+    return { synced, deferred };
+  });
 }
 
 export interface GuestLanding {
@@ -442,11 +545,11 @@ export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, inpu
       const rev = await insertContact(c, ctx.userId, atEvent ? { ...cardToContact(senderCard), encounter: { placeLabel: s.context?.placeLabel, eventId: s.context?.eventId } } : cardToContact(senderCard), { linkedUserId: s.sender_user_id, exchangeSessionId: s.id, encounterSource: "exchange" });
       relationshipIds.push(rev.relationshipId);
       receiverContactId = rev.contactId;
-      await recordConsents(c, ctx.userId, [{ type: "exchange", granted: true }], { session: s.id, fields: input.sharedFields });
+      await recordConsents(c, ctx.userId, [{ type: "exchange", granted: true }], { session: s.id, fields: input.sharedFields }, { exchangeSessionId: s.id });
     } else {
       claimToken = generateToken();
-      await c.query(
-        `INSERT INTO guest_claims (exchange_session_id, claim_token_hash, draft_contact, expires_at) VALUES ($1,$2,$3,$4)`,
+      const claim = await c.query<{ id: string }>(
+        `INSERT INTO guest_claims (exchange_session_id, claim_token_hash, draft_contact, expires_at) VALUES ($1,$2,$3,$4) RETURNING id`,
         [
           s.id,
           await hashToken(claimToken),
@@ -464,19 +567,24 @@ export async function applyReply(c: pg.PoolClient, s: SessionRow, ctx: Ctx, inpu
           new Date(Date.now() + CLAIM_TTL_MS),
         ],
       );
+      // F-161: the guest's exchange consent enters the consent ledger now (not only at claim); claimGuest links it to the
+      // account. Only the field names are kept — never the values.
+      await recordConsents(
+        c,
+        null,
+        [{ type: "exchange", granted: true }],
+        { fields: input.sharedFields, guest: true, ...(input.consent.policyVersion ? { clientPolicyVersion: input.consent.policyVersion.slice(0, 40) } : {}) },
+        { guestClaimId: claim.rows[0]!.id, exchangeSessionId: s.id },
+      );
     }
 
-    // A reply implies the receiver opened the link (API clients / native apps may skip the landing GET).
-    if (!["RECEIVER_OPENED", "CONSENT_PENDING"].includes(s.state)) {
-      await setState(c, s, "RECEIVER_OPENED");
-      await c.query("UPDATE exchange_sessions SET receiver_opened_at = COALESCE(receiver_opened_at, now()) WHERE id=$1", [s.id]);
-    }
+    // §3.1: a reply implies the receiver opened the link (API clients / native apps may skip the landing GET) and carries
+    // their explicit consent: … → RECEIVER_OPENED → CONSENT_PENDING → EXCHANGED (→ CLAIM_PENDING for a guest).
     const newUseCount = s.use_count + 1;
-    if (!s.is_group || newUseCount >= s.max_uses) {
-      await setState(c, s, "EXCHANGED");
-      if (claimToken) await setState(c, s, "CLAIM_PENDING");
-      await c.query("UPDATE exchange_sessions SET short_code=NULL WHERE id=$1", [s.id]);
-    }
+    const completes = !s.is_group || newUseCount >= s.max_uses;
+    await walkState(c, s, replyPath(s.state, { completes, claimIssued: Boolean(claimToken) }));
+    await c.query("UPDATE exchange_sessions SET receiver_opened_at = COALESCE(receiver_opened_at, now()) WHERE id=$1", [s.id]);
+    if (completes) await c.query("UPDATE exchange_sessions SET short_code=NULL WHERE id=$1", [s.id]);
     await c.query("UPDATE exchange_sessions SET use_count=$2, updated_at=now() WHERE id=$1", [s.id, newUseCount]);
     await emit(c, "exchange.completed", "exchange_session", s.id, { relationship_ids: relationshipIds, encounter_id: senderSide.encounterId });
     await audit(c, { userId: ctx.userId }, "exchange.completed", "exchange_session", s.id, { guest: !ctx.userId, fields: input.sharedFields });
@@ -575,11 +683,20 @@ export async function claimGuest(ctx: Ctx, claimToken: string) {
     // 3) Link the sender's contact record to the now-real user
     if (d.senderContactId) await c.query("UPDATE contacts SET linked_user_id=$1 WHERE id=$2", [userId, d.senderContactId]);
 
-    await recordConsents(c, userId, [{ type: "exchange", granted: true }], { claimed_from: g.id, fields: d.consent?.fields ?? [] });
+    // F-161: link the consent the guest gave at reply time to the account (no duplicate); claims created before the
+    // ledger kept guest consents still get their record here.
+    const linked = await c.query("UPDATE consent_records SET subject_user_id=$1 WHERE guest_claim_id=$2 AND subject_user_id IS NULL", [userId, g.id]);
+    if (!linked.rowCount && !(await one("SELECT 1 FROM consent_records WHERE guest_claim_id=$1 AND consent_type='exchange'", [g.id], c))) {
+      await recordConsents(c, userId, [{ type: "exchange", granted: true }], { claimed_from: g.id, fields: d.consent?.fields ?? [] }, { guestClaimId: g.id, exchangeSessionId: g.exchange_session_id });
+    }
     await c.query("UPDATE guest_claims SET claimed_user_id=$1, claimed_at=now() WHERE id=$2", [userId, g.id]);
     if (g.exchange_session_id) {
       const s = await one<SessionRow>("SELECT * FROM exchange_sessions WHERE id=$1 FOR UPDATE", [g.exchange_session_id], c);
-      if (s && canTransition(s.state, "CLAIMED")) await setState(c, s, "CLAIMED");
+      if (s && canTransition(s.state, "CLAIMED")) {
+        await setState(c, s, "CLAIMED");
+        // the sender's contact was already synced while the claim was pending → §3.1 CLAIMED → SYNCED
+        if (s.synced_at) await setState(c, s, "SYNCED");
+      }
     }
     // F-064: privacy-safe referral attribution (sender brought this NEW account in via the exchange)
     if (d.sender?.userId) {

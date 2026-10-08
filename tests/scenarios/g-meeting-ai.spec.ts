@@ -34,7 +34,7 @@ test("S-076 동의 완료 후에는 게이트 통과 → 녹음 생성, 파트 �
   const { u, m } = await meetingFor();
   await u.api.post(`/api/v1/meetings/${m.id}/consent`, { data: { ownerConsent: true, participantsAcknowledged: true } });
   const r = await u.api.post(`/api/v1/meetings/${m.id}/recordings`, { data: { mimeType: "audio/webm" } });
-  expect(r.status()).toBe(201);
+  expect(r.status()).toBe(202);
   const rec = await r.json();
   expect(rec.status).toBe("recording");
   const part = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(64, 1)]);

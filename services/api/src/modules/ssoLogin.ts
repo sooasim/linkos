@@ -6,6 +6,7 @@ import type pg from "pg";
 import { type Db, one, pool } from "../lib/db";
 import { ApiError } from "../lib/errors";
 import { type Ctx, audit } from "../lib/platform";
+import { assertSeatAvailable } from "./billing";
 import { createSession, upsertUserByEmail } from "./identity";
 import { attributeSignupByCodeTx } from "./referral";
 
@@ -51,6 +52,9 @@ export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdenti
     throw new ApiError(403, "sso_deprovisioned", "조직에서 비활성화된 계정입니다. 회사 관리자에게 문의하세요.");
   }
   if (m?.status !== "active") {
+    // F-191: just-in-time SSO membership takes a seat like an invite/domain join/SCIM provisioning does
+    await c.query("SELECT 1 FROM organizations WHERE id=$1 FOR UPDATE", [id.orgId]);
+    await assertSeatAvailable(id.orgId, c);
     await c.query(
       `INSERT INTO organization_members (organization_id, user_id, role, status, join_source) VALUES ($1,$2,$3,'active','sso')
        ON CONFLICT (organization_id, user_id) DO UPDATE SET status='active', role=EXCLUDED.role, join_source='sso', joined_at=now(), left_at=NULL`,

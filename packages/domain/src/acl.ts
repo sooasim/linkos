@@ -24,6 +24,15 @@ export function hiddenFieldCount<T extends { visibility: Visibility }>(fields: T
   return fields.length - filterFieldsByAudience(fields, audience).length;
 }
 
+/**
+ * F-092 / 백서 §7 privacy_penalty input: share (0..1) of a profile's fields this audience cannot see under the field
+ * ACL. Private fields count as hidden (they are withheld from every viewer but the owner). No fields → 0.
+ */
+export function restrictedFieldRatio<T extends { visibility: Visibility }>(fields: T[], audience: Audience): number {
+  if (!fields.length) return 0;
+  return (fields.length - filterFieldsByAudience(fields, audience).length) / fields.length;
+}
+
 export function isVisibility(v: unknown): v is Visibility {
   return typeof v === "string" && (VISIBILITY_LEVELS as readonly string[]).includes(v);
 }

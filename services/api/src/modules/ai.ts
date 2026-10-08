@@ -1,6 +1,6 @@
 // ai module — Relationship Memory search (UX-017), Need↔Offer Match (UX-018).
 // ACL 필터 후 검색(본인 소유 데이터만), 결과마다 근거(evidence) 제공, 매칭은 "ai_inferred" 라벨.
-import { type MatchProfile, type MatchResult, announceableMatches, rankMatches, tokens } from "@linkos/domain";
+import { type Audience, type MatchProfile, type MatchResult, type Visibility, announceableMatches, rankMatches, restrictedFieldRatio, tokens } from "@linkos/domain";
 import { q, tx } from "../lib/db";
 import { unauthorized } from "../lib/errors";
 import { type Ctx, emit, log } from "../lib/platform";
@@ -117,16 +117,42 @@ export async function relationshipSearch(ctx: Ctx, query: string): Promise<{ que
   return { query, interpreted: { terms: words, from: range?.[0].toISOString() ?? null, to: range?.[1].toISOString() ?? null }, results: results.slice(0, 20) };
 }
 
-/** Batch-load match inputs for many profiles in 3 queries (avoids N+1 on large networks/events). */
-async function matchProfilesFor(profileIds: string[], trust: Map<string, number> = new Map()): Promise<Map<string, MatchProfile & { company: string | null; slug: string }>> {
+/**
+ * F-092 / 백서 §7 privacy_penalty input: the field-ACL audience the viewer has on each candidate profile — same rules as
+ * the public card (files.audienceFor): owner > trusted (approved access request) > business (the candidate's owner has
+ * the viewer as a linked contact) > public. Batched: 2 queries for any number of candidates.
+ */
+async function viewerAudiences(viewerUserId: string, profiles: { id: string; user_id: string | null }[]): Promise<Map<string, Audience>> {
+  const out = new Map<string, Audience>();
+  if (!profiles.length) return out;
+  const ids = profiles.map((p) => p.id);
+  const owners = [...new Set(profiles.map((p) => p.user_id).filter((x): x is string => Boolean(x)))];
+  const [granted, related] = await Promise.all([
+    q<{ target_profile_id: string }>("SELECT DISTINCT target_profile_id FROM access_requests WHERE requester_user_id=$1 AND target_profile_id = ANY($2::uuid[]) AND status='approved'", [viewerUserId, ids]),
+    q<{ owner_user_id: string }>("SELECT DISTINCT owner_user_id FROM contacts WHERE owner_user_id = ANY($1::uuid[]) AND linked_user_id=$2 AND deleted_at IS NULL", [owners, viewerUserId]),
+  ]);
+  const trusted = new Set(granted.map((g) => g.target_profile_id));
+  const business = new Set(related.map((r) => r.owner_user_id));
+  for (const p of profiles) {
+    out.set(p.id, p.user_id === viewerUserId ? "owner" : trusted.has(p.id) ? "trusted" : p.user_id && business.has(p.user_id) ? "business" : "public");
+  }
+  return out;
+}
+
+/** Batch-load match inputs for many profiles in 4–6 queries (avoids N+1 on large networks/events). */
+async function matchProfilesFor(profileIds: string[], trust: Map<string, number> = new Map(), viewerUserId: string | null = null): Promise<Map<string, MatchProfile & { company: string | null; slug: string }>> {
   const out = new Map<string, MatchProfile & { company: string | null; slug: string }>();
   if (!profileIds.length) return out;
   const ids = [...new Set(profileIds)];
-  const [profiles, offers, needs] = await Promise.all([
-    q<any>("SELECT id, name, company, slug, industries, regions, deep, matching_opt_in FROM profiles WHERE id = ANY($1::uuid[])", [ids]),
+  const [profiles, offers, needs, fieldRows] = await Promise.all([
+    q<any>("SELECT id, user_id, name, company, slug, industries, regions, deep, matching_opt_in FROM profiles WHERE id = ANY($1::uuid[])", [ids]),
     q<{ profile_id: string; text: string }>("SELECT profile_id, text FROM offers WHERE profile_id = ANY($1::uuid[]) AND confirmed ORDER BY created_at", [ids]),
     q<{ profile_id: string; text: string }>("SELECT profile_id, text FROM needs WHERE profile_id = ANY($1::uuid[]) AND confirmed ORDER BY created_at", [ids]),
+    viewerUserId ? q<{ profile_id: string; visibility: Visibility }>("SELECT profile_id, visibility FROM profile_fields WHERE profile_id = ANY($1::uuid[])", [ids]) : Promise.resolve([]),
   ]);
+  const audiences = viewerUserId ? await viewerAudiences(viewerUserId, profiles) : new Map<string, Audience>();
+  const fieldsBy = new Map<string, { visibility: Visibility }[]>();
+  for (const f of fieldRows) fieldsBy.set(f.profile_id, [...(fieldsBy.get(f.profile_id) ?? []), { visibility: f.visibility }]);
   const group = (rows: { profile_id: string; text: string }[]) => {
     const m = new Map<string, string[]>();
     for (const r of rows) m.set(r.profile_id, [...(m.get(r.profile_id) ?? []), r.text]);
@@ -147,6 +173,8 @@ async function matchProfilesFor(profileIds: string[], trust: Map<string, number>
       projects: ((p.deep?.projects ?? []) as { title?: string }[]).map((x) => x.title ?? "").filter(Boolean),
       trust: trust.get(p.id) ?? 0,
       matchingOptOut: !p.matching_opt_in,
+      // F-092: share of the candidate's card fields this viewer may not see → privacy_penalty
+      ...(viewerUserId ? { privacy: { restrictedFieldRatio: restrictedFieldRatio(fieldsBy.get(p.id) ?? [], audiences.get(p.id) ?? "public") } } : {}),
     });
   }
   return out;
@@ -190,7 +218,7 @@ export async function listMatches(ctx: Ctx, opts: { eventId?: string } = {}): Pr
   }
   const trust = new Map(candidates.map((c) => [c.profile_id, Number(c.strength ?? 0)]));
   const contactOf = new Map(candidates.map((c) => [c.profile_id, c.contact_id]));
-  const profiles = await matchProfilesFor(candidates.map((c) => c.profile_id), trust);
+  const profiles = await matchProfilesFor(candidates.map((c) => c.profile_id), trust, userId);
   const ranked = rankMatches(me, [...profiles.values()]);
   const out = ranked.map((m) => ({ ...m, company: profiles.get(m.candidateId)?.company ?? null, slug: profiles.get(m.candidateId)?.slug ?? "", contactId: contactOf.get(m.candidateId) ?? null }));
   await announceMatches(me.id, out).catch((e) => log("warn", "match.announce_failed", { error: (e as Error).message }));

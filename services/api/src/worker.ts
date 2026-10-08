@@ -6,7 +6,7 @@ import { emit, log } from "./lib/platform";
 import { sendMail } from "./lib/mail";
 import { processSyncJobs } from "./modules/integration";
 import { fanOutLivingUpdate } from "./modules/living";
-import { processDeletions } from "./modules/security";
+import { processDeletions, processPrivacyExports } from "./modules/security";
 import { processRetention } from "./modules/enterprise";
 import { processReferralRewards } from "./modules/referral";
 import { processStrengths } from "./modules/network";
@@ -144,6 +144,7 @@ export async function tick() {
   const p = await processPushQueue();
   const w = await processWebhookDeliveries();
   const d = await processDeletions();
+  const exportsBuilt = await processPrivacyExports().catch((e) => (log("warn", "worker.privacy_export_failed", { error: (e as Error).message }), 0)); // exportMyData job
   // F-082/F-083 transcription of uploaded recording parts, F-019 retention purge of stored originals
   const t = await processTranscriptions().catch((e) => (log("warn", "worker.stt_failed", { error: (e as Error).message }), 0));
   const purged = await purgeExpiredObjects().catch(() => 0);
@@ -159,7 +160,7 @@ export async function tick() {
   // §20 audit durability: link rows written while the chain lock was busy (never blocks; next tick retries)
   const auditSealed = await sealAuditChain().catch((e) => (log("warn", "worker.audit_seal_failed", { error: (e as Error).message }), 0));
   if (Math.random() < 0.01) await purgeOldVitals().catch(() => 0); // §20 RUM sample retention (90 days)
-  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed };
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed, exportsBuilt };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -171,7 +172,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     while (!stopping) {
       try {
         const r = await tick();
-        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged || r.pushed || r.webhooks) log("info", "worker.tick", r);
+        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged || r.pushed || r.webhooks || r.exportsBuilt) log("info", "worker.tick", r);
       } catch (e) {
         log("error", "worker.tick_failed", { error: (e as Error).message });
       }

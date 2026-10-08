@@ -20,7 +20,7 @@ import {
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type pg from "pg";
 import { z } from "zod";
-import { type Db, one, pool, q, tx } from "../lib/db";
+import { type Db, allowEncounterRewrite, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, appOrigin, audit, log, rateLimit, sha256 } from "../lib/platform";
 import { seal, unseal } from "./integration";
@@ -28,6 +28,7 @@ import { handleMemberDeparture, requireOrg } from "./org";
 import { purgeAuditLogs } from "./auditChain";
 import { isReferralCode } from "./referral";
 import { enqueueRequiredCrmSync } from "./policy";
+import { assertSeatAvailable } from "./billing";
 import { contactInput, insertContact } from "./relationship";
 import { samlStart } from "./saml";
 import { assertOrgEmailDomain, completeSsoLogin } from "./ssoLogin";
@@ -167,7 +168,10 @@ export async function processRetention(now: Date = new Date()): Promise<number> 
       const t = await retentionTargets(c, o.id, o.retention, now);
       const leadIds = t.inactive.filter((x) => x.ownership === "company").map((x) => x.id);
       const personalIds = t.inactive.filter((x) => x.ownership !== "company").map((x) => x.id);
-      if (leadIds.length) await c.query("DELETE FROM contacts WHERE id = ANY($1::uuid[]) AND organization_id=$2", [leadIds, o.id]);
+      if (leadIds.length) {
+        await allowEncounterRewrite(c, "delete"); // §9: retention purge may remove the leads' (append-only) Encounters
+        await c.query("DELETE FROM contacts WHERE id = ANY($1::uuid[]) AND organization_id=$2", [leadIds, o.id]);
+      }
       if (personalIds.length) await c.query("UPDATE contacts SET scope='personal', organization_id=NULL, shared_by=NULL, shared_at=NULL WHERE id = ANY($1::uuid[])", [personalIds]);
       const n = t.noteCut ? (await c.query("DELETE FROM notes WHERE organization_id=$1 AND scope='team' AND created_at < $2", [o.id, t.noteCut])).rowCount ?? 0 : 0;
       // §20 audit durability: purged rows leave hash-chain tombstones so the chain still verifies
@@ -571,6 +575,7 @@ export async function scimCreate(orgId: string, body: unknown) {
     let u = await one<{ id: string }>("SELECT id FROM users WHERE email=$1", [email], c);
     const existing = u ? await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2", [orgId, u.id], c) : null;
     if (existing?.status === "active") throw new ScimError(409, "User already exists", "uniqueness");
+    if (b.active) await scimAssertSeat(c, orgId); // F-191
     if (!u) u = await one<{ id: string }>("INSERT INTO users (email, display_name) VALUES ($1,$2) RETURNING id", [email, scimDisplayName(b)], c);
     await c.query("INSERT INTO identities (user_id, provider, provider_subject) VALUES ($1,$2,$3) ON CONFLICT (provider, provider_subject) DO NOTHING", [u!.id, `scim:${orgId}`, b.externalId ?? email]);
     const role =
@@ -586,6 +591,23 @@ export async function scimCreate(orgId: string, body: unknown) {
   });
 }
 
+/**
+ * F-191 seats for SCIM provisioning: same entitlement as invites/domain joins, reported in the SCIM error schema
+ * (RFC 7644 §3.12 — 403 with a detail; there is no SCIM scimType for quota) instead of the app's 402 body.
+ */
+async function scimAssertSeat(c: pg.PoolClient, orgId: string) {
+  await c.query("SELECT 1 FROM organizations WHERE id=$1 FOR UPDATE", [orgId]);
+  try {
+    await assertSeatAvailable(orgId, c);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 402) {
+      const d = (e.details ?? {}) as { limit?: number; used?: number };
+      throw new ScimError(403, `seat limit reached (${d.used ?? "?"}/${d.limit ?? "?"} seats in use) — add seats to the organization plan`);
+    }
+    throw e;
+  }
+}
+
 async function scimSetActive(c: pg.PoolClient, orgId: string, userId: string, active: boolean) {
   const m = await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2 FOR UPDATE", [orgId, userId], c);
   if (!m) throw new ScimError(404, "User not found");
@@ -596,6 +618,7 @@ async function scimSetActive(c: pg.PoolClient, orgId: string, userId: string, ac
     if (isOwner && !owners!.n) throw new ScimError(409, "cannot deactivate the last owner", "mutability");
     await handleMemberDeparture(c, orgId, userId, null, { userId: null }, "scim_deprovisioned");
   } else if (active && m.status !== "active") {
+    await scimAssertSeat(c, orgId); // F-191: re-activation takes a seat again
     await c.query("UPDATE organization_members SET status='active', left_at=NULL, joined_at=now() WHERE organization_id=$1 AND user_id=$2", [orgId, userId]);
   }
 }

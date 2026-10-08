@@ -228,6 +228,11 @@ async function processAccount(accountId: string, limit: number): Promise<number>
           const out = (await runJob(accountId, job)) as { externalId?: string } | void;
           await q("UPDATE sync_jobs SET status='done', finished_at=now(), attempt_count=attempt_count+1, last_error=NULL, external_id=COALESCE($2, external_id) WHERE id=$1", [job.id, out?.externalId ?? null]);
           done++;
+          // 백서 §3.1 SYNCED: a contact created by an exchange reached the external address book / CRM
+          if (out?.externalId && job.payload?.contactId && /\.(contact|lead)\.upsert$/.test(String(job.job_type))) {
+            const { markExchangeSynced } = await import("./handoff"); // dynamic: avoids a module cycle
+            await markExchangeSynced(String(job.payload.contactId)).catch((e) => log("warn", "sync.exchange_state_failed", { job: job.id, error: (e as Error).message }));
+          }
         } catch (e) {
           const attempts = job.attempt_count + 1;
           const kind = classify(e);

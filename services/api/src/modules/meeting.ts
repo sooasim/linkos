@@ -1,5 +1,5 @@
 // meeting module — Meeting Intelligence (F-0xx): Meeting Card(목적·논의·결정·약속·To-do·다음 일정), 녹음 동의 게이트, Pre-meeting Brief
-import { canStartRecording, recordingPolicyDefault } from "@linkos/domain";
+import { type FieldHistoryRow, type PendingLivingUpdate, type StoredMeetingSummary, canStartRecording, priorMeetingFacts, recentProfileChanges, recordingPolicyDefault } from "@linkos/domain";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, notFound, unauthorized } from "../lib/errors";
@@ -151,6 +151,36 @@ export async function createRecording(ctx: Ctx, meetingId: string, input: { mime
   return startRecording(ctx, meetingId, input);
 }
 
+/** How far back "recent profile changes" reach when there is no earlier meeting with the person. */
+export const BRIEF_CHANGES_LOOKBACK_DAYS = 90;
+
+/**
+ * F-096 / F-089: what happened last time with this person and what changed since — facts only, copied from stored
+ * records: the most recent earlier meeting card (+ its stored transcript summary, labelled, or verbatim transcript lines
+ * when nothing else was stored), my contact's field history, and pending Living Updates from their (ACL-filtered) card.
+ */
+async function briefHistoryFor(userId: string, contactId: string, meetingId: string, before: Date) {
+  const prev = await one<{ id: string; title: string; started_at: Date | null; created_at: Date; summary: StoredMeetingSummary | null }>(
+    `SELECT m.id, m.title, m.started_at, m.created_at, m.summary FROM meetings m JOIN meeting_participants mp ON mp.meeting_id = m.id
+     WHERE m.owner_user_id=$1 AND mp.contact_id=$2 AND m.id <> $3 AND COALESCE(m.started_at, m.created_at) < $4
+     ORDER BY COALESCE(m.started_at, m.created_at) DESC LIMIT 1`,
+    [userId, contactId, meetingId, before],
+  );
+  let previousMeeting = null;
+  if (prev) {
+    const s = prev.summary ?? {};
+    const hasStored = Boolean(s.decisions?.length || s.discussion?.length || s.promises?.length || s.ai?.summary);
+    const transcript = hasStored ? [] : await q<{ id: string; text: string }>("SELECT id::text AS id, text FROM transcript_segments WHERE meeting_id=$1 ORDER BY recording_id, start_ms, id LIMIT 3", [prev.id]);
+    previousMeeting = priorMeetingFacts({ id: prev.id, title: prev.title, startedAt: prev.started_at, createdAt: prev.created_at, summary: prev.summary }, transcript);
+  }
+  const since = prev ? new Date(prev.started_at ?? prev.created_at) : new Date(before.getTime() - BRIEF_CHANGES_LOOKBACK_DAYS * 864e5);
+  const [history, pending] = await Promise.all([
+    q<FieldHistoryRow>("SELECT field, old_value, new_value, source, changed_at FROM contact_field_history WHERE owner_user_id=$1 AND contact_id=$2 AND changed_at >= $3 ORDER BY changed_at DESC LIMIT 50", [userId, contactId, since]),
+    q<PendingLivingUpdate>("SELECT changes, created_at FROM living_update_suggestions WHERE owner_user_id=$1 AND contact_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 5", [userId, contactId]),
+  ]);
+  return { previousMeeting, profileChanges: recentProfileChanges(history, pending, since), changesSince: since.toISOString() };
+}
+
 /** GET /meetings/{id}/brief — 30초 Pre-meeting Brief. Deterministic, sourced from the user's own data (provenance listed). */
 export async function getMeetingBrief(ctx: Ctx, meetingId: string) {
   if (!ctx.userId) throw unauthorized();
@@ -174,6 +204,7 @@ export async function getMeetingBrief(ctx: Ctx, meetingId: string) {
       for (const n of me.needs) for (const o of theirProfile.offers) if (textSimilarity(n.text, o.text) > 0.2) topics.push(`내 Need “${n.text}” ↔ 상대 Offer “${o.text}”`);
       for (const o of me.offers) for (const n of theirProfile.needs) if (textSimilarity(o.text, n.text) > 0.2) topics.push(`상대 Need “${n.text}”에 내 Offer “${o.text}” 제안`);
     }
+    const hist = await briefHistoryFor(userId, p.id, meetingId, new Date(meeting.startedAt ?? meeting.createdAt));
     people.push({
       contactId: p.id,
       fullName: p.fullName,
@@ -183,6 +214,10 @@ export async function getMeetingBrief(ctx: Ctx, meetingId: string) {
       recentNotes: notes,
       profileUpdatedAt: theirProfile?.updatedAt ?? null,
       suggestedTopics: topics.slice(0, 3),
+      // F-096: last meeting with this person (stored facts only) · F-089: what changed on their record since then
+      previousMeeting: hist.previousMeeting,
+      profileChanges: hist.profileChanges,
+      changesSince: hist.changesSince,
     });
   }
   await q("INSERT INTO ai_runs (owner_user_id, kind, model, prompt_version, source_ids, output) VALUES ($1,'meeting_brief','rules-v1','brief-1',$2,$3)", [userId, [meetingId, ...meeting.participants.map((p) => p.id)], JSON.stringify({ people: people.length })]);

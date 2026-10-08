@@ -11,7 +11,9 @@ import { Icon } from "@/components/Icon";
 import { CardFace, OfferNeed } from "@/components/LivingCard";
 import { PageHeader } from "@/components/Page";
 import { api } from "@/lib/client";
+import type { CardTranslations as Translations } from "@/lib/cardTranslation";
 import { CardIntel } from "./CardIntel";
+import { CardTranslations } from "./CardTranslations";
 import { VariantPreview } from "./VariantPreview";
 
 type Vis = "public" | "business" | "trusted" | "partner" | "private";
@@ -104,7 +106,16 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
     needs: ((profile?.needs ?? []) as { text: string }[]).map((o) => o.text),
     deep: { projects: [], achievements: [], services: [], assets: [], network: [], interests: [], languages: [], ...(profile?.deep ?? {}) } as Record<string, any>,
     variants: (profile?.variants ?? []).map((v: any) => ({ audience: v.audience, headline: v.content?.headline ?? "", isDefault: v.isDefault })) as { audience: string; headline: string; isDefault: boolean }[],
+    // F-112: reviewed machine translations (en/ja) of the descriptive text — saved with the card
+    translations: (profile?.translations ?? {}) as Translations,
   }));
+  const [notice, setNotice] = useState<string | null>(null);
+  // F-112: the translate API reads the SAVED card; note when translatable text has unsaved edits
+  const savedOffers = ((profile?.offers ?? []) as { text: string }[]).map((o) => o.text);
+  const savedNeeds = ((profile?.needs ?? []) as { text: string }[]).map((o) => o.text);
+  const translationDirty =
+    !!profile &&
+    ((profile.jobTitle ?? "") !== p.jobTitle || (profile.headline ?? "") !== p.headline || (profile.bioShort ?? "") !== p.bioShort || savedOffers.join("\n") !== p.offers.join("\n") || savedNeeds.join("\n") !== p.needs.join("\n"));
   const [scan, setScan] = useState(onboarding && !profile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +138,7 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
   const save = async () => {
     setSaving(true);
     setError(null);
+    setNotice(null);
     const body = {
       ...p,
       company: p.company || null,
@@ -141,8 +153,13 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
       version: profile?.version,
     };
     try {
-      if (profile) await api(`/profiles/${profile.id}`, { method: "PATCH", body });
-      else await api("/profiles", { body });
+      const saved = profile ? await api<{ translations?: unknown }>(`/profiles/${profile.id}`, { method: "PATCH", body }) : await api<{ translations?: unknown }>("/profiles", { body });
+      // F-112: until the server stores translations, say so instead of silently dropping the reviewed text
+      if (Object.keys(p.translations).length > 0 && saved && typeof saved === "object" && !("translations" in saved)) {
+        setNotice("카드는 저장됐어요. 다만 이 서버는 아직 번역본 저장을 지원하지 않아 번역본은 저장되지 않았어요.");
+        router.refresh();
+        return;
+      }
       router.push(onboarding ? "/app?welcome=1" : "/app/me");
       router.refresh();
     } catch (e) {
@@ -327,6 +344,14 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
             </label>
           </section>
 
+          <CardTranslations
+            profileId={profile?.id ?? null}
+            source={{ name: p.name, company: p.company || null, jobTitle: profile?.jobTitle ?? null, headline: profile?.headline ?? null, bioShort: profile?.bioShort ?? null, offers: savedOffers, needs: savedNeeds, contactCount: p.fields.length }}
+            dirty={translationDirty}
+            value={p.translations}
+            onChange={(v) => set("translations", v)}
+          />
+
           {profile && <CardIntel profileId={profile.id} hasVariants={(profile.variants ?? []).length > 0} />}
         </div>
         )}
@@ -356,6 +381,7 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
       <div className="fixed inset-x-0 bottom-24 z-30 px-5 lg:static lg:mt-8 lg:px-0">
         <div className="mx-auto max-w-3xl">
           {error && <p role="alert" className="mb-2 rounded-2xl bg-[var(--color-ember)]/10 px-4 py-2 text-[14px] text-[var(--color-ember)]">{error}</p>}
+          {notice && <p role="status" className="mb-2 rounded-2xl bg-[var(--color-butter)] px-4 py-2 text-[14px] text-[var(--color-ink)]" data-testid="save-notice">{notice}</p>}
           <button onClick={save} disabled={saving || !p.name.trim()} className="btn btn-signal btn-lg w-full shadow-2xl lg:w-auto" data-testid="save-card">
             {saving ? "저장 중…" : profile ? "저장" : "카드 완성"}
           </button>

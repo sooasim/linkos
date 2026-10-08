@@ -1,11 +1,14 @@
 import { apple, identity, integration } from "@linkos/api";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getMessages } from "@/lib/i18n.server";
 import { getViewer, safeNext } from "@/lib/server";
 import { LoginForm } from "./LoginForm";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "로그인" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getMessages()).m.login.signIn };
+}
 
 // UX-008 Claim / 로그인: Google · Apple · 이메일 OTP (비밀번호 없음)
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {

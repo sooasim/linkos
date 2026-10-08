@@ -4,14 +4,37 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GoogleOneTap, PENDING_ONETAP_KEY } from "@/components/GoogleOneTap";
 import { AppleLogo } from "@/components/AppleLogo";
+import { setLangCookie, useI18n } from "@/components/I18n";
 import { Icon, Logo } from "@/components/Icon";
 import { ClientError, api } from "@/lib/client";
 
+// F-177: labels are in the app dictionary (m.login.terms / privacy / age14)
 const REQUIRED = [
-  { type: "terms", label: "서비스 이용약관 동의", href: "/legal/terms" },
-  { type: "privacy", label: "개인정보 수집·이용 동의", href: "/legal/privacy" },
-  { type: "age_14", label: "만 14세 이상입니다" },
+  { type: "terms", label: "terms", href: "/legal/terms" },
+  { type: "privacy", label: "privacy", href: "/legal/privacy" },
+  { type: "age_14", label: "age14" },
 ] as const;
+
+/** F-177: one-tap language switch before sign-in (same lk_lang cookie as Settings → 언어). */
+function LangSwitch() {
+  const router = useRouter();
+  const { locale, m } = useI18n();
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost !min-h-9 !px-3 text-[13px]"
+      aria-label={m.lang.switchAria}
+      lang={locale === "ko" ? "en" : "ko"}
+      data-testid="login-lang-switch"
+      onClick={() => {
+        setLangCookie(locale === "ko" ? "en" : "ko");
+        router.refresh();
+      }}
+    >
+      <Icon name="globe" size={15} /> {m.lang.switchTo}
+    </button>
+  );
+}
 
 const ERRORS: Record<string, string> = {
   google_denied: "Google 로그인이 취소되었습니다.",
@@ -79,6 +102,7 @@ export function LoginForm({
   mailConfigured?: boolean;
 }) {
   const router = useRouter();
+  const L = useI18n().m.login;
   const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent || appleConsent || ssoConsent ? "consent" : "email");
   const [email, setEmail] = useState("");
   const [ssoEmailKnown, setSsoEmailKnown] = useState(false);
@@ -197,7 +221,7 @@ export function LoginForm({
   // F-008 회사 SSO: the work email's verified domain picks the org's IdP (OIDC or SAML 2.0)
   const continueSso = (withConsent: boolean) => {
     if (!email.includes("@")) {
-      setError("회사 이메일을 입력하세요.");
+      setError(L.enterWorkEmail);
       return;
     }
     try {
@@ -222,7 +246,7 @@ export function LoginForm({
       router.refresh();
     } catch (err) {
       if (toCompanySso(err)) return;
-      setError((err as Error).name === "NotAllowedError" ? "패스키 로그인이 취소되었습니다." : (err as Error).message);
+      setError((err as Error).name === "NotAllowedError" ? L.passkeyCancelled : (err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -244,20 +268,21 @@ export function LoginForm({
             <em className="text-[var(--color-signal)]">Remember.</em>
           </h2>
         </div>
-        <p className="max-w-sm text-[15px] text-[var(--fg-mute)]">비밀번호 없이. 교환한 명함과 관계는 가입 후에도 그대로 이어집니다.</p>
+        <p className="max-w-sm text-[15px] text-[var(--fg-mute)]">{L.tagline}</p>
       </aside>
 
       <section className="flex flex-col px-6 pb-10 pt-6 sm:px-10">
-        <div className="lg:hidden">
-          <Link href="/"><Logo /></Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" className="lg:invisible"><Logo /></Link>
+          <LangSwitch />
         </div>
         <div className="mx-auto my-auto w-full max-w-sm animate-rise">
           {step === "email" && (
             <form onSubmit={requestCode}>
               <h1 className="display text-[54px]">
-                시작하기<em className="text-[var(--color-ember)]">.</em>
+                {L.start}<em className="text-[var(--color-ember)]">.</em>
               </h1>
-              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">이메일로 받은 6자리 코드로 로그인합니다.</p>
+              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">{L.startBody}</p>
               {demoLogin && <DemoLogin next={next} mailConfigured={mailConfigured} />}
               {(google || apple) && (
                 <>
@@ -265,32 +290,32 @@ export function LoginForm({
                     {google && (
                       <button type="button" onClick={() => setStep("consent")} className="btn btn-ink btn-lg w-full">
                         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
-                        Google로 계속하기
+                        {L.google}
                       </button>
                     )}
                     {apple && (
                       <button type="button" onClick={() => continueApple(false)} className="btn btn-ink btn-lg w-full" data-testid="apple-continue">
                         <AppleLogo size={18} />
-                        Apple로 계속
+                        {L.apple}
                       </button>
                     )}
                   </div>
                   <div className="my-5 flex items-center gap-3 text-[12px] text-[var(--fg-mute)]">
-                    <span className="h-px flex-1 bg-[var(--line)]" /> 또는 <span className="h-px flex-1 bg-[var(--line)]" />
+                    <span className="h-px flex-1 bg-[var(--line)]" /> {L.or} <span className="h-px flex-1 bg-[var(--line)]" />
                   </div>
                 </>
               )}
-              <label className={`label ${google || apple ? "" : "mt-8"}`} htmlFor="email">이메일</label>
+              <label className={`label ${google || apple ? "" : "mt-8"}`} htmlFor="email">{L.email}</label>
               <input id="email" className="field" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
               <button className="btn btn-signal btn-lg mt-4 w-full" disabled={busy || !email.includes("@")}>
-                {busy ? "보내는 중…" : "코드 받기"}
+                {busy ? L.sending : L.getCode}
               </button>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" className="btn btn-ghost" onClick={signInWithPasskey} disabled={busy}>
-                  <Icon name="lock" size={16} /> 패스키
+                  <Icon name="lock" size={16} /> {L.passkey}
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => continueSso(false)} disabled={busy}>
-                  <Icon name="people" size={16} /> 회사 SSO
+                  <Icon name="people" size={16} /> {L.sso}
                 </button>
               </div>
             </form>
@@ -302,12 +327,12 @@ export function LoginForm({
                 <Icon name="back" size={16} /> {email}
               </button>
               <h1 className="display text-[54px]">
-                코드 <em>입력</em>
+                {L.codeTitle} <em>{L.codeEm}</em>
               </h1>
-              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">메일함을 확인하세요. 10분간 유효합니다.</p>
+              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">{L.codeBody}</p>
               {devCode && (
                 <p className="mt-4 rounded-2xl border border-dashed border-[var(--line-strong)] px-4 py-3 text-[13px]" data-testid="dev-code">
-                  개발 모드(메일 미설정): 코드 <b className="num">{devCode}</b>
+                  {L.devCode} <b className="num">{devCode}</b>
                 </p>
               )}
               <input
@@ -317,11 +342,11 @@ export function LoginForm({
                 maxLength={6}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                aria-label="6자리 코드"
+                aria-label={L.codeAria}
                 autoFocus
               />
               <button className="btn btn-signal btn-lg mt-4 w-full" disabled={busy || code.length !== 6}>
-                {busy ? "확인 중…" : "로그인"}
+                {busy ? L.verifying : L.signIn}
               </button>
             </form>
           )}
@@ -329,9 +354,9 @@ export function LoginForm({
           {step === "consent" && (
             <div>
               <h1 className="display text-[48px]">
-                약관 <em>동의</em>
+                {L.consentTitle} <em>{L.consentEm}</em>
               </h1>
-              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">필수 항목과 선택 항목을 분리해 기록합니다.</p>
+              <p className="mt-2 text-[15px] text-[var(--fg-mute)]">{L.consentBody}</p>
               <button
                 type="button"
                 className="surface mt-6 flex w-full items-center gap-3 p-4 text-left text-[16px] font-semibold"
@@ -344,48 +369,48 @@ export function LoginForm({
                 <span className={`grid size-6 place-items-center rounded-full border ${allRequired && marketing ? "border-transparent bg-[var(--color-signal)] text-[var(--color-ink)]" : "border-[var(--line-strong)]"}`}>
                   <Icon name="check" size={14} strokeWidth={3} />
                 </span>
-                전체 동의
+                {L.agreeAll}
               </button>
               <ul className="mt-3 space-y-1">
                 {REQUIRED.map((r) => (
                   <li key={r.type} className="flex items-center gap-3 px-2 py-2">
                     <input id={r.type} type="checkbox" className="size-5 accent-[var(--color-ink)]" checked={!!checks[r.type]} onChange={(e) => setChecks({ ...checks, [r.type]: e.target.checked })} />
                     <label htmlFor={r.type} className="flex-1 text-[15px]">
-                      <span className="mr-1 text-[var(--color-ember)]">[필수]</span>
-                      {r.label}
+                      <span className="mr-1 text-[var(--color-ember)]">{L.required}</span>
+                      {L[r.label]}
                     </label>
-                    {"href" in r && r.href ? <Link href={r.href} className="text-[13px] text-[var(--fg-mute)] underline">보기</Link> : null}
+                    {"href" in r && r.href ? <Link href={r.href} className="text-[13px] text-[var(--fg-mute)] underline">{L.view}</Link> : null}
                   </li>
                 ))}
                 <li className="flex items-center gap-3 px-2 py-2">
                   <input id="marketing" type="checkbox" className="size-5 accent-[var(--color-ink)]" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
                   <label htmlFor="marketing" className="flex-1 text-[15px]">
-                    <span className="mr-1 text-[var(--fg-mute)]">[선택]</span>마케팅 정보 수신
+                    <span className="mr-1 text-[var(--fg-mute)]">{L.optional}</span>{L.marketing}
                   </label>
                 </li>
               </ul>
               {oneTapCredential ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired || busy} onClick={() => oneTap(oneTapCredential, true)} data-testid="onetap-consent">
-                  동의하고 Google 계정으로 가입
+                  {L.agreeGoogleOneTap}
                 </button>
               ) : appleConsent ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={() => continueApple(true)} data-testid="apple-consent">
-                  <AppleLogo size={18} /> 동의하고 Apple로 계속
+                  <AppleLogo size={18} /> {L.agreeApple}
                 </button>
               ) : ssoConsent ? (
                 <>
-                  {!ssoEmailKnown && <input className="field mt-6" type="email" placeholder="회사 이메일" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="회사 이메일" />}
+                  {!ssoEmailKnown && <input className="field mt-6" type="email" placeholder={L.workEmail} value={email} onChange={(e) => setEmail(e.target.value)} aria-label={L.workEmail} />}
                   <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={() => continueSso(true)}>
-                    동의하고 회사 SSO로 계속
+                    {L.agreeSso}
                   </button>
                 </>
               ) : googleConsent || (!code && google) ? (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired} onClick={continueGoogle}>
-                  동의하고 Google로 계속
+                  {L.agreeGoogle}
                 </button>
               ) : (
                 <button className="btn btn-signal btn-lg mt-6 w-full" disabled={!allRequired || busy} onClick={() => verify(true)}>
-                  동의하고 가입 완료
+                  {L.agreeFinish}
                 </button>
               )}
             </div>
@@ -399,6 +424,7 @@ export function LoginForm({
 
 /** Test server only (DEMO_LOGIN=1): a throwaway account in one click, so testers need no mail server. */
 function DemoLogin({ next, mailConfigured }: { next: string; mailConfigured: boolean }) {
+  const L = useI18n().m.login;
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -415,18 +441,18 @@ function DemoLogin({ next, mailConfigured }: { next: string; mailConfigured: boo
   };
   return (
     <div className="surface mt-6 space-y-3 p-4" data-testid="demo-login">
-      <p className="eyebrow">테스트 서버</p>
+      <p className="eyebrow">{L.demoEyebrow}</p>
       <p className="text-[14px] text-[var(--fg-mute)]">
-        입력 없이 임시 계정을 만들어 바로 둘러볼 수 있어요.{mailConfigured ? "" : " 이 서버는 메일 발송이 설정되지 않아 이메일 코드 로그인은 동작하지 않습니다."}
+        {L.demoBody}{mailConfigured ? "" : L.demoNoMail}
       </p>
       <label className="flex items-start gap-2 text-[13.5px]">
         <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
         <span>
-          만 14세 이상이며 <a className="underline" href="/legal/terms">이용약관</a>과 <a className="underline" href="/legal/privacy">개인정보 처리방침</a>에 동의합니다.
+          {L.demoAgreeA}<a className="underline" href="/legal/terms">{L.demoTerms}</a>{L.demoAnd}<a className="underline" href="/legal/privacy">{L.demoPrivacy}</a>{L.demoAgreeB}
         </span>
       </label>
       <button type="button" className="btn btn-signal w-full" disabled={!agree || busy} onClick={start} data-testid="demo-login-start">
-        {busy ? "만드는 중…" : "테스트 계정으로 바로 시작"}
+        {busy ? L.demoBusy : L.demoStart}
       </button>
       {err && <p role="alert" className="text-[13.5px] text-[var(--color-ember)]">{err}</p>}
     </div>

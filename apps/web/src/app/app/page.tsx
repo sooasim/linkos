@@ -4,26 +4,33 @@ import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { AiLabel, Avatar, Empty } from "@/components/Page";
 import { CardFace } from "@/components/LivingCard";
+import { type AppMessages, intlLocale, slot, tf } from "@/lib/i18n";
+import { getMessages } from "@/lib/i18n.server";
 import { getViewer } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
 
-const SRC: Record<string, string> = { exchange: "교환", scan: "스캔", manual: "직접 추가", claim: "Claim", event: "행사", import: "가져오기" };
-
-function when(d: Date | string | null) {
-  if (!d) return "";
-  const t = new Date(d);
-  const days = Math.floor((Date.now() - t.getTime()) / 864e5);
-  if (days <= 0) return "오늘";
-  if (days === 1) return "어제";
-  if (days < 7) return `${days}일 전`;
-  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(t);
+function whenFn(h: AppMessages["home"], lang: string) {
+  return (d: Date | string | null) => {
+    if (!d) return "";
+    const t = new Date(d);
+    const days = Math.floor((Date.now() - t.getTime()) / 864e5);
+    if (days <= 0) return h.today;
+    if (days === 1) return h.yesterday;
+    if (days < 7) return tf(h.daysAgo, { n: days });
+    return new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" }).format(t);
+  };
 }
 
 // UX-001 Home — 오늘 행동과 관계 신호
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const sp = await searchParams;
   const { userId, ctx } = await getViewer();
+  // F-177 ko/en
+  const { locale, m } = await getMessages();
+  const h = m.home;
+  const lang = intlLocale(locale);
+  const when = whenFn(h, lang);
   const me = await identity.getMe(userId!);
   const [home, digest] = await Promise.all([
     analytics.myHome(userId!),
@@ -34,30 +41,30 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const welcome = sp.welcome === "1";
   const picks = (digest?.items ?? []).slice(0, 3);
   const hour = new Date().getHours();
-  const greet = hour < 12 ? "좋은 아침이에요" : hour < 18 ? "좋은 오후예요" : "좋은 저녁이에요";
+  const greet = hour < 12 ? h.morning : hour < 18 ? h.afternoon : h.evening;
   const name = profile?.name ?? me.user.display_name ?? "";
 
   return (
     <div className="space-y-8">
       <header className="animate-rise">
-        <p className="eyebrow">{new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" }).format(new Date())}</p>
+        <p className="eyebrow">{new Intl.DateTimeFormat(lang, { month: "long", day: "numeric", weekday: "long" }).format(new Date())}</p>
         <h1 className="display mt-2 text-[48px] sm:text-[64px]">
-          {greet}, <em>{name || "반가워요"}</em>
+          {greet}, <em>{name || h.hello}</em>
         </h1>
       </header>
 
       {welcome && (
         <section className="surface relative overflow-hidden !rounded-[28px] !bg-[var(--accent-soft)] p-6 animate-rise" aria-labelledby="welcome-title" data-testid="welcome-card">
-          <Link href="/app" scroll={false} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full text-[var(--fg-mute)] hover:bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] hover:text-[var(--fg)]" aria-label="첫 공유 안내 닫기">
+          <Link href="/app" scroll={false} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full text-[var(--fg-mute)] hover:bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] hover:text-[var(--fg)]" aria-label={h.welcomeClose}>
             <Icon name="x" size={18} />
           </Link>
-          <p className="eyebrow">카드 완성</p>
+          <p className="eyebrow">{h.welcomeEyebrow}</p>
           <h2 id="welcome-title" className="display mt-2 pr-10 text-[30px] sm:text-[36px]">
-            다음 만나는 사람에게 <em>첫 공유</em>를 해보세요
+            {slot(h.welcomeTitle)[0]}<em>{h.welcomeEm}</em>{slot(h.welcomeTitle)[1]}
           </h2>
-          <p className="mt-2 text-[14.5px] text-[var(--fg-mute)]">상대는 로그인이나 앱 설치 없이 바로 카드를 받아요.</p>
+          <p className="mt-2 text-[14.5px] text-[var(--fg-mute)]">{h.welcomeBody}</p>
           <Link href="/app/exchange" className="btn btn-signal mt-5 w-full sm:w-auto" data-testid="welcome-share">
-            <Icon name="exchange" size={18} /> 첫 공유 시작
+            <Icon name="exchange" size={18} /> {h.welcomeCta}
           </Link>
         </section>
       )}
@@ -66,24 +73,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <section className="stage-ink grain overflow-hidden rounded-[28px] p-6 animate-rise delay-1">
           <p className="eyebrow">Step 1</p>
           <h2 className="display mt-2 text-[36px]">
-            먼저 <em className="text-[var(--color-signal)]">Living Card</em>를 만드세요
+            {slot(h.step1Title)[0]}<em className="text-[var(--color-signal)]">Living Card</em>{slot(h.step1Title)[1]}
           </h2>
-          <p className="mt-2 text-[15px] text-[var(--fg-mute)]">종이 명함을 찍으면 1분 안에 완성됩니다.</p>
+          <p className="mt-2 text-[15px] text-[var(--fg-mute)]">{h.step1Body}</p>
           <Link href="/app/me/edit?onboarding=1" className="btn btn-signal mt-5">
-            카드 만들기 <Icon name="arrow" size={18} />
+            {h.makeCard} <Icon name="arrow" size={18} />
           </Link>
         </section>
       ) : (
         <section className="grid gap-4 sm:grid-cols-[1.2fr_1fr] animate-rise delay-1">
-          <Link href="/app/exchange" className="block transition hover:-translate-y-0.5" aria-label="내 카드로 교환 시작">
+          <Link href="/app/exchange" className="block transition hover:-translate-y-0.5" aria-label={h.exchangeWithCard}>
             <CardFace card={card.projectCard(profile, "owner")} size="sm" interactive={false} />
           </Link>
           <div className="grid grid-cols-2 gap-3">
             {[
-              ["인맥", home.counts.contacts, "/app/people"],
-              ["이번 주 만남", home.counts.encounters_7d, "/app/people"],
-              ["후속 할 일", home.counts.open_followups, "#followups"],
-              ["완료된 교환", home.counts.exchanges, "/app/insights"],
+              [h.statPeople, home.counts.contacts, "/app/people"],
+              [h.statWeek, home.counts.encounters_7d, "/app/people"],
+              [h.statFollowups, home.counts.open_followups, "#followups"],
+              [h.statExchanges, home.counts.exchanges, "/app/insights"],
             ].map(([label, v, href]) => (
               <Link key={label as string} href={href as string} className="surface flex flex-col justify-between p-4 transition hover:border-[var(--line-strong)]">
                 <span className="text-[12.5px] font-medium text-[var(--fg-mute)]">{label}</span>
@@ -97,10 +104,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4 animate-rise delay-2">
         {(
           [
-            ["/app/exchange", "exchange", "공유하기", true],
-            ["/app/scan", "scan", "명함 스캔", false],
-            ["/c", "code", "코드로 받기", false],
-            ["/app/exchange?group=1", "people", "그룹 교환", false],
+            ["/app/exchange", "exchange", h.share, true],
+            ["/app/scan", "scan", h.scan, false],
+            ["/c", "code", h.byCode, false],
+            ["/app/exchange?group=1", "people", h.group, false],
           ] as const
         ).map(([href, icon, label, primary]) => (
           <Link key={href} href={href} className={`flex flex-col gap-6 rounded-[22px] p-4 transition active:scale-[.98] ${primary ? "bg-[var(--color-signal)] text-[var(--color-ink)]" : "surface"}`}>
@@ -112,11 +119,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <section id="followups" className="animate-rise delay-3">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-[20px] font-semibold">후속 필요</h2>
-          <Link href="/app/people" className="text-[13px] text-[var(--fg-mute)]">전체</Link>
+          <h2 className="text-[20px] font-semibold">{h.followupsTitle}</h2>
+          <Link href="/app/people" className="text-[13px] text-[var(--fg-mute)]">{h.seeAll}</Link>
         </div>
         {home.followups.length === 0 ? (
-          <Empty title="밀린 후속 업무가 없어요" body="교환이 끝나면 감사 인사 초안을 자동으로 제안해 드려요." />
+          <Empty title={h.noFollowups} body={h.noFollowupsBody} />
         ) : (
           <ul className="surface divide-y divide-[var(--line)]">
             {home.followups.map((f: any) => (
@@ -128,7 +135,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-medium">{f.title}</span>
                     <span className="block text-[12.5px] text-[var(--fg-mute)]">
-                      {f.due_at ? `${when(f.due_at)} 까지` : "기한 없음"} {f.source === "ai_suggested" && "· AI 제안 초안"}
+                      {f.due_at ? tf(h.until, { when: when(f.due_at) }) : h.noDue} {f.source === "ai_suggested" && h.aiDraft}
                     </span>
                   </span>
                   <Icon name="arrow" size={16} className="opacity-40" />
@@ -142,12 +149,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className="animate-rise delay-3" aria-labelledby="ai-picks-title" data-testid="home-ai">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h2 id="ai-picks-title" className="flex items-center gap-2 text-[20px] font-semibold">
-            AI 추천 <AiLabel />
+            {h.aiPicks} <AiLabel>{m.common.aiInferred}</AiLabel>
           </h2>
-          <Link href="/app/ai" className="text-[13px] text-[var(--fg-mute)]">AI 기억·매칭</Link>
+          <Link href="/app/ai" className="text-[13px] text-[var(--fg-mute)]">{m.nav.aiHub}</Link>
         </div>
         {picks.length === 0 ? (
-          <Empty title="지금은 챙길 사람이 없어요" body="만남 간격과 관계 강도를 보고, 연락이 뜸해지는 사람을 여기서 알려드려요." action={<Link href="/app/ai" className="btn btn-ghost">매칭·소개 후보 보기</Link>} />
+          <Empty title={h.aiNone} body={h.aiNoneBody} action={<Link href="/app/ai" className="btn btn-ghost">{h.aiSeeMatches}</Link>} />
         ) : (
           <>
             <ul className="surface divide-y divide-[var(--line)]">
@@ -157,15 +164,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     <Avatar name={p.fullName} size={36} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-medium">{p.fullName}</span>
-                      <span className="block truncate text-[12.5px] text-[var(--fg-mute)]">{[p.company, `${p.daysSilent}일째 연락 없음`, p.reasons?.[0]].filter(Boolean).join(" · ")}</span>
+                      <span className="block truncate text-[12.5px] text-[var(--fg-mute)]">{[p.company, tf(h.daysSilent, { n: p.daysSilent }), p.reasons?.[0]].filter(Boolean).join(" · ")}</span>
                     </span>
-                    <span className={`chip shrink-0 ${p.level === "high" ? "!bg-[var(--color-peach)]" : "!bg-[var(--color-butter)]"} !text-[var(--color-ink)]`}>{p.level === "high" ? "멀어지는 중" : "확인"}</span>
+                    <span className={`chip shrink-0 ${p.level === "high" ? "!bg-[var(--color-peach)]" : "!bg-[var(--color-butter)]"} !text-[var(--color-ink)]`}>{p.level === "high" ? h.drifting : h.check}</span>
                   </Link>
                 </li>
               ))}
             </ul>
             <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">
-              추정이에요 — 연락 초안은 <Link href="/app/reconnect" className="underline">다시 연락하기</Link>에서 확인 후에만 보낼 수 있어요.
+              {slot(h.aiNote, "link")[0]}<Link href="/app/reconnect" className="underline">{h.aiNoteLink}</Link>{slot(h.aiNote, "link")[1]}
             </p>
           </>
         )}
@@ -173,11 +180,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <section className="animate-rise delay-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-[20px] font-semibold">최근 만남</h2>
-          <Link href="/app/people" className="text-[13px] text-[var(--fg-mute)]">인맥 전체</Link>
+          <h2 className="text-[20px] font-semibold">{h.recentTitle}</h2>
+          <Link href="/app/people" className="text-[13px] text-[var(--fg-mute)]">{h.allPeople}</Link>
         </div>
         {home.recent.length === 0 ? (
-          <Empty title="아직 만난 사람이 없어요" body="교환 버튼을 눌러 첫 명함을 주고받아 보세요." action={<Link href="/app/exchange" className="btn btn-signal">교환 시작</Link>} />
+          <Empty title={h.noRecent} body={h.noRecentBody} action={<Link href="/app/exchange" className="btn btn-signal">{m.common.startExchange}</Link>} />
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
             {home.recent.map((r: any, i: number) => (
@@ -191,7 +198,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   <span className="text-right text-[11.5px] text-[var(--fg-mute)]">
                     {when(r.occurred_at)}
                     <br />
-                    {SRC[r.source] ?? r.source}
+                    {h.src[r.source] ?? r.source}
                   </span>
                 </Link>
               </li>
@@ -202,7 +209,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {home.meetings.length > 0 && (
         <section className="animate-rise delay-5">
-          <h2 className="mb-3 text-[20px] font-semibold">다가오는 미팅</h2>
+          <h2 className="mb-3 text-[20px] font-semibold">{h.meetingsTitle}</h2>
           <ul className="space-y-2">
             {home.meetings.map((m: any) => (
               <li key={m.id}>
@@ -218,23 +225,23 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {/* 모바일: 하단 Dock 밖의 모든 기능 (데스크톱은 사이드 메뉴) */}
       <section className="lg:hidden" data-reveal>
-        <h2 className="mb-3 text-[20px] font-semibold">모든 기능</h2>
+        <h2 className="mb-3 text-[20px] font-semibold">{h.allFeatures}</h2>
         <ul className="grid grid-cols-4 gap-2">
           {(
             [
-              ["/app/scan", "scan", "명함 스캔"],
-              ["/app/meetings", "calendar", "미팅"],
-              ["/app/messages", "message", "메시지"],
-              ["/app/calendar", "calendar", "일정"],
-              ["/app/intros", "room", "소개·Room"],
-              ["/app/events", "flag", "행사"],
-              ["/app/team", "people", "팀 주소록"],
-              ["/app/org", "building", "조직"],
-              ["/app/inbox", "bell", "알림함"],
-              ["/app/insights", "chart", "인사이트"],
-              ["/app/integrations", "plug", "CRM·자동화"],
-              ["/app/billing", "card", "플랜·결제"],
-              ["/app/settings", "settings", "설정·연동"],
+              ["/app/scan", "scan", m.nav.scan],
+              ["/app/meetings", "calendar", m.nav.meetings],
+              ["/app/messages", "message", m.nav.messages],
+              ["/app/calendar", "calendar", m.nav.calendar],
+              ["/app/intros", "room", m.nav.intros],
+              ["/app/events", "flag", m.nav.events],
+              ["/app/team", "people", m.nav.team],
+              ["/app/org", "building", m.nav.org],
+              ["/app/inbox", "bell", m.nav.inbox],
+              ["/app/insights", "chart", m.nav.insights],
+              ["/app/integrations", "plug", m.nav.integrations],
+              ["/app/billing", "card", m.nav.billing],
+              ["/app/settings", "settings", m.nav.settings],
             ] as const
           ).map(([href, icon, label]) => (
             <li key={href}>

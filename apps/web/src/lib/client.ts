@@ -85,19 +85,20 @@ export function uid() {
   return crypto.randomUUID();
 }
 
-export function fmtDate(d: string | Date | null | undefined, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) {
+/** F-177: `lang` is a BCP-47 tag ("ko-KR" default, "en-US" when the app language is English). */
+export function fmtDate(d: string | Date | null | undefined, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }, lang = "ko-KR") {
   if (!d) return "";
-  return new Intl.DateTimeFormat("ko-KR", opts).format(new Date(d));
+  return new Intl.DateTimeFormat(lang, opts).format(new Date(d));
 }
 
-export function relTime(d: string | Date | null | undefined) {
+export function relTime(d: string | Date | null | undefined, lang = "ko-KR") {
   if (!d) return "";
   const diff = (new Date(d).getTime() - Date.now()) / 1000;
-  const rtf = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
+  const rtf = new Intl.RelativeTimeFormat(lang.slice(0, 2), { numeric: "auto" });
   const abs = Math.abs(diff);
   if (abs < 60) return rtf.format(Math.round(diff), "second");
   if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
   if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");
   if (abs < 86400 * 30) return rtf.format(Math.round(diff / 86400), "day");
-  return fmtDate(d, { year: "numeric", month: "short", day: "numeric" });
+  return fmtDate(d, { year: "numeric", month: "short", day: "numeric" }, lang);
 }

@@ -9,8 +9,13 @@ import { LivingCard } from "@/components/LivingCard";
 import { ProfileMediaGallery } from "@/components/ProfileMedia";
 import { headers } from "next/headers";
 import { CardViewTracker } from "@/components/CardViewTracker";
+import { type CardTranslations, applyCardTranslation, availableTranslations, isTranslationLang } from "@/lib/cardTranslation";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
+
+// F-112: viewer-side language pick for cards that have owner-reviewed translations. Plain links (?lang=) — no JS.
+const LANG_NAME = { en: "English", ja: "日本語" } as const;
+const MT_LABEL = { en: "AI translation · reviewed by the owner", ja: "AI翻訳 · 本人確認済み" } as const;
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +45,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 // 공개 Living Card (ACL: public; 관계가 있으면 business, 승인되면 trusted)
-export default async function PublicProfile({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ src?: string }> }) {
+export default async function PublicProfile({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ src?: string; lang?: string }> }) {
   const { slug } = await params;
-  const { src } = await searchParams;
+  const { src, lang } = await searchParams;
   const { card: c, userId } = await load(slug);
+  const translations = (c as typeof c & { translations?: CardTranslations | null }).translations ?? null;
+  const langs = availableTranslations(translations);
+  const picked = isTranslationLang(lang) && langs.includes(lang) ? lang : null;
+  const shown = picked ? applyCardTranslation(c, translations![picked]) : { card: c, applied: false };
   // X-003: view counter + tracked-link source (signature / virtual background / wallet pass). Counts only, no viewer id.
   const h = await headers();
   const privacy = { viewerUserId: userId, gpc: h.get("sec-gpc"), dnt: h.get("dnt") };
@@ -70,8 +79,21 @@ export default async function PublicProfile({ params, searchParams }: { params: 
               <span>{c.brand.orgName}</span>
             </div>
           )}
+          {langs.length > 0 && (
+            <nav aria-label="Language · 언어" className="mb-3 flex flex-wrap items-center gap-2 text-[13px]" data-testid="card-lang-picker">
+              <Link href={`/p/${encodeURIComponent(c.slug)}`} aria-current={!picked ? "true" : undefined} lang="ko" className={`chip ${!picked ? "!border-transparent !bg-[var(--fg)] !text-[var(--bg)]" : ""}`}>원문</Link>
+              {langs.map((l) => (
+                <Link key={l} href={`/p/${encodeURIComponent(c.slug)}?lang=${l}`} aria-current={picked === l ? "true" : undefined} lang={l} className={`chip ${picked === l ? "!border-transparent !bg-[var(--fg)] !text-[var(--bg)]" : ""}`}>
+                  {LANG_NAME[l]}
+                </Link>
+              ))}
+              {picked && shown.applied && <span className="chip chip-ai" lang={picked}>{MT_LABEL[picked]}</span>}
+            </nav>
+          )}
           <CardViewTracker profileId={c.id}>
-            <LivingCard card={c} />
+            <div lang={picked ?? undefined}>
+              <LivingCard card={shown.card} locale={picked ?? "ko"} />
+            </div>
           </CardViewTracker>
         </div>
         <ProfileMediaGallery profileId={c.id} />

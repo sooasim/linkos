@@ -1,11 +1,12 @@
 "use client";
+// UX-012 Person detail — F-019/F-066 명함 원본, F-067 만남 기록, F-070 태그, F-078/F-109 후속 할 일 (+ 기존 타임라인·메모·병합)
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { AiLabel, Avatar, PageHeader } from "@/components/Page";
 import { ContactComms } from "@/components/ContactComms";
-import { api, fmtDate, relTime } from "@/lib/client";
+import { OFFLINE_MESSAGE, api, fmtDate, isQueuedOffline, relTime } from "@/lib/client";
 
 const FIELDS = [
   ["fullName", "이름"],
@@ -30,7 +31,29 @@ type Timeline = {
   history: { field: string; old_value: string | null; new_value: string | null; changed_at: string }[];
 };
 
-type SpeechCtor = new () => { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null };
+type CardImage = { cardId: string; side: "front" | "back"; objectId: string; scanStatus: string; url: string | null };
+
+const FOLLOWUP_KINDS = [
+  ["custom", "일반"],
+  ["thank_you", "감사 인사"],
+  ["check_in", "안부"],
+  ["send_material", "자료 전달"],
+  ["meeting_request", "미팅 요청"],
+] as const;
+
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+/** <input type="date"> (local) → ISO datetime. Today keeps the current time; other days use a fixed local hour (no timezone day-shift). */
+const dateToIso = (d: string, at: "now" | "end" = "now") => {
+  if (!d) return undefined;
+  if (at === "now" && d === today()) return new Date().toISOString();
+  return new Date(`${d}T${at === "end" ? "18:00" : "12:00"}:00`).toISOString();
+};
+const sideLabel = (s: "front" | "back") => (s === "front" ? "앞면" : "뒷면");
+
+type SpeechCtor =new () => { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null };
 
 export function PersonDetail({ id }: { id: string }) {
   const router = useRouter();
@@ -45,6 +68,13 @@ export function PersonDetail({ id }: { id: string }) {
   const [listening, setListening] = useState(false);
   const [draft, setDraft] = useState<{ subject: string; body: string; provenance: string } | null>(null);
   const [summary, setSummary] = useState<{ summary: string; highlights: string[]; provenance: string } | null>(null);
+  const [images, setImages] = useState<CardImage[]>([]);
+  const [zoom, setZoom] = useState<CardImage | null>(null);
+  const [fu, setFu] = useState({ title: "", due: "", kind: "custom" });
+  const [enc, setEnc] = useState({ place: "", note: "", date: today() });
+  const [encOpen, setEncOpen] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const [busy, setBusy] = useState(false);
   const recRef = useRef<InstanceType<SpeechCtor> | null>(null);
 
   const load = useCallback(async () => {
@@ -58,13 +88,30 @@ export function PersonDetail({ id }: { id: string }) {
       setError((e as Error).message);
     }
   }, [id]);
+  // F-019 명함 원본 — owner-only signed URLs (short TTL), loaded separately so the timeline never waits on it
+  const loadImages = useCallback(async () => {
+    try {
+      const r = await api<{ images: CardImage[] }>(`/contacts/${id}/images`);
+      setImages(r.images);
+    } catch {
+      setImages([]);
+    }
+  }, [id]);
   useEffect(() => {
     load();
-  }, [load]);
+    loadImages();
+  }, [load, loadImages]);
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setZoom(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
 
   if (error) return <p className="text-[var(--color-ember)]">{error}</p>;
   if (!t) return <div className="surface h-60 animate-pulse" />;
   const c = t.contact;
+  const openFollowups = t.followups.filter((f) => f.status === "open");
 
   const save = async () => {
     try {
@@ -143,6 +190,72 @@ export function PersonDetail({ id }: { id: string }) {
     load();
   };
 
+  const attempt = async (fn: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      setFlash(ok);
+      return true;
+    } catch (e) {
+      setFlash(isQueuedOffline(e) ? OFFLINE_MESSAGE : (e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // F-078/F-109 후속 할 일 직접 추가 — 할 일만 저장, 자동 발송 없음 (CLAUDE.md §2-8)
+  const addFollowup = async () => {
+    if (!fu.title.trim()) return;
+    const ok = await attempt(() => api("/followups", { body: { contactId: id, kind: fu.kind, title: fu.title.trim(), dueAt: dateToIso(fu.due, "end") ?? null } }), "후속 할 일을 추가했어요");
+    if (ok) {
+      setFu({ title: "", due: "", kind: "custom" });
+      load();
+    }
+  };
+
+  // F-067 만남 기록
+  const addEncounter = async () => {
+    if (!enc.place.trim() && !enc.note.trim()) return;
+    const ok = await attempt(
+      () => api(`/contacts/${id}/encounters`, { body: { placeLabel: enc.place.trim() || undefined, note: enc.note.trim() || undefined, occurredAt: dateToIso(enc.date) } }),
+      "만남을 기록했어요",
+    );
+    if (ok) {
+      setEnc({ place: "", note: "", date: today() });
+      setEncOpen(false);
+      load();
+    }
+  };
+
+  // F-070 태그 — PATCH /contacts/{id} {tags} replaces the whole set
+  const tags: string[] = c.tags ?? [];
+  const saveTags = async (next: string[]) => {
+    const ok = await attempt(() => api(`/contacts/${id}`, { method: "PATCH", body: { tags: next } }), "태그를 저장했어요");
+    if (ok) load();
+  };
+  const addTag = () => {
+    const v = tagDraft.trim().replace(/^#+/, "").trim();
+    if (!v) return;
+    setTagDraft("");
+    if (tags.includes(v)) return;
+    if (tags.length >= 20) {
+      setFlash("태그는 20개까지 붙일 수 있어요");
+      return;
+    }
+    saveTags([...tags, v]);
+  };
+
+  // F-019/F-066 명함 원본 삭제 (면별)
+  const deleteImage = async (img: CardImage) => {
+    if (!confirm(`명함 ${sideLabel(img.side)} 원본 이미지를 삭제할까요? 되돌릴 수 없어요.`)) return;
+    const ok = await attempt(() => api(`/capture/cards/${img.cardId}/images/${img.side}`, { method: "DELETE" }), "원본 이미지를 삭제했어요");
+    if (ok) {
+      setZoom(null);
+      loadImages();
+    }
+  };
+
   const remove = async () => {
     if (!confirm(`${c.fullName}님을 인맥에서 삭제할까요?`)) return;
     await api(`/contacts/${id}`, { method: "DELETE" });
@@ -215,6 +328,82 @@ export function PersonDetail({ id }: { id: string }) {
         )}
       </section>
 
+      <section className="mt-4" aria-label="태그">
+        <ul className="flex flex-wrap items-center gap-2" data-testid="contact-tags">
+          {tags.map((tg) => (
+            <li key={tg} className="chip !pr-1">
+              #{tg}
+              <button type="button" disabled={busy} onClick={() => saveTags(tags.filter((x) => x !== tg))} className="grid size-6 place-items-center rounded-full hover:bg-[color-mix(in_srgb,var(--fg)_8%,transparent)]" aria-label={`${tg} 태그 삭제`}>
+                <Icon name="x" size={12} />
+              </button>
+            </li>
+          ))}
+          <li className="flex items-center gap-1">
+            <input
+              className="field !min-h-9 !w-36 !py-1.5 text-[14px]"
+              placeholder="#태그 추가"
+              aria-label="태그 추가"
+              maxLength={40}
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  addTag();
+                }
+              }}
+            />
+            <button type="button" onClick={addTag} disabled={busy || !tagDraft.trim()} className="grid size-9 place-items-center rounded-full border border-[var(--line)]" aria-label="태그 저장">
+              <Icon name="plus" size={15} />
+            </button>
+          </li>
+        </ul>
+      </section>
+
+      {images.length > 0 && (
+        <section className="surface mt-4 p-4" aria-label="명함 원본" data-testid="card-images">
+          <p className="flex items-center gap-2 text-[14.5px] font-semibold">
+            <Icon name="camera" size={17} />명함 원본 <span className="text-[12.5px] font-normal text-[var(--fg-mute)]">· 나만 볼 수 있어요</span>
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-3">
+            {images.map((img) => (
+              <li key={img.objectId} className="w-32">
+                {img.url && img.scanStatus !== "quarantined" ? (
+                  <button type="button" onClick={() => setZoom(img)} className="block w-full overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--bg-sunk)]" aria-label={`명함 ${sideLabel(img.side)} 크게 보기`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed private URL; must not go through the image optimizer cache */}
+                    <img src={img.url} alt={`명함 ${sideLabel(img.side)}`} loading="lazy" decoding="async" width={128} height={80} className="aspect-[1.6] w-full object-cover" />
+                  </button>
+                ) : (
+                  <div className="grid aspect-[1.6] w-full place-items-center rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-sunk)] px-2 text-center text-[11.5px] text-[var(--fg-mute)]">
+                    {img.scanStatus === "quarantined" ? "보안 검사에서 차단된 파일" : "보안 검사 중이에요"}
+                  </div>
+                )}
+                <div className="mt-1 flex items-center justify-between text-[12px] text-[var(--fg-mute)]">
+                  <span>
+                    {sideLabel(img.side)}
+                    {img.scanStatus === "unscanned" && " · 검사 대기"}
+                  </span>
+                  <button type="button" onClick={() => deleteImage(img)} disabled={busy} className="grid size-8 place-items-center rounded-full hover:text-[var(--color-ember)]" aria-label={`명함 ${sideLabel(img.side)} 원본 삭제`}>
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {zoom?.url && (
+        <div role="dialog" aria-modal="true" aria-label="명함 원본 크게 보기" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[color-mix(in_srgb,var(--color-ink)_82%,transparent)] p-4" onClick={() => setZoom(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom.url} alt={`명함 ${sideLabel(zoom.side)} 원본`} className="max-h-[70dvh] max-w-full rounded-2xl object-contain" onClick={(e) => e.stopPropagation()} />
+          <div className="flex gap-2 pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
+            <button type="button" autoFocus onClick={() => setZoom(null)} className="btn btn-ghost !bg-[var(--bg)]"><Icon name="x" size={16} />닫기</button>
+            <button type="button" onClick={() => deleteImage(zoom)} className="btn !bg-[var(--bg)] text-[var(--color-ember)]"><Icon name="trash" size={16} />삭제</button>
+          </div>
+        </div>
+      )}
+
       {dups.length > 0 && !merge && (
         <section className="mt-4 rounded-[22px] border border-[var(--color-ember)]/40 p-4">
           <p className="flex items-center gap-2 text-[14.5px] font-semibold"><Icon name="merge" size={18} />중복일 수 있는 연락처</p>
@@ -273,17 +462,19 @@ export function PersonDetail({ id }: { id: string }) {
         </section>
       )}
 
-      {t.followups.filter((f) => f.status === "open").length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-[17px] font-semibold">후속 할 일</h2>
+      <section id="followups" className="mt-6" aria-label="후속 할 일" data-testid="followups">
+        <h2 className="mb-2 text-[17px] font-semibold">후속 할 일 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 자동 발송되지 않아요</span></h2>
+        {openFollowups.length === 0 ? (
+          <p className="mb-2 text-[14px] text-[var(--fg-mute)]">열린 후속 할 일이 없어요. 아래에서 직접 추가할 수 있어요.</p>
+        ) : (
           <ul className="space-y-2">
-            {t.followups.filter((f) => f.status === "open").map((f) => (
+            {openFollowups.map((f) => (
               <li key={f.id} className="surface p-4">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{f.title} {f.source === "ai_suggested" && <AiLabel>AI 제안</AiLabel>}</p>
                     {f.body_draft && <p className="mt-1.5 whitespace-pre-wrap text-[14px] text-[var(--fg-mute)]">{f.body_draft}</p>}
-                    <p className="mt-1 text-[12.5px] text-[var(--fg-mute)]">{f.due_at ? `기한 ${fmtDate(f.due_at)}` : ""} · 자동 발송되지 않습니다</p>
+                    <p className="mt-1 text-[12.5px] text-[var(--fg-mute)]">{[FOLLOWUP_KINDS.find(([k]) => k === f.kind)?.[1], f.due_at ? `기한 ${fmtDate(f.due_at)}` : "기한 없음"].filter(Boolean).join(" · ")}</p>
                   </div>
                   <div className="flex shrink-0 flex-col gap-2">
                     {c.email && f.body_draft && <a className="btn btn-ghost !min-h-9 !px-3 text-[13px]" href={`mailto:${c.email}?subject=${encodeURIComponent(f.title)}&body=${encodeURIComponent(f.body_draft)}`}>메일 쓰기</a>}
@@ -293,8 +484,27 @@ export function PersonDetail({ id }: { id: string }) {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+        <form
+          className="surface mt-2 grid gap-2 p-4 sm:grid-cols-[1fr_auto_auto]"
+          aria-label="후속 할 일 추가"
+          onSubmit={(e) => {
+            e.preventDefault();
+            addFollowup();
+          }}
+        >
+          <input className="field sm:col-span-3" placeholder="할 일 (예: 제안서 보내기)" aria-label="후속 할 일 제목" maxLength={200} value={fu.title} onChange={(e) => setFu({ ...fu, title: e.target.value })} />
+          <input type="date" className="field" aria-label="기한 (선택)" value={fu.due} min={today()} onChange={(e) => setFu({ ...fu, due: e.target.value })} />
+          <select className="field" aria-label="종류" value={fu.kind} onChange={(e) => setFu({ ...fu, kind: e.target.value })}>
+            {FOLLOWUP_KINDS.map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+          <button type="submit" disabled={busy || !fu.title.trim()} className="btn btn-signal">
+            <Icon name="plus" size={16} />후속 할 일 추가
+          </button>
+        </form>
+      </section>
 
       <section className="mt-6">
         <h2 className="mb-2 text-[17px] font-semibold">후속 메일 초안 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 자동 발송되지 않아요</span></h2>
@@ -325,7 +535,30 @@ export function PersonDetail({ id }: { id: string }) {
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-4 text-[17px] font-semibold">관계 타임라인</h2>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-[17px] font-semibold">관계 타임라인</h2>
+          <button type="button" onClick={() => setEncOpen(!encOpen)} aria-expanded={encOpen} className="btn btn-ghost !min-h-10 !px-3 text-[14px]">
+            <Icon name="plus" size={16} />만남 기록
+          </button>
+        </div>
+        {encOpen && (
+          <form
+            className="surface mb-5 grid gap-2 p-4 sm:grid-cols-2"
+            aria-label="만남 기록"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addEncounter();
+            }}
+          >
+            <input className="field" placeholder="장소 (예: 코엑스 라운지)" aria-label="만난 장소" maxLength={200} value={enc.place} onChange={(e) => setEnc({ ...enc, place: e.target.value })} />
+            <input type="date" className="field" aria-label="만난 날짜" max={today()} value={enc.date} onChange={(e) => setEnc({ ...enc, date: e.target.value })} />
+            <textarea className="field min-h-20 sm:col-span-2" placeholder="어떤 만남이었나요? (나만 보기)" aria-label="만남 메모" maxLength={2000} value={enc.note} onChange={(e) => setEnc({ ...enc, note: e.target.value })} />
+            <div className="flex gap-2 sm:col-span-2">
+              <button type="submit" disabled={busy || (!enc.place.trim() && !enc.note.trim())} className="btn btn-signal">기록하기</button>
+              <button type="button" onClick={() => setEncOpen(false)} className="btn btn-ghost">취소</button>
+            </div>
+          </form>
+        )}
         <ol className="relative space-y-5 border-l border-[var(--line-strong)] pl-6">
           {events.map((e, i) => (
             <li key={i} className="relative">

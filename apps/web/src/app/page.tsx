@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon, Logo } from "@/components/Icon";
 import { CardFace } from "@/components/LivingCard";
+import { Faq, FeatureCatalog, UsageGuide } from "./_landing/Sections";
 
 const FLOW = ["Meet", "Exchange", "Remember", "Understand", "Act", "Sync", "Grow"];
 
@@ -54,9 +55,12 @@ export default function Landing() {
         <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
           <Logo />
           <nav className="flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--glass)] p-1 backdrop-blur-xl sm:gap-1">
-            <a href="#how" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] sm:inline">작동 방식</a>
-            <a href="#ladder" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] sm:inline">교환 기술</a>
-            <a href="#trust" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] sm:inline">보안</a>
+            <a href="#how" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] lg:inline">작동 방식</a>
+            <a href="#ladder" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] lg:inline">교환 기술</a>
+            <a href="#features" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] sm:inline">기능</a>
+            <a href="#guide" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] sm:inline">사용 방법</a>
+            <a href="#faq" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] md:inline">FAQ</a>
+            <a href="#trust" className="hidden rounded-full px-4 py-2 text-[14px] text-[var(--fg-mute)] transition hover:bg-[var(--bg-sunk)] hover:text-[var(--fg)] lg:inline">보안</a>
             <Link href="/login" className="btn btn-ink !min-h-10 text-[14px]">로그인</Link>
           </nav>
         </header>
@@ -87,6 +91,10 @@ export default function Landing() {
               </Link>
               <Link href="/c" className="btn btn-ghost btn-lg">코드로 명함 받기</Link>
             </div>
+            <p className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[14px] font-medium animate-fade delay-5">
+              <a href="#features" className="inline-flex items-center gap-1.5 text-[var(--accent-text)] underline-offset-4 hover:underline">전체 기능 보기 <Icon name="arrow" size={15} /></a>
+              <a href="#guide" className="inline-flex items-center gap-1.5 text-[var(--accent-text)] underline-offset-4 hover:underline">사용 방법 보기 <Icon name="arrow" size={15} /></a>
+            </p>
             <div className="mt-10 flex items-center gap-4 text-[13px] text-[var(--fg-mute)] animate-fade delay-5">
               <div className="flex -space-x-2">
                 {["#d9d2ff", "#cdeedf", "#ffd9c9", "#d3e5ff"].map((c) => (
@@ -279,6 +287,11 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── 06 Features · 07 Guide · 08 FAQ ─────────── */}
+      <FeatureCatalog />
+      <UsageGuide />
+      <Faq />
+
       {/* ── Footer ───────────────────────────────────── */}
       <footer className="stage-aurora grain overflow-hidden">
         <div aria-hidden className="marks" />
@@ -296,6 +309,9 @@ export default function Landing() {
             <Link href="/legal/terms" className="hover:text-[var(--fg)]">이용약관</Link>
             <Link href="/legal/privacy" className="hover:text-[var(--fg)]">개인정보 처리방침</Link>
             <Link href="/c" className="hover:text-[var(--fg)]">코드로 받기</Link>
+            <a href="#features" className="hover:text-[var(--fg)]">전체 기능</a>
+            <a href="#guide" className="hover:text-[var(--fg)]">사용 방법</a>
+            <a href="#faq" className="hover:text-[var(--fg)]">FAQ</a>
           </div>
         </div>
         <p aria-hidden className="display -mb-[0.18em] select-none bg-gradient-to-b from-[rgba(108,92,231,.22)] to-transparent bg-clip-text text-center text-[27vw] leading-[0.8] text-transparent">

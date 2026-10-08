@@ -1,4 +1,5 @@
 "use client";
+// Meeting Card editor · F-084/F-090 녹음 동의(정책 선택: 모든 참석자 동의 / 한쪽 동의+고지) · UX-015 녹음 마커
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
@@ -7,6 +8,15 @@ import { MeetingFollowThrough } from "@/components/MeetingFollowThrough";
 import { api, fmtDate } from "@/lib/client";
 import { MeetingRecorder } from "./MeetingRecorder";
 import { TranscriptPanel } from "./TranscriptPanel";
+
+type Policy = "all_party" | "one_party_notice";
+const POLICY: Record<Policy, { label: string; body: string }> = {
+  all_party: { label: "모든 참석자 동의", body: "참석자 모두에게 녹음 사실을 알리고 동의를 받은 뒤 녹음합니다. 기본값이며, 해외 참석자가 있거나 확실하지 않으면 이 방식을 쓰세요." },
+  one_party_notice: {
+    label: "한쪽 동의 + 고지",
+    body: "대화 당사자인 내가 동의하고, 녹음 중임을 참석자에게 알립니다. 당사자 녹음이 허용되는 지역(예: 한국)에서만 선택하세요. 상대 동의가 필요한 지역·조직에서는 쓸 수 없어요.",
+  },
+};
 
 type Action = { id?: string; description: string; dueAt?: string | null; contactId?: string | null; status: "open" | "done"; sourceSegmentIds?: string[] };
 
@@ -46,7 +56,9 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
     actionItems: (meeting?.actionItems ?? []) as Action[],
   });
   const [brief, setBrief] = useState<any>(null);
-  const [consent, setConsent] = useState({ owner: false, participants: false, status: meeting?.consentStatus ?? "unknown", msg: "" });
+  // F-090: preselect the org/meeting policy (an org policy locks all-party consent); recording stays blocked until recorded
+  const policyInfo = (meeting?.recordingPolicy ?? { policy: "all_party", locked: false, source: "default" }) as { policy: Policy; locked: boolean; source: "org" | "meeting" | "default" };
+  const [consent, setConsent] = useState({ owner: false, participants: false, status: meeting?.consentStatus ?? "unknown", msg: "", policy: policyInfo.policy });
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState("");
   const [extract, setExtract] = useState<any>(null);
@@ -73,8 +85,13 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
   };
 
   const setRecordingConsent = async () => {
-    const r = await api<{ consentStatus: string; reason: string | null }>(`/meetings/${meeting.id}/consent`, { body: { ownerConsent: consent.owner, participantsAcknowledged: consent.participants, policy: "all_party" } });
-    setConsent({ ...consent, status: r.consentStatus, msg: r.consentStatus === "granted" ? "동의가 기록되었습니다." : "모든 참여자의 동의가 필요합니다." });
+    try {
+      const r = await api<{ consentStatus: string; reason: string | null }>(`/meetings/${meeting.id}/consent`, { body: { ownerConsent: consent.owner, participantsAcknowledged: consent.participants, policy: consent.policy }, offline: false });
+      const why = r.reason === "owner_consent_missing" ? "내 녹음·전사 동의가 필요합니다." : "모든 참여자의 동의가 필요합니다.";
+      setConsent({ ...consent, status: r.consentStatus, msg: r.consentStatus === "granted" ? "동의가 기록되었습니다." : why });
+    } catch (e) {
+      setConsent({ ...consent, status: "denied", msg: (e as Error).message });
+    }
   };
 
   return (
@@ -223,15 +240,42 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
 
             <section className="surface space-y-3 p-5" aria-label="녹음 동의">
               <h2 className="flex items-center gap-2 text-[17px] font-semibold"><Icon name="mic" size={18} /> 회의 녹음</h2>
-              <p className="text-[14px] text-[var(--fg-mute)]">녹음은 모든 참여자의 동의가 기록된 뒤에만 시작할 수 있습니다.</p>
+              <p className="text-[14px] text-[var(--fg-mute)]">녹음은 선택한 정책에 맞는 동의가 기록된 뒤에만 시작할 수 있습니다.</p>
+              <fieldset className="space-y-2" data-testid="recording-policy">
+                <legend className="label">녹음 동의 정책</legend>
+                {(Object.keys(POLICY) as Policy[]).map((k) => {
+                  const disabled = policyInfo.locked && k !== "all_party";
+                  return (
+                    <label key={k} className={`flex items-start gap-3 rounded-2xl border p-3 text-[14px] ${consent.policy === k ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)]"} ${disabled ? "opacity-50" : "cursor-pointer"}`}>
+                      <input
+                        type="radio"
+                        name="recording-policy"
+                        value={k}
+                        className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
+                        checked={consent.policy === k}
+                        disabled={disabled}
+                        onChange={() => setConsent({ ...consent, policy: k, status: "unknown", msg: "정책을 바꿨어요. 동의를 다시 기록하세요." })}
+                      />
+                      <span>
+                        <span className="block font-semibold">{POLICY[k].label}{k === "all_party" ? " (기본)" : ""}</span>
+                        <span className="block text-[13px] text-[var(--fg-mute)]">{POLICY[k].body}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {policyInfo.locked && <p className="text-[12.5px] text-[var(--fg-mute)]">조직 정책에 따라 모든 참석자 동의만 사용할 수 있어요.</p>}
+              </fieldset>
               <label className="flex items-center gap-3 text-[14.5px]"><input type="checkbox" className="size-5" checked={consent.owner} onChange={(e) => setConsent({ ...consent, owner: e.target.checked })} />녹음·전사에 동의합니다</label>
-              <label className="flex items-center gap-3 text-[14.5px]"><input type="checkbox" className="size-5" checked={consent.participants} onChange={(e) => setConsent({ ...consent, participants: e.target.checked })} />모든 참여자에게 녹음 사실을 알리고 동의를 받았습니다</label>
+              <label className="flex items-center gap-3 text-[14.5px]">
+                <input type="checkbox" className="size-5" checked={consent.participants} onChange={(e) => setConsent({ ...consent, participants: e.target.checked })} />
+                {consent.policy === "all_party" ? "모든 참여자에게 녹음 사실을 알리고 동의를 받았습니다" : "참여자에게 녹음 중임을 알렸습니다 (권장)"}
+              </label>
               <div className="flex flex-wrap items-start gap-2">
                 <button className="btn btn-ghost" onClick={setRecordingConsent}>동의 기록</button>
-                <MeetingRecorder meetingId={meeting.id} consentGranted={consent.status === "granted"} onFinished={() => setRecKey((k) => k + 1)} />
+                <MeetingRecorder meetingId={meeting.id} consentGranted={consent.status === "granted"} onFinished={() => setRecKey((k) => k + 1)} onMarker={() => setRecKey((k) => k + 1)} />
               </div>
               {consent.msg && <p role="status" className="text-[13.5px]">{consent.msg}</p>}
-              <p className="text-[12.5px] text-[var(--fg-mute)]">녹음은 약 50초 단위로 암호화 저장되고, 전사가 끝나면 화자별 문장과 To-do 제안이 아래에 나타납니다.</p>
+              <p className="text-[12.5px] text-[var(--fg-mute)]">녹음은 약 50초 단위로 암호화 저장되고, 전사가 끝나면 화자별 문장과 To-do 제안이 아래에 나타납니다. 녹음 중 “마커”를 누르면 그 시점이 전사 타임라인에 표시돼요.</p>
             </section>
 
             <TranscriptPanel

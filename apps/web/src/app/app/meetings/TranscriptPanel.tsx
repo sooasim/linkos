@@ -2,12 +2,15 @@
 // F-082 전사 / F-083 화자분리 / F-084~F-086 요약·To-do·약속 제안 + 근거 역추적:
 // 제안이나 To-do 를 누르면 근거가 된 전사 구간이 강조되고 그 위치로 이동한다. 제안은 "AI 추론/규칙 추출" 라벨과 함께
 // 사용자가 확인(→ To-do)하거나 무시할 때까지 저장된 To-do 가 아니다(F-102).
+// UX-015: 녹음 중 남긴 마커가 전사 타임라인의 해당 시각에 끼워져 표시된다.
+import { interleaveMarkers } from "@linkos/domain";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { AiLabel } from "@/components/Page";
 import { api, fmtDate } from "@/lib/client";
 
-type Seg = { id: string; speaker: string | null; startMs: number; endMs: number; text: string; confidence: number | null };
+type Seg = { id: string; recordingId: string | null; speaker: string | null; startMs: number; endMs: number; text: string; confidence: number | null };
+type Marker = { id: string; recordingId: string | null; offsetMs: number; label: string | null };
 type Rec = { id: string; status: string; parts: number; partsDone: number; partsFailed: number; language: string | null; provider: string | null; error: string | null; createdAt: string };
 type Evid = { text: string; segmentIds: string[] };
 
@@ -31,14 +34,14 @@ export function TranscriptPanel({
   onUseTranscript: (text: string) => void;
 }) {
   const [t, setT] = useState<{ recordings: Rec[]; segments: Seg[] } | null>(null);
-  const [m, setM] = useState<{ suggestedActions: any[]; ai: any } | null>(null);
+  const [m, setM] = useState<{ suggestedActions: any[]; ai: any; markers: Marker[] } | null>(null);
   const [hl, setHl] = useState<Set<string>>(new Set());
   const list = useRef<HTMLOListElement>(null);
 
   const load = useCallback(async () => {
     const [tr, mt] = await Promise.all([api(`/meetings/${meetingId}/transcript`), api(`/meetings/${meetingId}`)]);
     setT(tr);
-    setM({ suggestedActions: mt.suggestedActions ?? [], ai: mt.ai ?? null });
+    setM({ suggestedActions: mt.suggestedActions ?? [], ai: mt.ai ?? null, markers: mt.markers ?? [] });
     return tr as { recordings: Rec[] };
   }, [meetingId]);
 
@@ -73,6 +76,8 @@ export function TranscriptPanel({
   const speakers = [...new Set(t.segments.map((s) => s.speaker ?? "?"))];
   const tone = (sp: string | null) => SPEAKER_TONES[speakers.indexOf(sp ?? "?") % SPEAKER_TONES.length];
   const evidenced = confirmed.filter((a) => a.sourceSegmentIds?.length);
+  const timeline = interleaveMarkers(t.segments, m?.markers ?? [], t.recordings.map((r) => r.id));
+  const markerCount = m?.markers.length ?? 0;
   const label = (prov: string) => (prov === "ai_inferred" ? "AI 추론 · 확인 필요" : "전사에서 규칙 추출 · 확인 필요");
 
   return (
@@ -141,20 +146,29 @@ export function TranscriptPanel({
         </div>
       )}
 
-      {t.segments.length > 0 ? (
+      {t.segments.length > 0 || markerCount > 0 ? (
         <>
-          <ol ref={list} className="max-h-[420px] space-y-2 overflow-y-auto pr-1" aria-label="전사문">
-            {t.segments.map((s) => (
-              <li key={s.id} data-seg={s.id} className={`rounded-xl px-3 py-2 text-[14.5px] transition-colors motion-reduce:transition-none ${hl.has(s.id) ? "bg-[var(--color-signal)]/35 ring-2 ring-[var(--color-signal)]" : ""}`} aria-current={hl.has(s.id) ? "true" : undefined}>
-                <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${tone(s.speaker)}`}>{s.speaker ?? "화자"}</span>
-                <span className="num mr-2 text-[12px] text-[var(--fg-mute)]">{ts(s.startMs)}</span>
-                {s.text}
+          {markerCount > 0 && <p className="text-[12.5px] text-[var(--fg-mute)]">마커 {markerCount}개 · 녹음 중 표시한 시점이 타임라인에 함께 보여요</p>}
+          <ol ref={list} className="max-h-[420px] space-y-2 overflow-y-auto pr-1" aria-label="전사문" data-testid="transcript-timeline">
+            {timeline.map((x) => x.kind === "marker" ? (
+              <li key={`m-${x.item.id}`} className="flex items-center gap-2 rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-1.5 text-[13px]" data-testid="transcript-marker">
+                <Icon name="flag" size={14} className="text-[var(--accent-text)]" />
+                <span className="num text-[12px] text-[var(--fg-mute)]">{ts(x.item.offsetMs)}</span>
+                <span className="font-semibold">{x.item.label ?? "마커"}</span>
+              </li>
+            ) : (
+              <li key={x.item.id} data-seg={x.item.id} className={`rounded-xl px-3 py-2 text-[14.5px] transition-colors motion-reduce:transition-none ${hl.has(x.item.id) ? "bg-[var(--color-signal)]/35 ring-2 ring-[var(--color-signal)]" : ""}`} aria-current={hl.has(x.item.id) ? "true" : undefined}>
+                <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${tone(x.item.speaker)}`}>{x.item.speaker ?? "화자"}</span>
+                <span className="num mr-2 text-[12px] text-[var(--fg-mute)]">{ts(x.item.startMs)}</span>
+                {x.item.text}
               </li>
             ))}
           </ol>
-          <button type="button" className="btn btn-ghost" onClick={() => onUseTranscript(t.segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n"))}>
-            전사문으로 자동 정리하기
-          </button>
+          {t.segments.length > 0 && (
+            <button type="button" className="btn btn-ghost" onClick={() => onUseTranscript(t.segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n"))}>
+              전사문으로 자동 정리하기
+            </button>
+          )}
         </>
       ) : (
         <p className="text-[13.5px] text-[var(--fg-mute)]">아직 전사된 문장이 없어요.</p>

@@ -1,11 +1,11 @@
 // meeting module — Meeting Intelligence (F-0xx): Meeting Card(목적·논의·결정·약속·To-do·다음 일정), 녹음 동의 게이트, Pre-meeting Brief
-import { canStartRecording } from "@linkos/domain";
+import { canStartRecording, recordingPolicyDefault } from "@linkos/domain";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
-import { notFound, unauthorized } from "../lib/errors";
+import { badRequest, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
 import { recordConsents } from "./identity";
-import { assertRecordingPolicy } from "./policy";
+import { assertRecordingPolicy, effectivePolicy } from "./policy";
 import { primaryProfileId, loadProfile } from "./card";
 import { startRecording } from "./recording";
 import { textSimilarity } from "@linkos/domain";
@@ -94,6 +94,9 @@ export async function getMeeting(userId: string, id: string, db: Db = pool()) {
   const actions = allActions.filter((a) => a.status !== "suggested");
   const suggested = allActions.filter((a) => a.status === "suggested");
   const recordings = await q<any>("SELECT id, status, duration_seconds, part_count, language, error, created_at FROM recordings WHERE meeting_id=$1 ORDER BY created_at", [id], db);
+  const markers = await q<any>("SELECT id, recording_id, offset_ms, label, created_at FROM meeting_markers WHERE meeting_id=$1 ORDER BY created_at, offset_ms", [id], db);
+  // F-090: org policy (strictest across memberships) locks all-party consent; else the meeting's own choice / all_party
+  const org = await effectivePolicy(userId, db);
   return {
     id: m.id,
     title: m.title,
@@ -103,6 +106,8 @@ export async function getMeeting(userId: string, id: string, db: Db = pool()) {
     nextMeetingAt: m.next_meeting_at,
     consentStatus: m.consent_status,
     consentPolicy: m.consent_policy,
+    recordingPolicy: recordingPolicyDefault({ orgRequiresAllParty: !!org.policy.requireAllPartyRecordingConsent, current: m.consent_status === "unknown" ? null : m.consent_policy }),
+    markers: markers.map(toMarker),
     discussion: m.summary?.discussion ?? [],
     decisions: m.summary?.decisions ?? [],
     promises: m.summary?.promises ?? [],
@@ -216,4 +221,41 @@ export async function completeFollowup(ctx: Ctx, id: string, status: "done" | "d
   const r = await one("UPDATE followups SET status=$3, completed_at = CASE WHEN $3='open' THEN NULL ELSE now() END WHERE id=$1 AND owner_user_id=$2 RETURNING id", [id, ctx.userId, status]);
   if (!r) throw notFound("followup");
   return { id, status };
+}
+
+// ---------- UX-015 녹음 마커 ----------
+export const markerInput = z.object({
+  recordingId: z.string().uuid().nullish(),
+  offsetMs: z.number().int().min(0).max(24 * 3600_000),
+  label: z.string().trim().max(80).nullish(),
+});
+
+function toMarker(r: { id: string; recording_id: string | null; offset_ms: number; label: string | null; created_at: Date }) {
+  return { id: r.id, recordingId: r.recording_id, offsetMs: r.offset_ms, label: r.label, createdAt: r.created_at };
+}
+
+/** POST /meetings/{id}/markers — a timestamp bookmark dropped while recording (shown on the transcript timeline). */
+export async function addMarker(ctx: Ctx, meetingId: string, input: z.infer<typeof markerInput>) {
+  if (!ctx.userId) throw unauthorized();
+  const m = await one("SELECT 1 FROM meetings WHERE id=$1 AND owner_user_id=$2", [meetingId, ctx.userId]);
+  if (!m) throw notFound("meeting");
+  if (input.recordingId) {
+    const rec = await one("SELECT 1 FROM recordings WHERE id=$1 AND meeting_id=$2", [input.recordingId, meetingId]);
+    if (!rec) throw badRequest("invalid_recording", "이 미팅의 녹음이 아닙니다.");
+  }
+  const count = await one<{ n: number }>("SELECT count(*)::int AS n FROM meeting_markers WHERE meeting_id=$1", [meetingId]);
+  if ((count?.n ?? 0) >= 500) throw badRequest("too_many_markers", "마커는 미팅당 500개까지 남길 수 있어요.");
+  const r = await one<any>(
+    "INSERT INTO meeting_markers (meeting_id, recording_id, owner_user_id, offset_ms, label) VALUES ($1,$2,$3,$4,$5) RETURNING id, recording_id, offset_ms, label, created_at",
+    [meetingId, input.recordingId ?? null, ctx.userId, input.offsetMs, input.label || null],
+  );
+  return toMarker(r);
+}
+
+/** GET /meetings/{id}/markers */
+export async function listMarkers(ctx: Ctx, meetingId: string) {
+  if (!ctx.userId) throw unauthorized();
+  const m = await one("SELECT 1 FROM meetings WHERE id=$1 AND owner_user_id=$2", [meetingId, ctx.userId]);
+  if (!m) throw notFound("meeting");
+  return (await q<any>("SELECT id, recording_id, offset_ms, label, created_at FROM meeting_markers WHERE meeting_id=$1 ORDER BY created_at, offset_ms", [meetingId])).map(toMarker);
 }

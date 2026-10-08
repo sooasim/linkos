@@ -76,6 +76,7 @@ export function PersonDetail({ id }: { id: string }) {
   const [tagDraft, setTagDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const recRef = useRef<InstanceType<SpeechCtor> | null>(null);
+  const noteRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -101,6 +102,16 @@ export function PersonDetail({ id }: { id: string }) {
     load();
     loadImages();
   }, [load, loadImages]);
+  // F-080: "음성 메모 남기기" right after an exchange links here with ?voice=1#note — bring the memo box into view.
+  // The mic itself needs a user tap (browser rule), so we only focus the box and point at the mic button.
+  const loaded = t !== null;
+  useEffect(() => {
+    if (!loaded || typeof window === "undefined") return;
+    const wantsNote = window.location.hash === "#note" || new URLSearchParams(window.location.search).get("voice") === "1";
+    if (!wantsNote) return;
+    document.getElementById("note")?.scrollIntoView({ block: "center" });
+    noteRef.current?.focus({ preventScroll: true });
+  }, [loaded]);
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setZoom(null);
@@ -525,10 +536,10 @@ export function PersonDetail({ id }: { id: string }) {
 
       <ContactComms contactId={id} email={c.email} phone={c.phone} />
 
-      <section className="mt-6">
+      <section className="mt-6 scroll-mt-24" id="note">
         <h2 className="mb-2 text-[17px] font-semibold">메모 <span className="text-[13px] font-normal text-[var(--fg-mute)]">· 상대에게 절대 공개되지 않아요</span></h2>
         <div className="flex gap-2">
-          <input className="field" placeholder="무슨 이야기를 나눴나요?" value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} />
+          <input ref={noteRef} aria-label="개인 메모" className="field" placeholder="무슨 이야기를 나눴나요?" value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} />
           <button onClick={toggleVoice} className={`btn shrink-0 ${listening ? "btn-signal" : "btn-ghost"}`} aria-label={listening ? "받아쓰기 중지" : "음성 메모"} aria-pressed={listening}><Icon name="mic" size={18} /></button>
           <button onClick={addNote} className="btn btn-ink shrink-0" aria-label="메모 추가"><Icon name="plus" size={18} /></button>
         </div>

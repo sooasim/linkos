@@ -90,7 +90,24 @@ export async function getConnectionRoom(ctx: Ctx, roomId: string) {
   if (!r) throw notFound("room");
   const intro = r.introduction_id ? await getIntroduction(ctx, r.introduction_id) : null;
   const messages = await q<any>("SELECT id, body, created_at, author_user_id FROM connection_room_messages WHERE room_id=$1 ORDER BY created_at", [roomId]);
-  return { id: r.id, title: r.title, purpose: r.purpose, status: r.status, nextAction: r.next_action, introduction: intro, messages, summary: r.summary ?? null };
+  // UX-020 participant list: the introducer (me) + both introduced parties from MY contact records only
+  const me = await one<{ name: string | null }>(
+    "SELECT COALESCE((SELECT name FROM profiles WHERE user_id=$1 ORDER BY is_primary DESC LIMIT 1), (SELECT display_name FROM users WHERE id=$1)) AS name",
+    [ctx.userId],
+  );
+  const partyIds = intro ? [intro.partyA.contactId, intro.partyB.contactId] : [];
+  const titles = partyIds.length ? await q<{ id: string; job_title: string | null }>("SELECT id, job_title FROM contacts WHERE owner_user_id=$1 AND id = ANY($2::uuid[])", [ctx.userId, partyIds]) : [];
+  const title = (id: string) => titles.find((t) => t.id === id)?.job_title ?? null;
+  const participants = [
+    { role: "introducer" as const, name: me?.name ?? null, company: null as string | null, jobTitle: null as string | null, contactId: null as string | null, status: "accepted" },
+    ...(intro
+      ? (["a", "b"] as const).map((k) => {
+          const p = k === "a" ? intro.partyA : intro.partyB;
+          return { role: k === "a" ? ("party_a" as const) : ("party_b" as const), name: p.name, company: p.company, jobTitle: title(p.contactId), contactId: p.contactId, status: p.status };
+        })
+      : []),
+  ];
+  return { id: r.id, title: r.title, purpose: r.purpose, status: r.status, nextAction: r.next_action, introduction: intro, participants, messages, summary: r.summary ?? null };
 }
 
 export async function postRoomMessage(ctx: Ctx, roomId: string, body: string) {

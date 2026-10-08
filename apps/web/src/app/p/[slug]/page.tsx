@@ -9,13 +9,14 @@ import { LivingCard } from "@/components/LivingCard";
 import { ProfileMediaGallery } from "@/components/ProfileMedia";
 import { headers } from "next/headers";
 import { CardViewTracker } from "@/components/CardViewTracker";
-import { type CardTranslations, applyCardTranslation, availableTranslations, isTranslationLang } from "@/lib/cardTranslation";
+import { applyPublicTranslation, isTranslationLang, publicLangs } from "@/lib/cardTranslation";
 import { getViewer } from "@/lib/server";
 import { RequestAccess } from "./RequestAccess";
 
 // F-112: viewer-side language pick for cards that have owner-reviewed translations. Plain links (?lang=) — no JS.
 const LANG_NAME = { en: "English", ja: "日本語" } as const;
 const MT_LABEL = { en: "AI translation · reviewed by the owner", ja: "AI翻訳 · 本人確認済み" } as const;
+const OWNER_LABEL = { en: "Translated by the owner", ja: "本人による翻訳" } as const;
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +50,9 @@ export default async function PublicProfile({ params, searchParams }: { params: 
   const { slug } = await params;
   const { src, lang } = await searchParams;
   const { card: c, userId } = await load(slug);
-  const translations = (c as typeof c & { translations?: CardTranslations | null }).translations ?? null;
-  const langs = availableTranslations(translations);
+  const langs = publicLangs(c.translations);
   const picked = isTranslationLang(lang) && langs.includes(lang) ? lang : null;
-  const shown = picked ? applyCardTranslation(c, translations![picked]) : { card: c, applied: false };
+  const shown = picked ? applyPublicTranslation(c, c.translations?.[picked]) : { card: c, applied: false };
   // X-003: view counter + tracked-link source (signature / virtual background / wallet pass). Counts only, no viewer id.
   const h = await headers();
   const privacy = { viewerUserId: userId, gpc: h.get("sec-gpc"), dnt: h.get("dnt") };
@@ -87,7 +87,7 @@ export default async function PublicProfile({ params, searchParams }: { params: 
                   {LANG_NAME[l]}
                 </Link>
               ))}
-              {picked && shown.applied && <span className="chip chip-ai" lang={picked}>{MT_LABEL[picked]}</span>}
+              {picked && shown.applied && (c.translations?.[picked]?.provenance === "ai_inferred" ? <span className="chip chip-ai" lang={picked}>{MT_LABEL[picked]}</span> : <span className="chip" lang={picked}>{OWNER_LABEL[picked]}</span>)}
             </nav>
           )}
           <CardViewTracker profileId={c.id}>

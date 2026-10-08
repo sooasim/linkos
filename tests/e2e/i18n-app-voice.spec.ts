@@ -1,6 +1,6 @@
 // F-177 다국어 (signed-in app shell ko/en) · F-112 카드 번역 검토 UI · F-080 음성 메모 구조화(자동 추출 → 확인 후 후속 할 일)
 import { type Page, expect, test } from "@playwright/test";
-import { applyCardTranslation, availableTranslations, draftFromApi } from "../../apps/web/src/lib/cardTranslation";
+import { applyPublicTranslation, availableTranslations, draftFromApi, publicLangs } from "../../apps/web/src/lib/cardTranslation";
 import { extractTodos, formatElapsed, splitSentences } from "../../apps/web/src/lib/voiceMemo";
 
 const uniq = () => `${Date.now()}${Math.floor(Math.random() * 1e4)}`;
@@ -75,14 +75,20 @@ test.describe("F-112 card translation helpers (unit)", () => {
     const card = { name: "홍길동", company: "링코스랩", jobTitle: "대표", headline: "의료 AI", bioShort: null, offers: ["의료 영상 AI"], needs: ["유통 파트너"], fields: [{ type: "email", value: "a@b.test" }] };
     const draft = draftFromApi({ jobTitle: "대표", headline: "의료 AI", bioShort: null, offers: ["의료 영상 AI"], needs: ["유통 파트너"] }, { jobTitle: "CEO", headline: "Medical AI", "offer.0": "Medical imaging AI" });
     const t = { ...draft, provenance: "ai_inferred" as const, reviewedAt: "2026-10-08T00:00:00Z" };
-    const { card: out, applied } = applyCardTranslation(card, t);
+    // names/contact fields are never part of a translation
+    expect(Object.keys(draft.fields)).toEqual(["jobTitle", "headline"]);
+    expect(draft.offers).toEqual([{ src: "의료 영상 AI", text: "Medical imaging AI" }]);
+    expect(draft.needs).toEqual([{ src: "유통 파트너", text: "유통 파트너" }]); // untranslated → original kept for review
+    expect(availableTranslations({ en: t })).toEqual(["en"]);
+    expect(availableTranslations(null)).toEqual([]);
+    // public projection (server already dropped stale lines): fields swap, Offer/Need only when fully translated
+    const pub = { jobTitle: "CEO", headline: "Medical AI", offers: ["Medical imaging AI"], needs: [], provenance: "ai_inferred" as const, reviewedAt: t.reviewedAt };
+    const { card: out, applied } = applyPublicTranslation(card, pub);
     expect(applied).toBe(true);
     expect(out).toMatchObject({ name: "홍길동", company: "링코스랩", jobTitle: "CEO", headline: "Medical AI", offers: ["Medical imaging AI"], needs: ["유통 파트너"] });
     expect(out.fields).toEqual(card.fields);
-    // the owner edited the original after translating → the stale translation is not shown
-    expect(applyCardTranslation({ ...card, jobTitle: "공동대표" }, t).card.jobTitle).toBe("공동대표");
-    expect(availableTranslations({ en: t })).toEqual(["en"]);
-    expect(availableTranslations(null)).toEqual([]);
+    expect(publicLangs({ en: pub })).toEqual(["en"]);
+    expect(publicLangs(undefined)).toEqual([]);
   });
 });
 
@@ -154,21 +160,20 @@ test("F-112 card translation: review before adding, names never translated", asy
   await expect(section.getByTestId("translation-en")).toBeVisible();
 
   await page.getByTestId("save-card").click();
-  const notice = page.getByTestId("save-notice");
-  const stored = await Promise.race([
-    notice.waitFor({ timeout: 15_000 }).then(() => false),
-    page.waitForURL(/\/app\/me$/, { timeout: 15_000 }).then(() => true),
-  ]);
-  if (!stored) {
-    // the server does not store translations yet: the UI says so instead of dropping them silently
-    await expect(notice).toContainText("번역본은 저장되지 않았어요");
-    return;
-  }
+  await page.waitForURL(/\/app\/me$/);
+
+  // reload the editor: the reviewed translation was stored with the card
+  await page.goto("/app/me/edit");
+  await expect(page.getByTestId("card-translations").getByTestId("translation-en")).toBeVisible();
+
   const me = await (await page.request.get("/api/v1/me")).json();
-  await page.goto(`/p/${me.profile.slug}?lang=en`);
+  await page.goto(`/p/${me.profile.slug}`);
   await expect(page.getByTestId("card-lang-picker")).toBeVisible();
+  await expect(page.getByText("대표").first()).toBeVisible();
+  await page.goto(`/p/${me.profile.slug}?lang=en`);
   await expect(page.getByText("CEO").first()).toBeVisible();
-  await expect(page.getByText("번역테스트").first()).toBeVisible();
+  await expect(page.getByText("번역테스트").first()).toBeVisible(); // name never translated
+  await expect(page.getByText(/AI translation · reviewed by the owner|Translated by the owner/)).toBeVisible();
 });
 
 test("F-080 voice memo: dictation timer, 정리하기 → suggestions → confirm one → follow-up appears", async ({ page }) => {
@@ -244,4 +249,38 @@ test("people list: company filter", async ({ page }) => {
   await page.getByTestId("company-filter").selectOption("베타물산");
   await expect(page.getByText("회사B 사람")).toBeVisible();
   await expect(page.getByText("회사A 사람")).toHaveCount(0);
+});
+
+test("F-168 내 데이터 받기: async export job shows preparing, then surfaces a failed job", async ({ page }) => {
+  await signIn(page, `px${uniq()}@linkos.test`);
+  let polls = 0;
+  await page.route(/\/api\/v1\/me\/privacy\/export\/[0-9a-f-]+$/, async (route) => {
+    polls++;
+    await route.fulfill({ json: { id: "x", status: polls < 2 ? "processing" : "failed", downloadUrl: null } });
+  });
+  await page.goto("/app/settings");
+  const btn = page.getByTestId("export-mine");
+  await btn.click();
+  await expect(btn).toHaveText("내 데이터 준비 중…");
+  await expect(page.getByTestId("export-mine-error")).toContainText("만들지 못했어요", { timeout: 10_000 });
+  await expect(btn).toBeEnabled();
+});
+
+test("§3.1 CONSENT_PENDING: the sender sees the guest reviewing before the reply arrives", async ({ page, browser }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chrome", "one browser is enough");
+  await signIn(page, `cp${uniq()}@linkos.test`);
+  await createCard(page, "상태테스트");
+  await page.goto("/app/exchange");
+  const created = page.waitForResponse((r) => r.url().endsWith("/api/v1/exchange/sessions") && r.request().method() === "POST");
+  await page.getByTestId("start-exchange").click();
+  const session = (await (await created).json()) as { url: string };
+  const code = new URL(session.url).pathname;
+  const guestCtx = await browser.newContext();
+  const guest = await guestCtx.newPage();
+  await guest.goto(code);
+  await guest.getByTestId("reply-cta").click();
+  await guest.getByRole("button", { name: "직접 입력할게요" }).click();
+  await expect(guest.locator('input[name="fullName"]')).toBeVisible();
+  await expect(page.getByTestId("exchange-consent-pending")).toBeVisible({ timeout: 15_000 });
+  await guestCtx.close();
 });

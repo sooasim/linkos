@@ -4,7 +4,7 @@ import Link from "next/link";
 import { GUEST_MESSAGES, LOCALES, LOCALE_NAMES, type Locale, fmt } from "@linkos/domain";
 import type { ResolvedCardDesign } from "@linkos/domain/cardDesign";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type OcrLineOut, CardScanner } from "@/components/CardScanner";
 import { celebrate } from "@/components/Fx";
 import { Icon, Logo } from "@/components/Icon";
@@ -54,6 +54,14 @@ export function GuestFlow({ token, landing, signedIn, viewerCard, actions = [], 
     router.refresh();
   };
   const [step, setStep] = useState<Step>("view");
+  // 백서 §3.1 CONSENT_PENDING: tell the sender the guest is reviewing what to send (once, fire-and-forget, no body —
+  // the draft stays on this device until "보내기")
+  const reviewed0 = useRef(false);
+  useEffect(() => {
+    if (step !== "review" || reviewed0.current) return;
+    reviewed0.current = true;
+    void api(`/exchange/sessions/${encodeURIComponent(token)}/review`, { method: "POST", offline: false }).catch(() => undefined);
+  }, [step, token]);
   const [initial, setInitial] = useState<Record<CardKey, string>>(emptyCard());
   const [conf, setConf] = useState<Partial<Record<CardKey, number>>>({});
   const [ocrLines, setOcrLines] = useState<OcrLineOut[] | null>(null);

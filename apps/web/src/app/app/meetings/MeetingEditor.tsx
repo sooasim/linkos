@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { BriefHistory } from "@/components/BriefHistory";
 import { AiLabel, PageHeader } from "@/components/Page";
 import { MeetingFollowThrough } from "@/components/MeetingFollowThrough";
 import { api, fmtDate } from "@/lib/client";
@@ -201,6 +202,7 @@ export function MeetingEditor({ meeting, preselect }: { meeting: any | null; pre
                       {p.openActions.length > 0 && <p>미완료 약속: {p.openActions.map((a: any) => a.description).join(", ")}</p>}
                       {p.recentNotes[0] && <p className="text-[var(--fg-mute)]">최근 메모: {p.recentNotes[0].body}</p>}
                       {p.suggestedTopics.map((t: string) => <p key={t}>추천 논점: {t}</p>)}
+                      <BriefHistory previousMeeting={p.previousMeeting} profileChanges={p.profileChanges} changesSince={p.changesSince} />
                     </div>
                   ))}
                 </div>

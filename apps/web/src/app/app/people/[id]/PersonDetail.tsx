@@ -93,7 +93,7 @@ function MemoSuggestions({ contactId, items, onChange, onCreated }: { contactId:
                 <p className="flex items-center gap-2 text-[14px] font-medium"><Icon name="check" size={16} />{s.title} · <span className="text-[var(--fg-mute)]">{P.created}</span></p>
               ) : (
                 <div className="space-y-2">
-                  <input className="field !min-h-10 !py-2 !text-[14.5px]" value={s.title} maxLength={200} aria-label={P.subject} onChange={(e) => patch(s.id, { title: e.target.value })} />
+                  <input className="field !min-h-10 !py-2 !text-[14.5px]" value={s.title} maxLength={200} aria-label={P.todoTitle} onChange={(e) => patch(s.id, { title: e.target.value })} />
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="flex items-center gap-2 text-[13px] text-[var(--fg-mute)]">
                       {P.dueLabel}

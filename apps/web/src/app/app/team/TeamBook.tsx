@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Avatar, Empty } from "@/components/Page";
-import { api, relTime, uid } from "@/lib/client";
+import { ClientError, api, relTime, uid } from "@/lib/client";
 
 interface TC {
   id: string;
@@ -57,15 +57,22 @@ export function TeamBook({ orgId, myId, perms }: { orgId: string; myId: string; 
     if (mode === "share") api<{ contacts: any[] }>("/contacts?limit=200").then((r) => setMine(r.contacts));
   }, [mode]);
 
+  // F-139 org CRM policy: company contacts must sync to an allowed CRM — writes answer 422 policy_violation
+  // {required:"crm_sync"} when the owner has none connected, and report crmSync.queued when the push was queued.
+  const [policy, setPolicy] = useState<{ message: string; providers: string[] | null } | null>(null);
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
     setMsg(null);
+    setPolicy(null);
     try {
-      await fn();
-      if (ok) setMsg(ok);
+      const r = (await fn()) as { crmSync?: { queued?: number } } | undefined;
+      const queued = r && typeof r === "object" && r.crmSync ? (r.crmSync.queued ?? 0) : null;
+      if (ok || queued !== null) setMsg([ok, queued !== null ? (queued > 0 ? `CRM 동기화 ${queued}건을 대기열에 넣었어요.` : "CRM 동기화 대상이 없어요.") : null].filter(Boolean).join(" "));
       load();
       if (open) api(`/orgs/${orgId}/contacts/${open}`).then(setDetail).catch(() => setOpen(null));
     } catch (e) {
-      setMsg((e as Error).message);
+      const d = e instanceof ClientError && e.status === 422 && e.code === "policy_violation" ? (e.details as { required?: string; providers?: string[] | null } | undefined) : undefined;
+      if (d?.required === "crm_sync") setPolicy({ message: (e as Error).message, providers: d.providers ?? null });
+      else setMsg((e as Error).message);
     }
   };
 
@@ -81,6 +88,13 @@ export function TeamBook({ orgId, myId, perms }: { orgId: string; myId: string; 
         ))}
       </div>
       {msg && <p role="status" className="surface p-3 text-[14px]">{msg}</p>}
+      {policy && (
+        <div role="alert" className="rounded-2xl border border-[var(--color-ember)] p-4 text-[14px]" data-testid="crm-policy">
+          <p className="font-semibold">조직 정책: 회사 연락처는 CRM 동기화가 필요해요</p>
+          <p className="mt-1 text-[13.5px] text-[var(--fg-mute)]">{policy.message}{policy.providers?.length ? ` (허용 CRM: ${policy.providers.join(", ")})` : ""}</p>
+          <a href="/app/integrations" className="btn btn-signal mt-3 !min-h-10 text-[14px]"><Icon name="plug" size={16} /> CRM 연결하기</a>
+        </div>
+      )}
 
       {items === null ? (
         <div className="surface h-40 animate-pulse" />
@@ -176,12 +190,12 @@ export function TeamBook({ orgId, myId, perms }: { orgId: string; myId: string; 
             ))}
           </ul>
           <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" checked={asLead} onChange={(e) => setAsLead(e.target.checked)} />회사 리드로 공유 (조직 소유 · 퇴사 시 회사에 남음)</label>
-          <button className="btn btn-signal" disabled={!pick.length} onClick={() => run(async () => { await api(`/orgs/${orgId}/contacts`, { body: { contactIds: pick, asCompanyLead: asLead } }); setPick([]); setMode(null); }, "팀에 공유했어요.")}>{pick.length}명 공유</button>
+          <button className="btn btn-signal" disabled={!pick.length} onClick={() => run(async () => { const r = await api(`/orgs/${orgId}/contacts`, { body: { contactIds: pick, asCompanyLead: asLead } }); setPick([]); setMode(null); return r; }, "팀에 공유했어요.")}>{pick.length}명 공유</button>
         </section>
       )}
 
       {mode === "lead" && (
-        <form className="surface space-y-3 p-5" onSubmit={(e) => { e.preventDefault(); run(async () => { await api(`/orgs/${orgId}/leads`, { body: { ...Object.fromEntries(Object.entries(lead).map(([k, v]) => [k, v || null])), fullName: lead.fullName }, idempotencyKey: uid() }); setLead({ fullName: "", company: "", jobTitle: "", email: "", phone: "", assigneeUserId: "" }); setMode(null); }, "회사 리드를 추가했어요."); }}>
+        <form className="surface space-y-3 p-5" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api(`/orgs/${orgId}/leads`, { body: { ...Object.fromEntries(Object.entries(lead).map(([k, v]) => [k, v || null])), fullName: lead.fullName }, idempotencyKey: uid() }); setLead({ fullName: "", company: "", jobTitle: "", email: "", phone: "", assigneeUserId: "" }); setMode(null); return r; }, "회사 리드를 추가했어요."); }}>
           <h2 className="font-semibold">회사 리드</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {([["fullName", "이름*"], ["company", "회사"], ["jobTitle", "직책"], ["email", "이메일"], ["phone", "전화"]] as const).map(([k, l]) => (

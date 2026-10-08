@@ -47,36 +47,6 @@ interface TranslatableCard {
   needs?: string[];
 }
 
-/**
- * Apply a translation to a card for display. Returns the card unchanged (and `applied: false`) when no field
- * matched. Never touches name/company/fields.
- */
-export function applyCardTranslation<C extends TranslatableCard>(card: C, t: CardTranslation | null | undefined): { card: C; applied: boolean } {
-  if (!t) return { card, applied: false };
-  let applied = false;
-  const out: C = { ...card };
-  for (const k of TRANSLATABLE_FIELDS) {
-    const tr = t.fields?.[k];
-    const cur = card[k];
-    if (tr && cur && tr.src === cur && tr.text.trim()) {
-      out[k] = tr.text as C[typeof k];
-      applied = true;
-    }
-  }
-  const mapList = (list: string[] | undefined, trs: TranslatedText[] | undefined) => {
-    if (!list || !trs?.length) return list;
-    const map = new Map(trs.filter((x) => x.text.trim()).map((x) => [x.src, x.text]));
-    return list.map((s) => {
-      const v = map.get(s);
-      if (v) applied = true;
-      return v ?? s;
-    });
-  };
-  if (card.offers) out.offers = mapList(card.offers, t.offers);
-  if (card.needs) out.needs = mapList(card.needs, t.needs);
-  return { card: out, applied };
-}
-
 /** Build the editable draft from the /translate API result (`items` keyed jobTitle | headline | bioShort | offer.N | need.N). */
 export function draftFromApi(
   source: { jobTitle?: string | null; headline?: string | null; bioShort?: string | null; offers: string[]; needs: string[] },
@@ -92,4 +62,46 @@ export function draftFromApi(
     offers: source.offers.map((src, i) => ({ src, text: items[`offer.${i}`] ?? src })),
     needs: source.needs.map((src, i) => ({ src, text: items[`need.${i}`] ?? src })),
   };
+}
+
+/** What the public card API exposes per language (server already dropped stale/hidden lines; see card.publicTranslations). */
+export interface PublicTranslation {
+  jobTitle?: string;
+  headline?: string;
+  bioShort?: string;
+  offers: string[];
+  needs: string[];
+  provenance: "ai_inferred" | "user";
+  reviewedAt: string;
+}
+export type PublicTranslations = Partial<Record<CardTranslationLang, PublicTranslation>>;
+
+export function publicLangs(t: PublicTranslations | null | undefined): CardTranslationLang[] {
+  return t ? CARD_TRANSLATION_LANGS.filter((l) => !!t[l]) : [];
+}
+
+/**
+ * Apply a public translation for display. Offer/Need lists are swapped only when every visible line has a
+ * translation (the server drops untranslated lines, so a partial list cannot be aligned to the original).
+ */
+export function applyPublicTranslation<C extends TranslatableCard>(card: C, t: PublicTranslation | null | undefined): { card: C; applied: boolean } {
+  if (!t) return { card, applied: false };
+  const out: C = { ...card };
+  let applied = false;
+  for (const k of TRANSLATABLE_FIELDS) {
+    const v = t[k];
+    if (v && card[k]) {
+      out[k] = v as C[typeof k];
+      applied = true;
+    }
+  }
+  if (card.offers?.length && t.offers.length === card.offers.length) {
+    out.offers = t.offers;
+    applied = true;
+  }
+  if (card.needs?.length && t.needs.length === card.needs.length) {
+    out.needs = t.needs;
+    applied = true;
+  }
+  return { card: out, applied };
 }

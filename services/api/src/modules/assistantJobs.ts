@@ -284,6 +284,14 @@ export async function currentDigest(ctx: Ctx, today = new Date()) {
   };
 }
 
+/** Read-only view of this week's digest for Home (F-098): never generates or caches one, so opening Home
+ *  cannot freeze an empty digest before the user has added contacts. /app/reconnect generates it. */
+export async function peekDigest(ctx: Ctx, today = new Date()) {
+  if (!ctx.userId) throw unauthorized();
+  const row = await one<{ items: DigestItem[] }>("SELECT items FROM reconnect_digests WHERE user_id=$1 AND week_start=$2", [ctx.userId, weekStart(today)]);
+  return { items: (row?.items ?? []).map((i) => ({ ...i, provenance: "ai_inferred" as const })) };
+}
+
 /** One-tap draft (saved to /app/messages as a draft; never sent automatically). */
 export async function createReconnectDraft(ctx: Ctx, contactId: string) {
   if (!ctx.userId) throw unauthorized();

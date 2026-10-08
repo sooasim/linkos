@@ -28,7 +28,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const [home, digest] = await Promise.all([
     analytics.myHome(userId!),
     // cached once per week per user (reconnect_digests); never blocks Home if it fails
-    assistantJobs.currentDigest(ctx).catch(() => null),
+    assistantJobs.peekDigest(ctx).catch(() => null),
   ]);
   const profile = me.profile ? await card.loadProfile(me.profile.id) : null;
   const welcome = sp.welcome === "1";

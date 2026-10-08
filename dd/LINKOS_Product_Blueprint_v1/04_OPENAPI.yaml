@@ -1,0 +1,234 @@
+openapi: 3.1.0
+info:
+  title: LINKOS Platform API
+  version: 1.0.0
+  description: Blueprint API surface. Generate implementation from feature registry
+    and this contract.
+servers:
+- url: https://api.example.com/v1
+paths:
+  /exchange/sessions:
+    post:
+      summary: Create ephemeral exchange session
+      operationId: createExchangeSession
+      responses:
+        '201':
+          description: Created
+  /exchange/sessions/{token}:
+    get:
+      summary: Resolve guest exchange landing
+      operationId: getExchangeSession
+      responses:
+        '200':
+          description: Public-safe sender card
+  /exchange/sessions/{token}/reply:
+    post:
+      summary: Guest reciprocates with scanned or entered card
+      operationId: replyExchange
+      responses:
+        '201':
+          description: Relationship created
+  /guest/claim:
+    post:
+      summary: Claim guest-created profile and relationships
+      operationId: claimGuest
+      responses:
+        '200':
+          description: Claimed
+  /capture/cards:
+    post:
+      summary: Create OCR extraction job
+      operationId: captureBusinessCard
+      responses:
+        '202':
+          description: Accepted
+  /capture/jobs/{id}:
+    get:
+      summary: Read OCR job and field confidence
+      operationId: getCaptureJob
+      responses:
+        '200':
+          description: Job
+  /contacts:
+    get:
+      summary: Search/list contacts
+      operationId: listContacts
+      responses:
+        '200':
+          description: Contacts
+    post:
+      summary: Create contact
+      operationId: createContact
+      responses:
+        '201':
+          description: Created
+  /contacts/{id}:
+    get:
+      summary: Get contact detail
+      operationId: getContact
+      responses:
+        '200':
+          description: Contact
+    patch:
+      summary: Update contact
+      operationId: updateContact
+      responses:
+        '200':
+          description: Updated
+  /contacts/{id}/merge:
+    post:
+      summary: Merge duplicate contact
+      operationId: mergeContact
+      responses:
+        '200':
+          description: Merged
+  /profiles/{id}:
+    get:
+      summary: Get living card profile
+      operationId: getProfile
+      responses:
+        '200':
+          description: Profile
+    patch:
+      summary: Update living card
+      operationId: updateProfile
+      responses:
+        '200':
+          description: Updated
+  /profiles/{id}/access-requests:
+    post:
+      summary: Request hidden fields
+      operationId: requestProfileAccess
+      responses:
+        '201':
+          description: Requested
+  /matches:
+    get:
+      summary: Need↔Offer match results
+      operationId: listMatches
+      responses:
+        '200':
+          description: Matches
+  /ai/search:
+    post:
+      summary: Natural-language relationship memory search
+      operationId: relationshipSearch
+      responses:
+        '200':
+          description: Results
+  /meetings:
+    post:
+      summary: Create meeting card
+      operationId: createMeeting
+      responses:
+        '201':
+          description: Created
+  /meetings/{id}/recordings:
+    post:
+      summary: Upload/create recording
+      operationId: createRecording
+      responses:
+        '202':
+          description: Processing
+  /meetings/{id}/brief:
+    get:
+      summary: Generate meeting prep brief
+      operationId: getMeetingBrief
+      responses:
+        '200':
+          description: Brief
+  /followups:
+    post:
+      summary: Create follow-up recommendation/task
+      operationId: createFollowup
+      responses:
+        '201':
+          description: Created
+  /integrations/google/connect:
+    post:
+      summary: Start Google OAuth
+      operationId: connectGoogle
+      responses:
+        '200':
+          description: OAuth URL
+  /integrations/google/contacts/sync:
+    post:
+      summary: Sync contacts with Google People API
+      operationId: syncGoogleContacts
+      responses:
+        '202':
+          description: Queued
+  /exports:
+    post:
+      summary: Generate XLSX/CSV/DOCX/TXT/PDF/vCard export
+      operationId: createExport
+      responses:
+        '202':
+          description: Queued
+  /events:
+    post:
+      summary: Create event workspace
+      operationId: createEvent
+      responses:
+        '201':
+          description: Created
+  /events/{id}/matches:
+    get:
+      summary: Event networking recommendations
+      operationId: eventMatches
+      responses:
+        '200':
+          description: Matches
+  /introductions:
+    post:
+      summary: Propose consent-based introduction
+      operationId: createIntroduction
+      responses:
+        '201':
+          description: Proposed
+  /rooms/{id}:
+    get:
+      summary: Get Connection Room
+      operationId: getConnectionRoom
+      responses:
+        '200':
+          description: Room
+  /me/privacy/export:
+    post:
+      summary: Request portable data export
+      operationId: exportMyData
+      responses:
+        '202':
+          description: Queued
+  /me/privacy/delete:
+    post:
+      summary: Request account deletion
+      operationId: deleteMyData
+      responses:
+        '202':
+          description: Queued
+  /health:
+    get:
+      summary: Service health
+      operationId: health
+      responses:
+        '200':
+          description: OK
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        traceId:
+          type: string
+security:
+- bearerAuth: []

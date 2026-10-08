@@ -1,0 +1,22 @@
+{
+  "name": "LINKOS — Business Identity & Relationship OS",
+  "short_name": "LINKOS",
+  "description": "가입 없이 교환하는 살아있는 명함과 관계 기억",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fcfcfe",
+  "theme_color": "#fcfcfe",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "교환", "url": "/app/exchange" },
+    { "name": "명함 스캔", "url": "/app/scan" },
+    { "name": "코드로 받기", "url": "/c" }
+  ]
+}

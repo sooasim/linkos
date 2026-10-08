@@ -1,0 +1,21 @@
+
+digraph G {
+ graph [rankdir=TB, bgcolor="white", fontname="Noto Sans CJK KR", nodesep=0.30, ranksep=0.42, splines=ortho];
+ node [shape=box, style="rounded,filled", fontname="Noto Sans CJK KR", fontsize=9.5, fillcolor="#F9FAFC", color="#4A5568", margin="0.13,0.08", width=1.45, height=0.62];
+ edge [arrowsize=0.7, color="#4A5568"];
+ A [label="1 공유 시작"];
+ B [label="2 일회성 세션\n128-bit · TTL"];
+ C [label="3 채널 선택\n앱→OS→NFC→코드→QR"];
+ D [label="4 링크 열기\nBrowser/App Clip"];
+ E [label="5 3초 카드\n민감필드 최소"];
+ F [label="6 내 명함 보내기\n촬영/직접입력"];
+ G [label="7 OCR 검토\n명시적 동의"];
+ H [label="8 Relationship +\nEncounter 생성"];
+ I [label="9 계정 Claim\nGoogle/Apple/Passkey/OTP"];
+ J [label="10 Sync +\nFollow-up 추천"];
+ {rank=same; A; B; C; D; E;}
+ {rank=same; F; G; H; I; J;}
+ A->B->C->D->E;
+ E->F;
+ F->G->H->I->J;
+}

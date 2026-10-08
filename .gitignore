@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.local
+*.tsbuildinfo
+.DS_Store
+test-results/
+playwright-report/
+.shot*.mjs
+
+# agent worktrees and local scratch scripts
+.claude/worktrees/
+apps/web/.*.mjs
+
+# local encrypted object storage (OBJECT_STORAGE_LOCAL_DIR default)
+.data/

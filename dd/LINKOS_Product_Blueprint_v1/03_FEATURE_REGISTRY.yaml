@@ -1,0 +1,2367 @@
+version: '1.0'
+feature_count: 197
+features:
+- id: F-001
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 회원가입/로그인
+  description: Google, Apple, 이메일 OTP, Passkey 지원
+  priority: P0
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 회원가입/로그인 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-002
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 게스트 세션
+  description: 가입 없이 명함 수신·회신 가능
+  priority: P0
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 게스트 세션 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-003
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 계정 Claim
+  description: 게스트가 만든 카드/관계를 가입 후 소유권 주장
+  priority: P0
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 계정 Claim 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-004
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 조직 가입
+  description: 초대링크/도메인/관리자 승인
+  priority: P1
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 조직 가입 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-005
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 다중 프로필
+  description: 개인/회사/역할별 ID 분리
+  priority: P1
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 다중 프로필 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-006
+  module: IAM
+  module_name: Identity & Onboarding
+  title: Passkey
+  description: WebAuthn 기반 비밀번호 없는 로그인
+  priority: P1
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: Passkey 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-007
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 세션 보안
+  description: Refresh rotation, device revoke
+  priority: P0
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 세션 보안 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-008
+  module: IAM
+  module_name: Identity & Onboarding
+  title: B2B SSO
+  description: SAML/OIDC, SCIM 확장 포인트
+  priority: P2
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: B2B SSO 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-009
+  module: IAM
+  module_name: Identity & Onboarding
+  title: 연령/약관 동의
+  description: 서비스/개인정보/마케팅 동의 분리
+  priority: P0
+  service: identity-service
+  frontend: auth/onboarding
+  data: users, identities, guest_claims, org_members, consent_records
+  api: /auth/*, /me, /guest/claim
+  acceptance: 연령/약관 동의 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-010
+  module: CAP
+  module_name: Capture & OCR
+  title: 카메라 명함 촬영
+  description: 자동 테두리/크롭/원근/회전/명암 보정
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 카메라 명함 촬영 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-011
+  module: CAP
+  module_name: Capture & OCR
+  title: 앞·뒤면 병합
+  description: 양면 명함 단일 레코드화
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 앞·뒤면 병합 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-012
+  module: CAP
+  module_name: Capture & OCR
+  title: 사진첩 일괄 가져오기
+  description: 과거 명함 사진 대량 처리
+  priority: P1
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 사진첩 일괄 가져오기 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-013
+  module: CAP
+  module_name: Capture & OCR
+  title: 다중 명함 분리
+  description: 한 사진 내 복수 명함 자동 분리
+  priority: P1
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 다중 명함 분리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-014
+  module: CAP
+  module_name: Capture & OCR
+  title: 배지 스캔
+  description: 행사 배지 OCR 및 필드 매핑
+  priority: P1
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 배지 스캔 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-015
+  module: CAP
+  module_name: Capture & OCR
+  title: OCR 다국어
+  description: 한국어/영어/일본어/중국어 우선
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: OCR 다국어 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-016
+  module: CAP
+  module_name: Capture & OCR
+  title: AI 필드 구조화
+  description: 이름/회사/직급/전화/메일/주소/URL/SNS
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: AI 필드 구조화 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-017
+  module: CAP
+  module_name: Capture & OCR
+  title: 신뢰도 표시
+  description: 필드별 confidence 및 원문 bounding box
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 신뢰도 표시 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-018
+  module: CAP
+  module_name: Capture & OCR
+  title: 저신뢰 검토
+  description: 임계값 이하만 사용자 확인
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 저신뢰 검토 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-019
+  module: CAP
+  module_name: Capture & OCR
+  title: 명함 원본 보관
+  description: 암호화 object storage + retention
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 명함 원본 보관 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-020
+  module: CAP
+  module_name: Capture & OCR
+  title: 중복 후보 탐지
+  description: 이메일/전화/이름+회사 fuzzy match
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 중복 후보 탐지 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-021
+  module: CAP
+  module_name: Capture & OCR
+  title: 정보 병합
+  description: 기존 연락처와 차이점 비교 후 병합
+  priority: P0
+  service: capture-service
+  frontend: scan/import/review
+  data: business_cards, card_images, contacts, extraction_jobs
+  api: /capture/*
+  acceptance: 정보 병합 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-022
+  module: CARD
+  module_name: Living Business Card
+  title: 3초 카드
+  description: 이름/회사/직책/핵심 키워드/CTA
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: 3초 카드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-023
+  module: CARD
+  module_name: Living Business Card
+  title: 30초 카드
+  description: 소개/전문/Offer/Need/Projects
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: 30초 카드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-024
+  module: CARD
+  module_name: Living Business Card
+  title: 딥 프로필
+  description: 성과/포트폴리오/미디어/파일/서비스/인증
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: 딥 프로필 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-025
+  module: CARD
+  module_name: Living Business Card
+  title: Offer
+  description: 제공 가능한 역량/자원 구조화
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Offer 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-026
+  module: CARD
+  module_name: Living Business Card
+  title: Need
+  description: 현재 필요한 협력/고객/파트너 구조화
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Need 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-027
+  module: CARD
+  module_name: Living Business Card
+  title: Interest
+  description: 관심 산업/주제
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Interest 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-028
+  module: CARD
+  module_name: Living Business Card
+  title: Asset
+  description: 보유 자원/유통망/시설/기술
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Asset 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-029
+  module: CARD
+  module_name: Living Business Card
+  title: Network
+  description: 연결 가능한 지역/산업/조직
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Network 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-030
+  module: CARD
+  module_name: Living Business Card
+  title: Project
+  description: 진행 프로젝트/협업 상태
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Project 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-031
+  module: CARD
+  module_name: Living Business Card
+  title: 프로필 변형
+  description: 투자자/고객/파트너 등 audience별 카드
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: 프로필 변형 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-032
+  module: CARD
+  module_name: Living Business Card
+  title: AI Adaptive Card
+  description: 상대 맥락에 따라 최적 프로필 변형 추천
+  priority: P2
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: AI Adaptive Card 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-033
+  module: CARD
+  module_name: Living Business Card
+  title: Living Update
+  description: 직책/회사/URL 변경 시 연결 상대에게 갱신 제안
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Living Update 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-034
+  module: CARD
+  module_name: Living Business Card
+  title: 공개범위
+  description: Public/Business/Trusted/Partner 필드 ACL
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: 공개범위 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-035
+  module: CARD
+  module_name: Living Business Card
+  title: Access Request
+  description: 숨김 필드 공유 요청/승인
+  priority: P1
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Access Request 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-036
+  module: CARD
+  module_name: Living Business Card
+  title: Action Card
+  description: 전화/메일/메시지/예약/견적/제안/NDA CTA
+  priority: P0
+  service: card-service
+  frontend: card/editor/profile
+  data: profiles, profile_variants, profile_fields, access_policies
+  api: /profiles/*
+  acceptance: Action Card 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-037
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 공유 1탭
+  description: 교환 CTA 단일 진입점
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 공유 1탭 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-038
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: Capability Detection
+  description: app/deeplink/Web Share/camera/PWA 상태 탐지
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: Capability Detection 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사
+    가능한 상태 변화와 사용자 피드백을 남긴다.
+- id: F-039
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 앱 근접 교환
+  description: foreground BLE ephemeral ID 발견+상호승인
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 앱 근접 교환 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-040
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 근접 확인
+  description: RSSI/타임윈도우/선택적 모션 신호로 오접속 차단
+  priority: P2
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 근접 확인 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-041
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: OS Share
+  description: Web Share/native share로 일회성 URL 전달
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: OS Share 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-042
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: iOS App Clip
+  description: 지원되는 링크/NFC/코드 호출용 초경량 수신 플로우
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: iOS App Clip 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-043
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: Android PWA Landing
+  description: Instant App 없이 웹 즉시 진입
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: Android PWA Landing 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사
+    가능한 상태 변화와 사용자 피드백을 남긴다.
+- id: F-044
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: NFC 액세서리
+  description: 카드/스티커/링 NDEF URL로 교환 페이지 호출
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: NFC 액세서리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-045
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 단축코드 수신
+  description: lk.to + 6자리 또는 3단어 토큰
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 단축코드 수신 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-046
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 웹-웹 페어링
+  description: 양쪽 exchange 화면에서 서버 rendezvous
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 웹-웹 페어링 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-047
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 음향 페어링 실험
+  description: 수신페이지가 열린 경우 짧은 acoustic token A/B
+  priority: P3
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 음향 페어링 실험 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-048
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: QR 최종 폴백
+  description: 앞선 경로 실패/취소 시 자동 표시
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: QR 최종 폴백 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-049
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 교환 상호 동의
+  description: 양쪽 확인 또는 guest opt-in
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 교환 상호 동의 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-050
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 토큰 보안
+  description: 128bit 랜덤, TTL, 1회성/재사용 제한
+  priority: P0
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 토큰 보안 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-051
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 그룹 교환
+  description: 회의/네트워킹 그룹 링크로 다자 교환
+  priority: P1
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 그룹 교환 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-052
+  module: XCH
+  module_name: Adaptive Handoff & Exchange
+  title: 오프라인 큐
+  description: 앱 간 교환을 로컬 보관 후 재연결 시 동기화
+  priority: P2
+  service: handoff-service
+  frontend: exchange/share/receive
+  data: exchange_sessions, exchange_participants, exchange_attempts
+  api: /exchange/*
+  acceptance: 오프라인 큐 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-053
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 비회원 즉시 열람
+  description: 로그인 wall 없이 sender card 표시
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 비회원 즉시 열람 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-054
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 즉시 회신 CTA
+  description: 내 명함도 보내기 최상단 노출
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 즉시 회신 CTA 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-055
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 게스트 명함 촬영
+  description: 가입 전 카메라 촬영→OCR
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 게스트 명함 촬영 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-056
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 게스트 직접입력
+  description: 이름+회사+메일/전화 최소 필드
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 게스트 직접입력 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-057
+  module: GST
+  module_name: Guest Viral Conversion
+  title: Contact Picker 보조
+  description: 지원 브라우저에서 사용자 선택 기반 자동 입력
+  priority: P2
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: Contact Picker 보조 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-058
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 회신 동의
+  description: 상대에게 어떤 필드를 보내는지 확인
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 회신 동의 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-059
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 가입 후 Claim
+  description: 교환 완료 뒤 계정 생성 유도
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 가입 후 Claim 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-060
+  module: GST
+  module_name: Guest Viral Conversion
+  title: One Tap 가입
+  description: Google/Apple 연동, 이메일 OTP fallback
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: One Tap 가입 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-061
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 프로필 자동완성
+  description: 스캔된 카드로 Living Card 초안 생성
+  priority: P0
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 프로필 자동완성 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-062
+  module: GST
+  module_name: Guest Viral Conversion
+  title: Offer/Need 2문항
+  description: 가입 즉시 가치 데이터 최소 수집
+  priority: P1
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: Offer/Need 2문항 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-063
+  module: GST
+  module_name: Guest Viral Conversion
+  title: 첫 공유 유도
+  description: 가입 후 즉시 다음 사람 공유 CTA
+  priority: P1
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: 첫 공유 유도 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-064
+  module: GST
+  module_name: Guest Viral Conversion
+  title: Referral Attribution
+  description: 누가 누구를 유입했는지 privacy-safe 추적
+  priority: P1
+  service: growth-service
+  frontend: guest/landing/claim
+  data: guest_sessions, guest_claims, referrals
+  api: /guest/*
+  acceptance: Referral Attribution 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사
+    가능한 상태 변화와 사용자 피드백을 남긴다.
+- id: F-065
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: Contact 레코드
+  description: 사람 단위 canonical entity
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: Contact 레코드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-066
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: Business Card 레코드
+  description: 원본 명함 snapshot 분리
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: Business Card 레코드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-067
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: Encounter
+  description: 언제/어디서/어떤 경로로 만났는지
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: Encounter 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-068
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: Relationship
+  description: 사람-사람/사용자-연락처 관계 상태
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: Relationship 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-069
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 회사 엔터티
+  description: 회사명/도메인/산업/주소 정규화
+  priority: P1
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 회사 엔터티 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-070
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 태그
+  description: 사용자/팀 태그 다중 적용
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 태그 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-071
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 자연어 검색
+  description: 사람/회사/메모/회의/맥락 검색
+  priority: P1
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 자연어 검색 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-072
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 중복 병합
+  description: merge preview + undo
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 중복 병합 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-073
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 변경 이력
+  description: 직책/회사/연락처 변경 타임라인
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 변경 이력 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-074
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 관계 강도
+  description: 최근접촉/빈도/응답/공동프로젝트 신호
+  priority: P2
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 관계 강도 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-075
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 개인 메모
+  description: 상대에게 공개되지 않는 private note
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 개인 메모 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-076
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 공유 메모
+  description: Connection Room/팀 내 공유 범위 지정
+  priority: P1
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 공유 메모 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-077
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 담당자/소유자
+  description: 기업용 lead/contact ownership
+  priority: P1
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 담당자/소유자 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-078
+  module: REL
+  module_name: Contacts & Relationship Core
+  title: 연락 필요일
+  description: follow-up due date
+  priority: P0
+  service: relationship-service
+  frontend: contacts/search/timeline
+  data: contacts, companies, encounters, relationships, notes, tags
+  api: /contacts/*, /relationships/*
+  acceptance: 연락 필요일 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-079
+  module: MEET
+  module_name: Meeting Intelligence
+  title: Meeting Card
+  description: 만남 단위 목적/논의/결정/Next Action
+  priority: P0
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: Meeting Card 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-080
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 음성 메모
+  description: 명함 교환 직후 짧은 음성→구조화
+  priority: P0
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 음성 메모 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-081
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 회의 녹음
+  description: 명시적 동의 후 장시간 녹음
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 회의 녹음 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-082
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 전사
+  description: STT + 언어 감지
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 전사 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-083
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 화자분리
+  description: speaker diarization
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 화자분리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-084
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 회의 요약
+  description: 핵심/결정/쟁점/질문
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 회의 요약 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-085
+  module: MEET
+  module_name: Meeting Intelligence
+  title: To-do 추출
+  description: 담당자/기한/상태
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: To-do 추출 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-086
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 약속 추출
+  description: 보내기로 한 자료/행동 추적
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 약속 추출 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-087
+  module: MEET
+  module_name: Meeting Intelligence
+  title: 일정 후보
+  description: 회의에서 다음 일정 추출
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: 일정 후보 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-088
+  module: MEET
+  module_name: Meeting Intelligence
+  title: CRM 연결
+  description: 회의 산출물을 관계/딜에 연결
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: CRM 연결 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-089
+  module: MEET
+  module_name: Meeting Intelligence
+  title: Meeting Prep
+  description: 이전 관계/미완료 약속 30초 브리핑
+  priority: P1
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: Meeting Prep 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-090
+  module: MEET
+  module_name: Meeting Intelligence
+  title: Recording Consent
+  description: 지역/조직 정책별 동의 기록
+  priority: P0
+  service: meeting-service
+  frontend: meeting/recorder/minutes
+  data: meetings, recordings, transcripts, action_items
+  api: /meetings/*
+  acceptance: Recording Consent 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-091
+  module: AI
+  module_name: Relationship AI & Match
+  title: AI 프로필 요약
+  description: 10초/30초 소개 자동 생성
+  priority: P0
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: AI 프로필 요약 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-092
+  module: AI
+  module_name: Relationship AI & Match
+  title: Need↔Offer 매칭
+  description: 양측 구조화 데이터 기반 적합도
+  priority: P1
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Need↔Offer 매칭 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-093
+  module: AI
+  module_name: Relationship AI & Match
+  title: Match Explanation
+  description: 왜 맞는지 근거 필드 노출
+  priority: P1
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Match Explanation 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-094
+  module: AI
+  module_name: Relationship AI & Match
+  title: 관계 기억 질의
+  description: '"작년 코엑스에서 만난 병원 대표" 검색'
+  priority: P1
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: 관계 기억 질의 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-095
+  module: AI
+  module_name: Relationship AI & Match
+  title: Follow-up 추천
+  description: 연락 시점/채널/메시지 초안
+  priority: P0
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Follow-up 추천 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-096
+  module: AI
+  module_name: Relationship AI & Match
+  title: Pre-meeting Brief
+  description: 직전 회의/약속/변경사항 요약
+  priority: P1
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Pre-meeting Brief 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-097
+  module: AI
+  module_name: Relationship AI & Match
+  title: 소개 추천
+  description: 내 네트워크에서 소개 가능한 사람 탐색
+  priority: P1
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: 소개 추천 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-098
+  module: AI
+  module_name: Relationship AI & Match
+  title: 미접촉 위험
+  description: VIP/유망 관계 방치 탐지
+  priority: P2
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: 미접촉 위험 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-099
+  module: AI
+  module_name: Relationship AI & Match
+  title: Opportunity Detection
+  description: 회의·메모에서 사업기회 추출
+  priority: P2
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Opportunity Detection 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사
+    가능한 상태 변화와 사용자 피드백을 남긴다.
+- id: F-100
+  module: AI
+  module_name: Relationship AI & Match
+  title: 데이터 출처 표기
+  description: AI 추론 vs 사용자 입력 vs OCR 구분
+  priority: P0
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: 데이터 출처 표기 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-101
+  module: AI
+  module_name: Relationship AI & Match
+  title: 환각 방지
+  description: 구조화 필드는 근거 없는 생성 금지
+  priority: P0
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: 환각 방지 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-102
+  module: AI
+  module_name: Relationship AI & Match
+  title: Human Confirmation
+  description: 고위험 자동행동은 사용자 승인
+  priority: P0
+  service: ai-orchestrator
+  frontend: ai/search/match/brief
+  data: embeddings, ai_runs, match_scores, recommendations
+  api: /ai/*, /matches/*
+  acceptance: Human Confirmation 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-103
+  module: COM
+  module_name: Communication & Scheduling
+  title: 전화/메일/메시지 CTA
+  description: 기본 앱 딥링크
+  priority: P0
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 전화/메일/메시지 CTA 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-104
+  module: COM
+  module_name: Communication & Scheduling
+  title: AI 감사메일
+  description: 만남 직후 맥락 기반 초안
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: AI 감사메일 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-105
+  module: COM
+  module_name: Communication & Scheduling
+  title: 후속 메시지
+  description: SMS/메신저용 짧은 초안
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 후속 메시지 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-106
+  module: COM
+  module_name: Communication & Scheduling
+  title: 이메일 발송
+  description: 연동 계정 승인 후 발송/초안
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 이메일 발송 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-107
+  module: COM
+  module_name: Communication & Scheduling
+  title: 캘린더 예약
+  description: 사용자 availability 기반 미팅 예약
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 캘린더 예약 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-108
+  module: COM
+  module_name: Communication & Scheduling
+  title: 일정 승인
+  description: AI 일정 후보→사용자 승인 후 반영
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 일정 승인 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-109
+  module: COM
+  module_name: Communication & Scheduling
+  title: 리마인더
+  description: 후속 연락/약속/미팅 알림
+  priority: P0
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 리마인더 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-110
+  module: COM
+  module_name: Communication & Scheduling
+  title: Web Push
+  description: PWA 설치 사용자 알림
+  priority: P2
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: Web Push 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-111
+  module: COM
+  module_name: Communication & Scheduling
+  title: 템플릿
+  description: 개인/팀 메시지 템플릿
+  priority: P1
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 템플릿 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-112
+  module: COM
+  module_name: Communication & Scheduling
+  title: 언어 번역
+  description: 카드/메시지 다국어 변환
+  priority: P2
+  service: communication-service
+  frontend: followup/calendar
+  data: messages, followups, calendar_candidates, notifications
+  api: /followups/*, /calendar/*
+  acceptance: 언어 번역 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-113
+  module: INT
+  module_name: Integrations & Export
+  title: Google Contacts
+  description: People API create/update + mapping
+  priority: P0
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Google Contacts 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-114
+  module: INT
+  module_name: Integrations & Export
+  title: Google OAuth
+  description: 최소 scope/재인증 처리
+  priority: P0
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Google OAuth 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-115
+  module: INT
+  module_name: Integrations & Export
+  title: Gmail
+  description: 초안/발송 선택 연동
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Gmail 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-116
+  module: INT
+  module_name: Integrations & Export
+  title: Google Drive
+  description: 파일/보고서 저장
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Google Drive 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-117
+  module: INT
+  module_name: Integrations & Export
+  title: Google Sheets
+  description: 연락처/리드 시트 출력
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Google Sheets 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-118
+  module: INT
+  module_name: Integrations & Export
+  title: Google Calendar
+  description: 미팅 생성/업데이트
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Google Calendar 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-119
+  module: INT
+  module_name: Integrations & Export
+  title: Outlook/Microsoft
+  description: 연락처/메일/캘린더 확장
+  priority: P2
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Outlook/Microsoft 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-120
+  module: INT
+  module_name: Integrations & Export
+  title: Salesforce
+  description: Lead/Contact sync
+  priority: P2
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Salesforce 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-121
+  module: INT
+  module_name: Integrations & Export
+  title: HubSpot
+  description: Contact/Company/Deal sync
+  priority: P2
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: HubSpot 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-122
+  module: INT
+  module_name: Integrations & Export
+  title: Dynamics
+  description: Contact/Lead sync
+  priority: P2
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Dynamics 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-123
+  module: INT
+  module_name: Integrations & Export
+  title: Webhook/Zapier/Make
+  description: 외부 자동화 연결
+  priority: P2
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Webhook/Zapier/Make 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사
+    가능한 상태 변화와 사용자 피드백을 남긴다.
+- id: F-124
+  module: INT
+  module_name: Integrations & Export
+  title: Excel/CSV
+  description: 선택 필드 대량 내보내기
+  priority: P0
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Excel/CSV 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-125
+  module: INT
+  module_name: Integrations & Export
+  title: Word DOCX
+  description: 연락처/회의/관계 보고서
+  priority: P0
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Word DOCX 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-126
+  module: INT
+  module_name: Integrations & Export
+  title: TXT/PDF/vCard
+  description: 범용 출력
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: TXT/PDF/vCard 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-127
+  module: INT
+  module_name: Integrations & Export
+  title: 필드 매핑
+  description: 조직별 외부 시스템 custom mapping
+  priority: P1
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: 필드 매핑 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-128
+  module: INT
+  module_name: Integrations & Export
+  title: Sync Journal
+  description: 외부 ID/etag/오류/재시도 이력
+  priority: P0
+  service: integration-service
+  frontend: settings/integrations/export
+  data: integration_accounts, sync_jobs, external_mappings, exports
+  api: /integrations/*, /exports/*
+  acceptance: Sync Journal 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-129
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 조직/워크스페이스
+  description: tenant isolation
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 조직/워크스페이스 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-130
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 역할 권한
+  description: Owner/Admin/Manager/Member/Viewer
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 역할 권한 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-131
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 팀 주소록
+  description: 개인/팀/조직 scope 분리
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 팀 주소록 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-132
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 회사 소유 리드
+  description: 직원 이직 후 조직 데이터 유지 정책
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 회사 소유 리드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-133
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 관계 그래프
+  description: 조직 전체 연결 경로 시각화
+  priority: P2
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 관계 그래프 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-134
+  module: ENT
+  module_name: Enterprise & Admin
+  title: Who Knows Whom
+  description: 목표 인물/회사 내부 소개 경로 탐색
+  priority: P2
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: Who Knows Whom 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-135
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 활동 대시보드
+  description: 스캔/교환/미팅/후속/전환
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 활동 대시보드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-136
+  module: ENT
+  module_name: Enterprise & Admin
+  title: Data Retention
+  description: 팀별 보존/삭제 정책
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: Data Retention 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-137
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 감사로그
+  description: 관리/수정/내보내기/권한 변경
+  priority: P0
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 감사로그 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-138
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 브랜딩
+  description: 회사 카드 템플릿/도메인
+  priority: P1
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 브랜딩 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-139
+  module: ENT
+  module_name: Enterprise & Admin
+  title: 정책 강제
+  description: 필수필드/CRM sync/녹음정책
+  priority: P2
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: 정책 강제 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-140
+  module: ENT
+  module_name: Enterprise & Admin
+  title: API 키
+  description: 서버-서버 통합
+  priority: P2
+  service: enterprise-service
+  frontend: admin/org/graph
+  data: organizations, org_members, roles, audit_logs, policies
+  api: /orgs/*, /admin/*
+  acceptance: API 키 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-141
+  module: EVT
+  module_name: Events & Networking
+  title: 행사 공간
+  description: 이벤트 생성/코드/브랜딩
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 행사 공간 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-142
+  module: EVT
+  module_name: Events & Networking
+  title: 참가자 등록
+  description: CSV/API/사전가입
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 참가자 등록 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-143
+  module: EVT
+  module_name: Events & Networking
+  title: 현장 교환
+  description: 행사별 Encounter 자동 태깅
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 현장 교환 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-144
+  module: EVT
+  module_name: Events & Networking
+  title: 배지 OCR
+  description: 범용 배지 스캔
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 배지 OCR 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-145
+  module: EVT
+  module_name: Events & Networking
+  title: AI Match List
+  description: 참가자 중 사업연관도 순 추천
+  priority: P2
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: AI Match List 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-146
+  module: EVT
+  module_name: Events & Networking
+  title: 미팅 요청
+  description: 현장 1:1 일정 생성
+  priority: P2
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 미팅 요청 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-147
+  module: EVT
+  module_name: Events & Networking
+  title: 부스 Lead Flow
+  description: qualifier/tag/owner 자동화
+  priority: P2
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 부스 Lead Flow 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-148
+  module: EVT
+  module_name: Events & Networking
+  title: 그룹 교환
+  description: 테이블/세션 참가자 일괄 연결
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 그룹 교환 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-149
+  module: EVT
+  module_name: Events & Networking
+  title: Event ROI
+  description: 리드→후속→기회→매출 추적
+  priority: P2
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: Event ROI 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-150
+  module: EVT
+  module_name: Events & Networking
+  title: 오프라인 모드
+  description: 현장 네트워크 불안정 대응
+  priority: P1
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 오프라인 모드 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-151
+  module: EVT
+  module_name: Events & Networking
+  title: 주최자 API
+  description: 행사 시스템/배지 공급자 연동
+  priority: P2
+  service: event-service
+  frontend: events/checkin/networking
+  data: events, event_attendees, event_matches, lead_flows
+  api: /events/*
+  acceptance: 주최자 API 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-152
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: AI 소개 후보
+  description: 양측 Need/Offer 및 관계 강도 기반
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: AI 소개 후보 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-153
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: 소개 동의
+  description: 소개자/양측 동의 워크플로
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: 소개 동의 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-154
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: Connection Room
+  description: 소개 목적/참가자/자료/다음행동
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: Connection Room 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-155
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: 3자 소개 메시지
+  description: AI 초안+수정
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: 3자 소개 메시지 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-156
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: 공유 파일
+  description: 소개서/제안서/링크
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: 공유 파일 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-157
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: 미팅 예약
+  description: Room 내 공동 일정
+  priority: P1
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: 미팅 예약 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-158
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: Room 요약
+  description: 진행 상태/결정/미완료 작업
+  priority: P2
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: Room 요약 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-159
+  module: INTRO
+  module_name: Introductions & Connection Rooms
+  title: 소개 성과
+  description: 소개→미팅→기회 전환 추적
+  priority: P2
+  service: connection-service
+  frontend: introductions/rooms
+  data: introductions, connection_rooms, room_members, room_items
+  api: /introductions/*, /rooms/*
+  acceptance: 소개 성과 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-160
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 필드 단위 ACL
+  description: 프로필 필드별 audience policy
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 필드 단위 ACL 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-161
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: Consent Ledger
+  description: 교환/연동/녹음/마케팅 동의 버전 기록
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: Consent Ledger 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-162
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 데이터 최소화
+  description: 토큰/로그에 PII 최소화
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 데이터 최소화 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-163
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 암호화
+  description: TLS + at-rest KMS
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 암호화 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-164
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 테넌트 격리
+  description: row/tenant policy + authorization
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 테넌트 격리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-165
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 비밀관리
+  description: KMS/secret manager, 코드 내 키 금지
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 비밀관리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-166
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 감사 추적
+  description: PII export/read/admin action 로깅
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 감사 추적 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-167
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 삭제/탈퇴
+  description: 사용자/조직 정책 기반 삭제 파이프라인
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 삭제/탈퇴 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-168
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 데이터 이동성
+  description: JSON/CSV/vCard export
+  priority: P1
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 데이터 이동성 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-169
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: 녹음 준수
+  description: 동의 UI, 정책 플래그, 기록 보존
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: 녹음 준수 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-170
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: Rate Limit
+  description: 교환/OTP/OCR/API abuse 방지
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: Rate Limit 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-171
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: Anti-enumeration
+  description: 짧은코드 추측 방지/lockout
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: Anti-enumeration 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.
+- id: F-172
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: Malware Scan
+  description: 업로드 파일 스캔
+  priority: P1
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: Malware Scan 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-173
+  module: SEC
+  module_name: Privacy, Security & Compliance
+  title: DLP/PII 로그 마스킹
+  description: 관찰성 시스템 비식별화
+  priority: P0
+  service: security-core
+  frontend: privacy/permissions
+  data: consent_records, access_policies, audit_logs, deletion_jobs
+  api: /consents/*, /privacy/*
+  acceptance: DLP/PII 로그 마스킹 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-174
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: PWA
+  description: manifest/service worker/installability
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: PWA 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-175
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: Responsive UX
+  description: 모바일 우선, 데스크톱 관리화면
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: Responsive UX 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-176
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 접근성
+  description: WCAG 2.2 AA 목표
+  priority: P1
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 접근성 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-177
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 다국어
+  description: ko/en 우선, i18n 구조
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 다국어 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-178
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 오프라인 캡처
+  description: 촬영/메모 로컬 암호화 큐
+  priority: P1
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 오프라인 캡처 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-179
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 재동기화
+  description: idempotent sync/retry/conflict resolution
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 재동기화 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-180
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 관찰성
+  description: logs/metrics/traces/error tracking
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 관찰성 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-181
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: Feature Flag
+  description: 점진 배포/A-B test
+  priority: P1
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: Feature Flag 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태
+    변화와 사용자 피드백을 남긴다.
+- id: F-182
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 모바일 딥링크
+  description: Universal Links/App Links
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 모바일 딥링크 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-183
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: CI/CD
+  description: lint/test/security/migration/deploy gate
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: CI/CD 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-184
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 백업/복구
+  description: PITR + object versioning
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 백업/복구 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-185
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 성능예산
+  description: LCP/INP/API latency/OCR SLA
+  priority: P0
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 성능예산 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-186
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 재해복구
+  description: RPO/RTO 정의
+  priority: P1
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 재해복구 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-187
+  module: OPS
+  module_name: Platform, Offline, Quality & Ops
+  title: 비용계측
+  description: AI/OCR/STT/스토리지 per-tenant cost
+  priority: P1
+  service: platform-core
+  frontend: shell/offline/status
+  data: sync_queue, feature_flags, telemetry_refs
+  api: /sync/*, /health
+  acceptance: 비용계측 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-188
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 제품 분석
+  description: activation/exchange/claim/retention funnel
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 제품 분석 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-189
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 바이럴 계수
+  description: recipient→claim→share cohort
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 바이럴 계수 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-190
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 개인 플랜
+  description: Free/Pro entitlements
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 개인 플랜 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-191
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 기업 플랜
+  description: seat/workspace/event entitlements
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 기업 플랜 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-192
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 사용량 계량
+  description: OCR/STT/AI/export/events
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 사용량 계량 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-193
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 결제
+  description: 국내/글로벌 PG adapter 구조
+  priority: P2
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 결제 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자 피드백을
+    남긴다.
+- id: F-194
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 구독 관리
+  description: upgrade/downgrade/cancel/grace
+  priority: P2
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 구독 관리 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와 사용자
+    피드백을 남긴다.
+- id: F-195
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 관리자 매출지표
+  description: MRR/ARR/churn/ARPU
+  priority: P2
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 관리자 매출지표 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-196
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: 실험 프레임워크
+  description: handoff channel/CTA A-B test
+  priority: P1
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: 실험 프레임워크 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한 상태 변화와
+    사용자 피드백을 남긴다.
+- id: F-197
+  module: BIZ
+  module_name: Analytics, Billing & Growth
+  title: Referral Reward
+  description: 법무 검토 후 선택적 보상
+  priority: P3
+  service: business-service
+  frontend: plans/usage/analytics
+  data: subscriptions, usage_ledger, experiments, attribution_events
+  api: /billing/*, /analytics/*
+  acceptance: Referral Reward 기능이 정상/오류/권한거부/오프라인 또는 재시도 경로에서 정의된 결과를 만들며, 감사 가능한
+    상태 변화와 사용자 피드백을 남긴다.

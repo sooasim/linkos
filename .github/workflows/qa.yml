@@ -1,0 +1,65 @@
+name: QA
+# Generated QA suites on every push (fast: ~30k deterministic cases, < 1 min of test time) and the
+# 100-environment browser matrix nightly / on demand, sharded 4 ways (docs/QA_MATRIX.md).
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 18 * * *" # 03:17 KST
+  workflow_dispatch:
+jobs:
+  qa:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: linkos, POSTGRES_PASSWORD: linkos, POSTGRES_DB: linkos_test_q }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U linkos" --health-interval 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://linkos:linkos@localhost:5432/linkos_test_q
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - name: Generated QA (domain property/table suites + API authz/validation/privacy table)
+        run: pnpm qa
+
+  matrix:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: linkos, POSTGRES_PASSWORD: linkos, POSTGRES_DB: linkos_test_q }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U linkos" --health-interval 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://linkos:linkos@localhost:5432/linkos_test_q
+      AUTH_SECRET: test
+      MATRIX_WORKERS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: 100-environment matrix (shard ${{ matrix.shard }}/4)
+        run: pnpm matrix --shard=${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "matrix-shard-${{ matrix.shard }}", path: test-results }

@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - services/*
+  # Expo/React Native app has its own npm install (native toolchain deps would bloat/destabilise the root install).
+  # It consumes @linkos/domain by path (tsconfig paths + metro watchFolders). Typecheck: cd apps/mobile && npx tsc --noEmit
+  - "!apps/mobile"
+  # SwiftUI App Clip sources (Xcode project), not a JS package
+  - "!apps/ios-app-clip"
+onlyBuiltDependencies:
+  - sharp
+  - esbuild
+  - unrs-resolver

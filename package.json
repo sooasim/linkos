@@ -1,0 +1,39 @@
+{
+  "name": "linkos",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @linkos/web dev",
+    "build": "pnpm --filter @linkos/web build",
+    "start": "pnpm --filter @linkos/web start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "e2e": "playwright test",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d db",
+    "db:migrate": "tsx services/api/src/migrate.ts",
+    "db:seed": "tsx db/seeds/seed.ts",
+    "worker": "tsx services/api/src/worker.ts",
+    "traceability": "node scripts/traceability.mjs",
+    "scenarios": "playwright test -c playwright.scenarios.config.ts",
+    "loadtest": "node scripts/loadtest.mjs",
+    "restore-drill": "bash scripts/restore-drill.sh",
+    "dr:backup": "bash scripts/dr/dr-backup-copy.sh",
+    "dr:verify": "bash scripts/dr/dr-restore-verify.sh",
+    "qa": "pnpm --filter @linkos/domain exec vitest run test/qa && pnpm --filter @linkos/api exec vitest run test/qa-api.integration.test.ts",
+    "matrix": "playwright test -c playwright.matrix.config.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.0",
+    "typescript": "~5.9.3",
+    "yaml": "^2.8.0"
+  }
+}

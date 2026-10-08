@@ -1,0 +1,29 @@
+apps/
+  web/                    # Next.js PWA, responsive landing/admin/CRM
+  mobile/                 # React Native iOS/Android main app
+  ios-app-clip/           # SwiftUI App Clip micro-experience
+services/
+  api/                     # TypeScript modular API/BFF
+  ai-worker/               # Python FastAPI/Celery or queue workers
+packages/
+  ui/                      # design system
+  contracts/               # OpenAPI-generated DTO/types
+  domain/                  # shared enums/state machines
+  auth/                    # client auth helpers
+  telemetry/               # logging/tracing adapters
+infra/
+  terraform/               # cloud resources
+  kubernetes-or-ecs/       # deployment manifests
+  observability/
+  policies/
+db/
+  migrations/
+  seeds/
+tests/
+  e2e/
+  contract/
+  load/
+  security/
+docs/
+  TRACEABILITY.md
+  ADR/

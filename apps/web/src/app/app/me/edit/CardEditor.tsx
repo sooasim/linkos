@@ -333,7 +333,9 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
 
         <aside className="lg:sticky lg:top-10 lg:self-start">
           <p className="eyebrow mb-3">미리보기</p>
-          <CardFace card={{ ...p, fields: previewFields, design: designFromState(design) }} />
+          <div data-testid="card-preview">
+            <CardFace card={{ ...p, fields: previewFields, design: designFromState(design) }} />
+          </div>
           {design.template && <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">템플릿 · {design.template.name.ko}</p>}
           <div className="mt-4">
             <OfferNeed offers={p.offers} needs={p.needs} />

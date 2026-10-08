@@ -105,7 +105,7 @@ test("X-008 editor 템플릿 tab → save → public profile renders the templat
   await expect(gallery).toBeVisible({ timeout: 15_000 });
   await gallery.getByLabel("템플릿 검색").fill("blueprint");
   await gallery.getByTestId("template-blueprint").click();
-  await expect(page.locator('aside [data-template="blueprint"]')).toBeVisible();
+  await expect(page.getByTestId("card-preview").locator('[data-template="blueprint"]')).toBeVisible();
 
   // field icon via keyboard in the emoji tab
   await page.getByTestId("edit-tab-info").click();

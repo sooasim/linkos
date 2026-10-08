@@ -8,11 +8,11 @@
 
 | 우선순위 | 전체 | ✅ T | 🟢 I | 🟡 P | ⬜ N |
 |---|---|---|---|---|---|
-| P0 | 81 | 76 | 4 | 1 | 0 |
+| P0 | 81 | 77 | 3 | 1 | 0 |
 | P1 | 85 | 81 | 3 | 1 | 0 |
 | P2 | 29 | 28 | 1 | 0 | 0 |
 | P3 | 2 | 2 | 0 | 0 | 0 |
-| 합계 | 197 | 187 | 8 | 2 | 0 |
+| 합계 | 197 | 188 | 7 | 2 | 0 |
 
 ## IAM · Identity & Onboarding
 
@@ -40,7 +40,7 @@
 | F-016 | P0 | AI 필드 구조화 | ✅ 구현+자동테스트 | /app/scan | /capture/cards, /capture/parse | domain/ocrParser | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts | 규칙 기반 구조화(원문 외 값 생성 금지) |
 | F-017 | P0 | 신뢰도 표시 | ✅ 구현+자동테스트 | ReviewFields | /capture/cards | domain/ocrParser | packages/domain/test/domain.test.ts | 필드별 confidence + bbox |
 | F-018 | P0 | 저신뢰 검토 | ✅ 구현+자동테스트 | ReviewFields |  | domain.needsReview | packages/domain/test/domain.test.ts |  |
-| F-019 | P0 | 명함 원본 보관 | ✅ 구현+자동테스트 | /app/scan | /files/{id} | lib/storage.ts, modules/files.ts (파일별 AES-256-GCM) | services/api/test/track-c.integration.test.ts | 로컬/S3 호환, 서명 URL 5~10분, 보존기간 후 삭제. 게스트 플로우는 업로드 안 함 |
+| F-019 | P0 | 명함 원본 보관 | ✅ 구현+자동테스트 | /app/scan, /app/people/[id] (명함 원본 패널) | /files/{id} | lib/storage.ts, modules/files.ts (파일별 AES-256-GCM) | services/api/test/track-c.integration.test.ts, tests/e2e/people-gaps.spec.ts | 로컬/S3 호환, 서명 URL 5~10분, 보존기간 후 삭제. 게스트 플로우는 업로드 안 함 |
 | F-020 | P0 | 중복 후보 탐지 | ✅ 구현+자동테스트 | /app/scan, /app/people/[id] | /contacts/duplicates | domain/duplicate | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts |  |
 | F-021 | P0 | 정보 병합 | ✅ 구현+자동테스트 | /app/people/[id] | /contacts/{id}/merge, /merge/undo | relationship.mergeContact | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts | 필드별 선택 + undo |
 ## CARD · Living Business Card
@@ -56,7 +56,7 @@
 | F-028 | P1 | Asset | ✅ 구현+자동테스트 | CardEditor | /profiles | card (deep.assets) | services/api/test/audit.integration.test.ts |  |
 | F-029 | P1 | Network | ✅ 구현+자동테스트 | CardEditor | /profiles | card (deep.network) | services/api/test/audit.integration.test.ts |  |
 | F-030 | P1 | Project | ✅ 구현+자동테스트 | CardEditor | /profiles | card (deep.projects) | services/api/test/audit.integration.test.ts |  |
-| F-031 | P1 | 프로필 변형 | ✅ 구현+자동테스트 | /x/[token] |  | living.adaptCardForSession | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 세션 audience 에 따라 변형 자동 선택 |
+| F-031 | P1 | 프로필 변형 | ✅ 구현+자동테스트 | /x/[token], /app/me/edit (상대별 미리보기) |  | living.adaptCardForSession | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts, tests/e2e/settings-gaps.spec.ts | 세션 audience 에 따라 변형 자동 선택 |
 | F-032 | P2 | AI Adaptive Card | ✅ 구현+자동테스트 | /app/me/edit | /profiles/{id}/adaptive, /profiles/{id}/adaptive/confirm | living.adaptiveSuggest | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 규칙 경로 테스트; Claude 경로는 미검증 |
 | F-033 | P1 | Living Update | ✅ 구현+자동테스트 | /app/inbox | /living-updates | living.fanOutLivingUpdate | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 연결 상대에게 갱신 알림, 수락 시 provenance=sync |
 | F-034 | P0 | 공개범위 | ✅ 구현+자동테스트 | CardEditor | /p/{slug}, /exchange/sessions/{token} | domain/acl | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-014~S-016,S-037 |  |
@@ -96,32 +96,32 @@
 | F-060 | P0 | One Tap 가입 | ✅ 구현+자동테스트 | /login, /claim | /auth/google/onetap, /auth/apple, /auth/apple/callback | modules/identity.ts, modules/apple.ts | services/api/test/track-e.integration.test.ts, services/api/test/apple.integration.test.ts | Google One Tap + Sign in with Apple(form_post, nonce, ES256 client secret, 신규 가입 동의 단계). 가짜 서버로 검증 — 실제 Apple/Google 계정은 스테이징 수동 확인 필요 |
 | F-061 | P0 | 프로필 자동완성 | ✅ 구현+자동테스트 | /claim | /guest/claim | handoff.claimGuest | services/api/test/api.integration.test.ts | 초안으로 Living Card 자동 생성 |
 | F-062 | P1 | Offer/Need 2문항 | ✅ 구현+자동테스트 | GuestFlow, CardEditor |  |  | services/api/test/api.integration.test.ts |  |
-| F-063 | P1 | 첫 공유 유도 | ✅ 구현+자동테스트 | ExchangeConsole '다음 사람과 교환' |  |  | tests/e2e/audit-extras.spec.ts |  |
-| F-064 | P1 | Referral Attribution | ✅ 구현+자동테스트 | /r/[code], /app/settings | /referrals | modules/referral.ts | services/api/test/track-a.integration.test.ts | Claim·조직초대·추천링크 귀속(신규 계정만). Google 로그인 콜백 미연결 |
+| F-063 | P1 | 첫 공유 유도 | ✅ 구현+자동테스트 | ExchangeConsole '다음 사람과 교환', /app?welcome=1 (첫 공유 카드) |  |  | tests/e2e/audit-extras.spec.ts, tests/e2e/people-gaps.spec.ts |  |
+| F-064 | P1 | Referral Attribution | ✅ 구현+자동테스트 | /r/[code], /app/settings | /referrals | modules/referral.ts | services/api/test/track-a.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts | Claim·조직초대·추천링크 귀속(신규 계정만). Google 로그인 콜백 미연결 |
 ## REL · Contacts & Relationship Core
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| F-065 | P0 | Contact 레코드 | ✅ 구현+자동테스트 | /app/people | /contacts | relationship | services/api/test/api.integration.test.ts |  |
-| F-066 | P0 | Business Card 레코드 | ✅ 구현+자동테스트 |  | business_cards | capture | services/api/test/api.integration.test.ts |  |
-| F-067 | P0 | Encounter | ✅ 구현+자동테스트 | 타임라인 | /contacts/{id}/encounters | relationship | services/api/test/api.integration.test.ts |  |
+| F-065 | P0 | Contact 레코드 | ✅ 구현+자동테스트 | /app/people, /app/people (직접 추가) | /contacts | relationship | services/api/test/api.integration.test.ts, tests/e2e/people-gaps.spec.ts |  |
+| F-066 | P0 | Business Card 레코드 | ✅ 구현+자동테스트 | /app/people/[id] (명함 원본) | business_cards | capture | services/api/test/api.integration.test.ts, tests/e2e/people-gaps.spec.ts |  |
+| F-067 | P0 | Encounter | ✅ 구현+자동테스트 | 타임라인, /app/people/[id] (만남 기록 폼) | /contacts/{id}/encounters | relationship | services/api/test/api.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts |  |
 | F-068 | P0 | Relationship | ✅ 구현+자동테스트 |  |  | relationship | services/api/test/api.integration.test.ts |  |
 | F-069 | P1 | 회사 엔터티 | ✅ 구현+자동테스트 | /app/people (회사별 그룹) |  | relationship.upsertCompany | services/api/test/audit.integration.test.ts |  |
-| F-070 | P0 | 태그 | ✅ 구현+자동테스트 | /app/people, /app/scan | /contacts (tags) | relationship | services/api/test/audit.integration.test.ts |  |
+| F-070 | P0 | 태그 | ✅ 구현+자동테스트 | /app/people, /app/scan, /app/people/[id] (태그 편집), /app/people (태그 필터) | /contacts (tags) | relationship | services/api/test/audit.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts |  |
 | F-071 | P1 | 자연어 검색 | ✅ 구현+자동테스트 | /app/ai | /ai/search | ai.relationshipSearch | services/api/test/api.integration.test.ts | 어휘+기간 해석. 임베딩 검색 미구현 |
-| F-072 | P0 | 중복 병합 | ✅ 구현+자동테스트 | /app/people/[id] | /contacts/{id}/merge | relationship | services/api/test/api.integration.test.ts |  |
+| F-072 | P0 | 중복 병합 | ✅ 구현+자동테스트 | /app/people/[id], /app/people (직접 추가 중복 확인) | /contacts/{id}/merge | relationship | services/api/test/api.integration.test.ts, tests/e2e/people-gaps.spec.ts |  |
 | F-073 | P0 | 변경 이력 | ✅ 구현+자동테스트 | /app/people/[id] 타임라인 | /contacts/{id} | relationship (contact_field_history) | services/api/test/assist.integration.test.ts | 필드 단위 이전값→새값 |
 | F-074 | P2 | 관계 강도 | ✅ 구현+자동테스트 | /app/people/[id] | /contacts/{id}/strength | packages/domain/src/strength.ts | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts | 구성 요인 저장, 워커 재계산 |
 | F-075 | P0 | 개인 메모 | ✅ 구현+자동테스트 | /app/people/[id] | /contacts/{id}/notes | relationship | services/api/test/api.integration.test.ts | 항상 private |
-| F-076 | P1 | 공유 메모 | ✅ 구현+자동테스트 | /app/people/[id] | /orgs/{id}/contacts/{contactId}/notes, /orgs/{id}/notes/{noteId} | modules/org.ts | services/api/test/track-a.integration.test.ts | 팀 메모 — 개인 메모는 팀 뷰·이관에 절대 포함되지 않음을 테스트 |
+| F-076 | P1 | 공유 메모 | ✅ 구현+자동테스트 | /app/people/[id], /app/team (팀 메모 삭제) | /orgs/{id}/contacts/{contactId}/notes, /orgs/{id}/notes/{noteId} | modules/org.ts | services/api/test/track-a.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 팀 메모 — 개인 메모는 팀 뷰·이관에 절대 포함되지 않음을 테스트 |
 | F-077 | P1 | 담당자/소유자 | ✅ 구현+자동테스트 | /app/team | /orgs/{id}/contacts/{contactId}/assign | modules/org.ts | services/api/test/track-a.integration.test.ts | 담당자 지정 시 관계·만남 이력 이관 |
-| F-078 | P0 | 연락 필요일 | ✅ 구현+자동테스트 | /app/people | /followups | meeting.createFollowup | services/api/test/audit.integration.test.ts | relationships.next_followup_at |
+| F-078 | P0 | 연락 필요일 | ✅ 구현+자동테스트 | /app/people, /app/people/[id] (후속 할 일 추가·기한) | /followups | meeting.createFollowup | services/api/test/audit.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | relationships.next_followup_at |
 ## MEET · Meeting Intelligence
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
 | F-079 | P0 | Meeting Card | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings | meeting | services/api/test/api.integration.test.ts |  |
-| F-080 | P0 | 음성 메모 | 🟢 구현 | /app/people/[id] 마이크 버튼 | /contacts/{id}/notes (kind=voice) | Web Speech API |  | 기기 음성인식 지원 브라우저에서 받아쓰기; 오디오 서버 미전송 |
+| F-080 | P0 | 음성 메모 | ✅ 구현+자동테스트 | /app/people/[id] 마이크 버튼, /app/exchange (교환 직후 음성 메모 CTA) → /app/people/[id]#note | /contacts/{id}/notes (kind=voice) | Web Speech API | tests/e2e/exchange-events-gaps.spec.ts | 기기 음성인식 지원 브라우저에서 받아쓰기; 오디오 서버 미전송 |
 | F-081 | P1 | 회의 녹음 | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/recordings, /meetings/{id}/recordings/{rid}/parts/{seq}, /meetings/{id}/recordings/{rid}/finalize | modules/recording.ts | services/api/test/track-c.integration.test.ts, tests/e2e/meeting-recording.spec.ts | 동의 후에만 녹음, 50초 단위 업로드, 동의 철회 시 차단 |
 | F-082 | P1 | 전사 | ✅ 구현+자동테스트 | /app/meetings/[id] |  | lib/stt.ts (Google STT v2 / Whisper) | services/api/test/track-c.integration.test.ts | 가짜 STT 서버로 검증. 파트 간 화자 라벨 일관성 없음 |
 | F-083 | P1 | 화자분리 | ✅ 구현+자동테스트 | /app/meetings/[id] |  | lib/stt.ts + worker | services/api/test/track-c.integration.test.ts | 화자·타임스탬프·언어, meeting.transcript.ready |
@@ -131,19 +131,19 @@
 | F-087 | P1 | 일정 후보 | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/schedule | packages/domain/src/scheduling.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | 한/영 규칙 파서(날짜 없으면 후보 없음), LLM은 폴백 |
 | F-088 | P1 | CRM 연결 | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/crm | modules/crm.ts | services/api/test/track-b.integration.test.ts | Salesforce Task/HubSpot Note/Dynamics annotation |
 | F-089 | P1 | Meeting Prep | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/brief | meeting.getMeetingBrief | services/api/test/api.integration.test.ts |  |
-| F-090 | P0 | Recording Consent | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/consent | domain/consent | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-074~S-076 |  |
+| F-090 | P0 | Recording Consent | ✅ 구현+자동테스트 | /app/meetings/[id], /app/meetings (녹음 동의 정책 선택) | /meetings/{id}/consent | domain/consent | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-074~S-076, tests/e2e/exchange-events-gaps.spec.ts, services/api/test/exchange-events-gaps.integration.test.ts, packages/domain/test/exchangeEventsGaps.test.ts |  |
 ## AI · Relationship AI & Match
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
 | F-091 | P0 | AI 프로필 요약 | ✅ 구현+자동테스트 | /app/people/[id] 요약 | /profiles/{id}/summary | assist | services/api/test/assist.integration.test.ts | Claude 또는 규칙 요약, 확인 라벨 |
-| F-092 | P1 | Need↔Offer 매칭 | ✅ 구현+자동테스트 | /app/ai | /matches | domain/match | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts |  |
+| F-092 | P1 | Need↔Offer 매칭 | ✅ 구현+자동테스트 | /app/ai | /matches | domain/match | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, packages/domain/test/match-privacy.test.ts |  |
 | F-093 | P1 | Match Explanation | ✅ 구현+자동테스트 | /app/ai | /matches | domain/match (reasons) | packages/domain/test/domain.test.ts |  |
 | F-094 | P1 | 관계 기억 질의 | ✅ 구현+자동테스트 | /app/ai | /ai/search | ai | services/api/test/api.integration.test.ts |  |
 | F-095 | P0 | Follow-up 추천 | ✅ 구현+자동테스트 | /app, /app/people/[id] | /followups | handoff (thank-you draft) | services/api/test/api.integration.test.ts | 초안만, 자동 발송 없음 |
 | F-096 | P1 | Pre-meeting Brief | ✅ 구현+자동테스트 | /app/meetings/[id] | /meetings/{id}/brief | meeting | services/api/test/api.integration.test.ts |  |
 | F-097 | P1 | 소개 추천 | ✅ 구현+자동테스트 | /app/intros | /introductions/suggested, /ai/intro-candidates | modules/network.ts | services/api/test/track-a.integration.test.ts | Need↔Offer+강도, 근거·경로, ai_inferred 라벨 |
-| F-098 | P2 | 미접촉 위험 | ✅ 구현+자동테스트 | /app/ai | /relationships/cooling | modules/network.ts | services/api/test/track-a.integration.test.ts | VIP·평소 연락 주기 기반 냉각 감지 |
+| F-098 | P2 | 미접촉 위험 | ✅ 구현+자동테스트 | /app/ai, /app (AI 추천 블록) | /relationships/cooling | modules/network.ts | services/api/test/track-a.integration.test.ts, tests/e2e/people-gaps.spec.ts | VIP·평소 연락 주기 기반 냉각 감지 |
 | F-099 | P2 | Opportunity Detection | ✅ 구현+자동테스트 | /app/ai | /ai/opportunities | modules/network.ts | services/api/test/track-a.integration.test.ts | 규칙·키워드 기반(LLM 아님) |
 | F-100 | P0 | 데이터 출처 표기 | ✅ 구현+자동테스트 | ReviewFields, PersonDetail |  | contacts.field_provenance | services/api/test/api.integration.test.ts |  |
 | F-101 | P0 | 환각 방지 | ✅ 구현+자동테스트 |  |  | domain/ocrParser.assertGrounded | packages/domain/test/domain.test.ts |  |
@@ -155,11 +155,11 @@
 | F-103 | P0 | 전화/메일/메시지 CTA | ✅ 구현+자동테스트 | LivingCard, PersonDetail |  |  | tests/e2e/audit-extras.spec.ts |  |
 | F-104 | P1 | AI 감사메일 | ✅ 구현+자동테스트 | PersonDetail 후속 메일 초안 | /contacts/{id}/draft | assist | services/api/test/assist.integration.test.ts | 자동 발송 없음 |
 | F-105 | P1 | 후속 메시지 | ✅ 구현+자동테스트 | PersonDetail (안부/자료 전달 초안, mailto) | /contacts/{id}/draft | assist | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts |  |
-| F-106 | P1 | 이메일 발송 | ✅ 구현+자동테스트 | /app/messages | /messages/{id}/send | modules/comms.ts | services/api/test/track-b.integration.test.ts | approved:true 필수, Gmail→Outlook→SMTP, 중복 발송 방지, 감사로그(주소 원문 없음) |
+| F-106 | P1 | 이메일 발송 | ✅ 구현+자동테스트 | /app/messages, /app/messages (초안 삭제) | /messages/{id}/send | modules/comms.ts | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | approved:true 필수, Gmail→Outlook→SMTP, 중복 발송 방지, 감사로그(주소 원문 없음) |
 | F-107 | P1 | 캘린더 예약 | ✅ 구현+자동테스트 | /b/[token], /app/calendar | /booking/* | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 로그인 없는 예약 페이지, 슬롯=가용-바쁨-여유시간 |
 | F-108 | P1 | 일정 승인 | ✅ 구현+자동테스트 | /app/meetings/[id] | /calendar/candidates/{id}/decision, /calendar/candidates/{id}/ics | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 승인 후 Google 이벤트(클라이언트 id로 중복 방지), If-Match, ICS |
-| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요) | worker.processReminders | followup.due + SMTP | services/api/test/assist.integration.test.ts | 푸시 미구현, 메일은 SMTP 설정 시 |
-| F-110 | P2 | Web Push | ✅ 구현+자동테스트 | /app/settings | /push/* | modules/push.ts (VAPID web-push) | services/api/test/track-b.integration.test.ts | 410 구독 삭제, 유형별 설정, 인앱 알림함에도 미러링. iOS는 홈화면 PWA만 |
+| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요), /app/people/[id] (리마인더 기한), 알림함 배지 | worker.processReminders | followup.due + SMTP | services/api/test/assist.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | 푸시 미구현, 메일은 SMTP 설정 시 |
+| F-110 | P2 | Web Push | ✅ 구현+자동테스트 | /app/settings, /app/settings (푸시 기록) | /push/* | modules/push.ts (VAPID web-push) | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 410 구독 삭제, 유형별 설정, 인앱 알림함에도 미러링. iOS는 홈화면 PWA만 |
 | F-111 | P1 | 템플릿 | ✅ 구현+자동테스트 | /app/messages | /templates | packages/domain/src/template.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | 개인·팀 템플릿, 미지정 변수 거부 |
 | F-112 | P2 | 언어 번역 | ✅ 구현+자동테스트 | /app/messages | /translate | modules/comms.ts (structured()) | services/api/test/track-b.integration.test.ts | 메시지 UI만; 카드 번역은 API 전용 |
 ## INT · Integrations & Export
@@ -178,7 +178,7 @@
 | F-122 | P2 | Dynamics | ✅ 구현+자동테스트 | /app/integrations | /integrations/dynamics/* | modules/crm.ts | services/api/test/track-b.integration.test.ts | Contacts/Leads, If-Match, 중복 감지→충돌. 실계정 미검증 |
 | F-123 | P2 | Webhook/Zapier/Make | ✅ 구현+자동테스트 | /app/integrations | /webhooks | modules/webhooks.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | HMAC 서명, 백오프, SSRF 가드(DNS 재검사), 20회 실패 시 비활성 |
 | F-124 | P0 | Excel/CSV | ✅ 구현+자동테스트 | /app/settings | /exports | integration.renderExport | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-087,S-088 | XLSX + CSV(수식 주입 방지) |
-| F-125 | P0 | Word DOCX | ✅ 구현+자동테스트 | /app/settings (Word) | /exports format=docx | lib/docx | services/api/test/assist.integration.test.ts, tests/scenarios S-089 |  |
+| F-125 | P0 | Word DOCX | ✅ 구현+자동테스트 | /app/settings (Word), /app/settings (내보내기 기간·미팅/관계 보고서) | /exports format=docx | lib/docx | services/api/test/assist.integration.test.ts, tests/scenarios S-089, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts |  |
 | F-126 | P1 | TXT/PDF/vCard | ✅ 구현+자동테스트 | /app/people | /exports (pdf) | services/api/src/lib/pdf.ts (pdfkit + Pretendard) | services/api/test/track-b.integration.test.ts | standalone 빌드에서 폰트 포함 확인 |
 | F-127 | P1 | 필드 매핑 | ✅ 구현+자동테스트 | /app/settings | /exports (fields) |  | services/api/test/track-b.integration.test.ts, services/api/test/hubspot-deals.integration.test.ts |  |
 | F-128 | P0 | Sync Journal | ✅ 구현+자동테스트 | /app/settings | /integrations | sync_jobs + external_mappings | services/api/test/google.integration.test.ts, services/api/test/track-b.integration.test.ts, services/api/test/audit.integration.test.ts | 작업 이력·재시도·dead 상태 |
@@ -186,29 +186,29 @@
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| F-129 | P1 | 조직/워크스페이스 | ✅ 구현+자동테스트 | /app/org | /orgs | modules/org.ts | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts | 조직 생성, active_org 전환, 비회원 404 |
+| F-129 | P1 | 조직/워크스페이스 | ✅ 구현+자동테스트 | /app/org, /app/org/settings (조직 삭제) | /orgs | modules/org.ts | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 조직 생성, active_org 전환, 비회원 404 |
 | F-130 | P1 | 역할 권한 | ✅ 구현+자동테스트 | /app/org/members | /orgs/{id}/members | packages/domain/src/org.ts (역할×권한 매트릭스) | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts | 5개 역할 × 14개 행동 통합 매트릭스 |
 | F-131 | P1 | 팀 주소록 | ✅ 구현+자동테스트 | /app/team | /orgs/{id}/contacts | modules/org.ts | services/api/test/track-a.integration.test.ts | 조직 간 격리, viewer PII 마스킹 |
 | F-132 | P1 | 회사 소유 리드 | ✅ 구현+자동테스트 | /app/team | /orgs/{id}/leads | modules/org.ts | services/api/test/track-a.integration.test.ts | 회사 리드 이관(퇴사·SCIM 해지·계정삭제), 개인 연락처는 본인 소유 유지 |
 | F-133 | P2 | 관계 그래프 | ✅ 구현+자동테스트 | /app/org/graph | /orgs/{id}/graph | modules/network.ts (서버 결정론적 레이아웃) | services/api/test/track-a.integration.test.ts, packages/domain/test/org.test.ts | 개인 인맥은 회사 단위 집계로만 노출 |
-| F-134 | P2 | Who Knows Whom | ✅ 구현+자동테스트 | /app/org | /orgs/{id}/who-knows | modules/network.ts | services/api/test/track-a.integration.test.ts | 관계 강도 순, 개인 연락처 이름 비공개, 옵트아웃·감사로그 |
+| F-134 | P2 | Who Knows Whom | ✅ 구현+자동테스트 | /app/org, /app/org (내 멤버십 설정) | /orgs/{id}/who-knows | modules/network.ts | services/api/test/track-a.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 관계 강도 순, 개인 연락처 이름 비공개, 옵트아웃·감사로그 |
 | F-135 | P1 | 활동 대시보드 | ✅ 구현+자동테스트 | /app/org | /orgs/{id}/activity | modules/enterprise.ts | services/api/test/track-a.integration.test.ts | 조직 대시보드 |
-| F-136 | P1 | Data Retention | ✅ 구현+자동테스트 | /app/org/settings | /orgs/{id}/retention | modules/enterprise.ts + worker | services/api/test/track-a.integration.test.ts | 보존 정책·미리보기·워커 삭제(retention.purged 감사) |
-| F-137 | P0 | 감사로그 | ✅ 구현+자동테스트 |  | /me/audit | platform.audit | services/api/test/api.integration.test.ts |  |
-| F-138 | P1 | 브랜딩 | ✅ 구현+자동테스트 | /app/org/settings, /p/[slug] | /orgs/{id}/branding | modules/enterprise.ts | services/api/test/track-a.integration.test.ts | 브랜딩은 /p/[slug] 에만 표시; 로고는 data: 이미지만(CSP) |
-| F-139 | P2 | 정책 강제 | ✅ 구현+자동테스트 | /app/org/settings | /orgs/{id}/policies | modules/policy.ts | services/api/test/track-a.integration.test.ts | 녹음 일방동의 차단, 역할별 내보내기 차단, 과공개 필드 차단 |
+| F-136 | P1 | Data Retention | ✅ 구현+자동테스트 | /app/org/settings | /orgs/{id}/retention | modules/enterprise.ts + worker | services/api/test/track-a.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts | 보존 정책·미리보기·워커 삭제(retention.purged 감사) |
+| F-137 | P0 | 감사로그 | ✅ 구현+자동테스트 | /app/settings (내 활동 기록) | /me/audit | platform.audit | services/api/test/api.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts |  |
+| F-138 | P1 | 브랜딩 | ✅ 구현+자동테스트 | /app/org/settings, /p/[slug], /app/org (명함 브랜딩 토글) | /orgs/{id}/branding | modules/enterprise.ts | services/api/test/track-a.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 브랜딩은 /p/[slug] 에만 표시; 로고는 data: 이미지만(CSP) |
+| F-139 | P2 | 정책 강제 | ✅ 구현+자동테스트 | /app/org/settings | /orgs/{id}/policies | modules/policy.ts | services/api/test/track-a.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts, packages/domain/test/whitepaper-gaps.test.ts | 녹음 일방동의 차단, 역할별 내보내기 차단, 과공개 필드 차단 |
 | F-140 | P2 | API 키 | ✅ 구현+자동테스트 | /app/org/settings | /ext/contacts, /ext/leads | modules/enterprise.ts (API key sha256) | services/api/test/track-a.integration.test.ts | 스코프·회수·rate limit |
 ## EVT · Events & Networking
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
 | F-141 | P1 | 행사 공간 | ✅ 구현+자동테스트 | /app/events | /events | event | services/api/test/api.integration.test.ts |  |
-| F-142 | P1 | 참가자 등록 | ✅ 구현+자동테스트 | /app/events | /events/join | event | services/api/test/api.integration.test.ts | opt-in |
-| F-143 | P1 | 현장 교환 | ✅ 구현+자동테스트 | /app/exchange (장소) |  |  | services/api/test/audit.integration.test.ts |  |
+| F-142 | P1 | 참가자 등록 | ✅ 구현+자동테스트 | /app/events, /app/events/[id] (참가자 등록 CSV) | /events/join | event | services/api/test/api.integration.test.ts, tests/e2e/exchange-events-gaps.spec.ts, services/api/test/exchange-events-gaps.integration.test.ts, packages/domain/test/exchangeEventsGaps.test.ts | opt-in |
+| F-143 | P1 | 현장 교환 | ✅ 구현+자동테스트 | /app/exchange (장소), /app/events/[id] (이 행사로 교환 시작), /app/exchange?event= |  |  | services/api/test/audit.integration.test.ts, tests/e2e/exchange-events-gaps.spec.ts, services/api/test/exchange-events-gaps.integration.test.ts |  |
 | F-144 | P1 | 배지 OCR | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/leads | modules/capture.ts commitCapture | services/api/test/track-c.integration.test.ts, tests/scenarios/k-capture-files.spec.ts | 배지 OCR → 행사 리드, Idempotency-Key |
-| F-145 | P2 | AI Match List | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/matches | event | services/api/test/api.integration.test.ts | P2 선구현 |
-| F-146 | P2 | 미팅 요청 | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/meeting-requests | modules/calendar.ts | services/api/test/track-b.integration.test.ts | opt-in 참가자만, 상대 이메일 비노출 |
-| F-147 | P2 | 부스 Lead Flow | ✅ 구현+자동테스트 | /app/events/[id]/booth | /events/{id}/leads | modules/booth.ts | services/api/test/track-d.integration.test.ts | 부스 리드 수집·등급 |
+| F-145 | P2 | AI Match List | ✅ 구현+자동테스트 | /app/events/[id], /app/events/[id] (추천 필터·모든 이유) | /events/{id}/matches | event | services/api/test/api.integration.test.ts, tests/e2e/exchange-events-gaps.spec.ts | P2 선구현 |
+| F-146 | P2 | 미팅 요청 | ✅ 구현+자동테스트 | /app/events/[id], /app/events/[id] (현장 미팅 요청) | /events/{id}/meeting-requests | modules/calendar.ts | services/api/test/track-b.integration.test.ts, tests/e2e/exchange-events-gaps.spec.ts | opt-in 참가자만, 상대 이메일 비노출 |
+| F-147 | P2 | 부스 Lead Flow | ✅ 구현+자동테스트 | /app/events/[id]/booth, /app/events/[id]/booth (스태프 추가·제거) | /events/{id}/leads | modules/booth.ts | services/api/test/track-d.integration.test.ts, tests/e2e/exchange-events-gaps.spec.ts, services/api/test/exchange-events-gaps.integration.test.ts | 부스 리드 수집·등급 |
 | F-148 | P1 | 그룹 교환 | ✅ 구현+자동테스트 | /app/exchange?group=1 |  | handoff | services/api/test/api.integration.test.ts |  |
 | F-149 | P2 | Event ROI | ✅ 구현+자동테스트 | /app/events/[id]/booth | /events/{id}/roi | modules/booth.ts | services/api/test/track-d.integration.test.ts | 행사 ROI |
 | F-150 | P1 | 오프라인 모드 | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/leads | lib/offline.ts | tests/e2e/offline-sync.spec.ts | 행사장 오프라인 리드 큐 |
@@ -232,10 +232,10 @@
 | F-160 | P0 | 필드 단위 ACL | ✅ 구현+자동테스트 | CardEditor |  | domain/acl | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts |  |
 | F-161 | P0 | Consent Ledger | ✅ 구현+자동테스트 | /app/settings | /me/consents | consent_records | services/api/test/api.integration.test.ts |  |
 | F-162 | P0 | 데이터 최소화 | ✅ 구현+자동테스트 |  |  | on-device OCR, 선택 필드만 전송 | services/api/test/audit.integration.test.ts |  |
-| F-163 | P0 | 암호화 | 🟡 부분 |  |  | AES-256-GCM 자격증명, TLS(HSTS) |  | DB at-rest 암호화는 인프라 설정 |
+| F-163 | P0 | 암호화 | 🟡 부분 |  |  | AES-256-GCM 자격증명, TLS(HSTS) | services/api/test/whitepaper-gaps.integration.test.ts | DB at-rest 암호화는 인프라 설정 |
 | F-164 | P0 | 테넌트 격리 | ✅ 구현+자동테스트 |  |  | owner-scoped queries | services/api/test/api.integration.test.ts, tests/scenarios S-018,S-019,S-034,S-069,S-086,S-091 | 개인 범위 격리. 조직 테넌트 미구현 |
-| F-165 | P0 | 비밀관리 | ✅ 구현+자동테스트 |  |  | .env.example, render.yaml | services/api/test/audit.integration.test.ts |  |
-| F-166 | P0 | 감사 추적 | ✅ 구현+자동테스트 |  |  | audit_logs | services/api/test/api.integration.test.ts |  |
+| F-165 | P0 | 비밀관리 | ✅ 구현+자동테스트 |  |  | .env.example, render.yaml | services/api/test/audit.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts |  |
+| F-166 | P0 | 감사 추적 | ✅ 구현+자동테스트 | /app/settings (내 활동 기록) |  | audit_logs | services/api/test/api.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts, services/api/test/whitepaper-gaps.integration.test.ts |  |
 | F-167 | P0 | 삭제/탈퇴 | ✅ 구현+자동테스트 | /app/settings | /me/privacy/delete | security | services/api/test/api.integration.test.ts, tests/scenarios S-093 | 7일 유예 후 하드 삭제 |
 | F-168 | P1 | 데이터 이동성 | ✅ 구현+자동테스트 | /app/settings | /me/privacy/export | security | services/api/test/api.integration.test.ts, tests/scenarios S-092 |  |
 | F-169 | P0 | 녹음 준수 | ✅ 구현+자동테스트 |  | /meetings/{id}/recordings | meeting | services/api/test/api.integration.test.ts |  |
@@ -252,7 +252,7 @@
 | F-176 | P1 | 접근성 | ✅ 구현+자동테스트 | 전체 |  | globals.css 토큰, Fx.tsx reduced-motion | tests/e2e/a11y.spec.ts, tests/scenarios/j-ui-devices.spec.ts | axe WCAG A/AA 자동 감사(공개 페이지 라이트/다크), 앱 페이지 수동 axe 감사 통과 |
 | F-177 | P0 | 다국어 | ✅ 구현+자동테스트 | /x/[token] 언어 선택 |  | packages/domain/src/i18n.ts (ko/en/ja 리소스, pickLocale) | packages/domain/test/i18n.test.ts, tests/e2e/i18n.spec.ts | 게스트 수신·링크 상태 화면 ko/en/ja(Accept-Language·?lang·쿠키). 앱 내부 화면은 한국어 — 리소스 분리 구조로 확장 |
 | F-178 | P1 | 오프라인 캡처 | ✅ 구현+자동테스트 | /app/sync |  | packages/domain/src/offlineQueue.ts, lib/offline.ts | packages/domain/test/track-c.test.ts, tests/e2e/offline-sync.spec.ts | 암호화 IndexedDB 큐, 원래 Idempotency-Key로 재전송 |
-| F-179 | P0 | 재동기화 | ✅ 구현+자동테스트 | /app/sync |  | lib/offline.ts, sw.js | tests/e2e/offline-sync.spec.ts | Background Sync, 409 충돌은 필드별 선택 |
+| F-179 | P0 | 재동기화 | ✅ 구현+자동테스트 | /app/sync, 오프라인 배너 → /app/sync |  | lib/offline.ts, sw.js | tests/e2e/offline-sync.spec.ts | Background Sync, 409 충돌은 필드별 선택 |
 | F-180 | P0 | 관찰성 | ✅ 구현+자동테스트 |  |  | services/api/src/lib/tracing.ts (OTLP) | services/api/test/track-d.integration.test.ts | OTEL_EXPORTER_OTLP_ENDPOINT 설정 시만 동작; 트랜잭션 내 직접 client.query 는 스팬 없음 |
 | F-181 | P1 | Feature Flag | ✅ 구현+자동테스트 | /app/admin | /admin/flags | modules/growth.ts, lib/flags.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 사용자/조직 타게팅, % 롤아웃, 킬스위치 |
 | F-182 | P0 | 모바일 딥링크 | ✅ 구현+자동테스트 |  |  | apple-app-site-association, assetlinks.json, apps/mobile/app.config.ts | tests/e2e/audit-extras.spec.ts | AASA/assetlinks 제공 e2e. 실제 Team ID·앱 서명 지문은 계정 필요 |
@@ -265,8 +265,8 @@
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| F-188 | P1 | 제품 분석 | ✅ 구현+자동테스트 | /app/admin | /analytics/events | lib/metering.ts track, growth.funnelReport | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 가입→교환→게스트→Claim 퍼널 |
-| F-189 | P1 | 바이럴 계수 | ✅ 구현+자동테스트 | /app/admin, /app/insights |  | growth.viralReport | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | K-factor, 2차 공유율, Claim율 |
+| F-188 | P1 | 제품 분석 | ✅ 구현+자동테스트 | /app/admin | /analytics/events | lib/metering.ts track, growth.funnelReport | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts, services/api/test/whitepaper-gaps.integration.test.ts | 가입→교환→게스트→Claim 퍼널 |
+| F-189 | P1 | 바이럴 계수 | ✅ 구현+자동테스트 | /app/admin, /app/insights |  | growth.viralReport | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts, services/api/test/whitepaper-gaps.integration.test.ts | K-factor, 2차 공유율, Claim율 |
 | F-190 | P1 | 개인 플랜 | ✅ 구현+자동테스트 | /app/billing | /billing/* | packages/domain/src/plans.ts, modules/billing.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 플랜 해석 |
 | F-191 | P1 | 기업 플랜 | ✅ 구현+자동테스트 | /app/billing | /billing/* | modules/billing.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 좌석 검사 함수(조직 멤버 API 연결 필요) |
 | F-192 | P1 | 사용량 계량 | ✅ 구현+자동테스트 | /app/billing |  | billing.consume() | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 교환·스캔·AI 사용량 계량, AI 한도 초과 시 규칙 폴백. 게스트는 비계량 |

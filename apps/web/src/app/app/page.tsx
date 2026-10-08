@@ -1,7 +1,8 @@
-import { analytics, card, identity } from "@linkos/api";
+// UX-001 Home · F-063 첫 공유 유도(?welcome=1) · F-098 AI 추천(미접촉 위험, 주간 digest 재사용 — 추가 클라이언트 JS 없음)
+import { analytics, assistantJobs, card, identity } from "@linkos/api";
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
-import { Avatar, Empty } from "@/components/Page";
+import { AiLabel, Avatar, Empty } from "@/components/Page";
 import { CardFace } from "@/components/LivingCard";
 import { getViewer } from "@/lib/server";
 
@@ -20,11 +21,18 @@ function when(d: Date | string | null) {
 }
 
 // UX-001 Home — 오늘 행동과 관계 신호
-export default async function HomePage() {
-  const { userId } = await getViewer();
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  const sp = await searchParams;
+  const { userId, ctx } = await getViewer();
   const me = await identity.getMe(userId!);
-  const home = await analytics.myHome(userId!);
+  const [home, digest] = await Promise.all([
+    analytics.myHome(userId!),
+    // cached once per week per user (reconnect_digests); never blocks Home if it fails
+    assistantJobs.currentDigest(ctx).catch(() => null),
+  ]);
   const profile = me.profile ? await card.loadProfile(me.profile.id) : null;
+  const welcome = sp.welcome === "1";
+  const picks = (digest?.items ?? []).slice(0, 3);
   const hour = new Date().getHours();
   const greet = hour < 12 ? "좋은 아침이에요" : hour < 18 ? "좋은 오후예요" : "좋은 저녁이에요";
   const name = profile?.name ?? me.user.display_name ?? "";
@@ -37,6 +45,22 @@ export default async function HomePage() {
           {greet}, <em>{name || "반가워요"}</em>
         </h1>
       </header>
+
+      {welcome && (
+        <section className="surface relative overflow-hidden !rounded-[28px] !bg-[var(--accent-soft)] p-6 animate-rise" aria-labelledby="welcome-title" data-testid="welcome-card">
+          <Link href="/app" scroll={false} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full text-[var(--fg-mute)] hover:bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] hover:text-[var(--fg)]" aria-label="첫 공유 안내 닫기">
+            <Icon name="x" size={18} />
+          </Link>
+          <p className="eyebrow">카드 완성</p>
+          <h2 id="welcome-title" className="display mt-2 pr-10 text-[30px] sm:text-[36px]">
+            다음 만나는 사람에게 <em>첫 공유</em>를 해보세요
+          </h2>
+          <p className="mt-2 text-[14.5px] text-[var(--fg-mute)]">상대는 로그인이나 앱 설치 없이 바로 카드를 받아요.</p>
+          <Link href="/app/exchange" className="btn btn-signal mt-5 w-full sm:w-auto" data-testid="welcome-share">
+            <Icon name="exchange" size={18} /> 첫 공유 시작
+          </Link>
+        </section>
+      )}
 
       {!profile ? (
         <section className="stage-ink grain overflow-hidden rounded-[28px] p-6 animate-rise delay-1">
@@ -115,6 +139,38 @@ export default async function HomePage() {
         )}
       </section>
 
+      <section className="animate-rise delay-3" aria-labelledby="ai-picks-title" data-testid="home-ai">
+        <div className="mb-3 flex items-baseline justify-between gap-3">
+          <h2 id="ai-picks-title" className="flex items-center gap-2 text-[20px] font-semibold">
+            AI 추천 <AiLabel />
+          </h2>
+          <Link href="/app/ai" className="text-[13px] text-[var(--fg-mute)]">AI 기억·매칭</Link>
+        </div>
+        {picks.length === 0 ? (
+          <Empty title="지금은 챙길 사람이 없어요" body="만남 간격과 관계 강도를 보고, 연락이 뜸해지는 사람을 여기서 알려드려요." action={<Link href="/app/ai" className="btn btn-ghost">매칭·소개 후보 보기</Link>} />
+        ) : (
+          <>
+            <ul className="surface divide-y divide-[var(--line)]">
+              {picks.map((p) => (
+                <li key={p.contactId}>
+                  <Link href={`/app/people/${p.contactId}`} className="flex items-center gap-3 px-4 py-3.5">
+                    <Avatar name={p.fullName} size={36} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-medium">{p.fullName}</span>
+                      <span className="block truncate text-[12.5px] text-[var(--fg-mute)]">{[p.company, `${p.daysSilent}일째 연락 없음`, p.reasons?.[0]].filter(Boolean).join(" · ")}</span>
+                    </span>
+                    <span className={`chip shrink-0 ${p.level === "high" ? "!bg-[var(--color-peach)]" : "!bg-[var(--color-butter)]"} !text-[var(--color-ink)]`}>{p.level === "high" ? "멀어지는 중" : "확인"}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">
+              추정이에요 — 연락 초안은 <Link href="/app/reconnect" className="underline">다시 연락하기</Link>에서 확인 후에만 보낼 수 있어요.
+            </p>
+          </>
+        )}
+      </section>
+
       <section className="animate-rise delay-4">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-[20px] font-semibold">최근 만남</h2>
@@ -178,6 +234,7 @@ export default async function HomePage() {
               ["/app/insights", "chart", "인사이트"],
               ["/app/integrations", "plug", "CRM·자동화"],
               ["/app/billing", "card", "플랜·결제"],
+              ["/app/settings", "settings", "설정·연동"],
             ] as const
           ).map(([href, icon, label]) => (
             <li key={href}>

@@ -15,6 +15,7 @@
 | `METRICS_TOKEN` | `/api/v1/metrics` (Prometheus) 접근 토큰 — 프로덕션에서 미설정이면 403 |
 | `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS` | 커넥션 풀/쿼리 타임아웃 (기본 10 / 15s / 10s) |
 | `OTP_DEV_ECHO` | 스테이징 전용. `1` 이면 응답에 로그인 코드 포함 — **프로덕션 금지** |
+| `DEMO_LOGIN` | 테스트 서버 전용. `1` 이면 /login 에 "테스트 계정으로 바로 시작"(일회용 계정, IP당 시간 10회) — 실제 사용자 전에는 끄고 `SMTP_URL` 설정 |
 
 키 생성: `openssl rand -base64 32`
 
@@ -23,6 +24,11 @@
 2. 이미지 빌드 → `release` 커맨드가 마이그레이션 후 웹을 띄움 (마이그레이션은 advisory lock 으로 동시 실행 안전, 추가 전용)
 3. `worker` 프로세스 1개 이상 실행 (outbox 릴레이, Google 동기화, 세션 만료, 삭제 유예 처리)
 4. 헬스체크 `GET /api/v1/health` → `{"status":"ok"}`
+
+## 무료 테스트 서버 (Render 블루프린트)
+- README 의 Deploy to Render 버튼 → Apply. `render.yaml` 은 무료 Postgres + 무료 웹 1개를 만든다.
+- 웹 컨테이너는 `entrypoint.sh all`: 마이그레이션 → outbox worker(백그라운드, 죽으면 5초 뒤 재시작) → 웹. `APP_ORIGIN` 미설정 시 `RENDER_EXTERNAL_URL` 사용, `CREDENTIALS_KEY` 는 32바이트가 아니면 SHA-256 으로 32바이트 키로 변환.
+- 운영 전환: 유료 플랜, `dockerCommand` 를 `release` 로, 별도 worker 서비스(`entrypoint.sh worker`), `DEMO_LOGIN=0`, `SMTP_URL`·`APP_ORIGIN` 설정.
 
 ## 롤백
 - 이미지 태그를 이전 버전으로 되돌린다. 마이그레이션은 추가 전용이라 이전 코드와 호환된다.

@@ -23,6 +23,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       ssoConsent={sp.consent === "sso"}
       error={sp.error ?? null}
       oneTapClientId={identity.oneTapEnabled() ? (process.env.GOOGLE_CLIENT_ID ?? null) : null}
+      demoLogin={identity.demoLoginEnabled()}
+      mailConfigured={identity.mailConfigured()}
     />
   );
 }

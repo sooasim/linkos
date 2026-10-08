@@ -63,6 +63,31 @@ export async function requestOtp(ctx: Ctx, rawEmail: string): Promise<{ sent: tr
   return { sent: true, ...(process.env.OTP_DEV_ECHO === "1" ? { devCode: code } : {}) };
 }
 
+// ---------- Test-server "demo" login (render.yaml sets DEMO_LOGIN=1) ----------
+// A tester gets a fresh throwaway account with one click — no e-mail is sent or shown, so nobody can sign in as
+// someone else's address (unlike echoing OTP codes). Off unless DEMO_LOGIN=1; never set it on a real production deploy.
+export function demoLoginEnabled(): boolean {
+  return process.env.DEMO_LOGIN === "1";
+}
+export function mailConfigured(): boolean {
+  return Boolean(process.env.SMTP_URL);
+}
+
+export async function demoLogin(ctx: Ctx, consents: { type: ConsentType; granted: boolean }[]): Promise<{ user: UserRow; sessionToken: string }> {
+  if (!demoLoginEnabled()) throw new ApiError(404, "not_found", "Not found");
+  await rateLimit(`demo:ip:${ctx.ip}`, 10, 3600);
+  const missing = missingRequiredConsents(consents);
+  if (missing.length) throw badRequest("consent_required", "필수 약관에 동의해야 합니다.", { missing });
+  const email = `demo-${generateToken(16).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16)}@demo.linkos.invalid`;
+  return tx(async (c) => {
+    const { user } = await upsertUserByEmail(c, email, consents, "테스트 사용자", "demo", email);
+    const sessionToken = await createSession(c, user.id, ctx, null, "web", "email_otp");
+    await audit(c, { userId: user.id }, "auth.signup", "user", user.id, { method: "demo" });
+    await track(c, "signup_completed", { userId: user.id }, { method: "demo" });
+    return { user, sessionToken };
+  });
+}
+
 export async function verifyOtp(
   ctx: Ctx,
   rawEmail: string,

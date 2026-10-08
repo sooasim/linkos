@@ -64,8 +64,19 @@ pnpm build && pnpm e2e            # Playwright 모바일/데스크톱 6 시나�
 pnpm traceability --check         # 197개 Feature ID 누락 검사 (CI 게이트)
 ```
 
+## 테스트 서버 (Render 원클릭 배포)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sooasim/linkos/tree/claude/upbeat-goldberg-xd7820)
+
+1. 위 버튼을 누르고 Render에 로그인합니다. 저장소가 비공개이므로 Render 계정에 GitHub(sooasim/linkos 접근 권한)를 연결해야 합니다.
+2. Blueprint 화면에서 **Apply** — Postgres(`linkos-db`)와 웹 서비스(`linkos-web`)가 무료 플랜으로 만들어지고 `AUTH_SECRET`·`CREDENTIALS_KEY`는 자동 생성됩니다. 선택 항목(`APP_ORIGIN`, `SMTP_URL`, Google 키)은 비워 둬도 됩니다.
+3. 첫 배포(약 5~10분)가 끝나면 서비스 페이지 상단의 `https://linkos-web-xxxx.onrender.com` 주소를 다른 사람에게 공유합니다.
+4. 접속 → **로그인 → "테스트 계정으로 바로 시작"** (메일 서버 없이 일회용 계정 생성) → 내 명함 작성 → 교환 → 4자리 코드 또는 링크를 상대에게 전달. 상대는 가입 없이 `/c` 에서 코드를 입력하면 됩니다.
+
+주의: 무료 서비스는 15분 동안 요청이 없으면 잠들고 다음 첫 요청이 1분가량 걸립니다. 무료 DB는 30일 뒤 만료됩니다. 테스트 서버(`DEMO_LOGIN=1`)에는 실제 개인정보를 넣지 마세요 — 실제 운영 전에는 `DEMO_LOGIN=0` 과 `SMTP_URL` 을 설정하고 유료 플랜·별도 worker로 바꿉니다([`docs/RUNBOOK.md`](docs/RUNBOOK.md)). PR이 main에 병합되면 버튼 주소에서 `/tree/...` 부분을 빼도 됩니다.
+
 ## 배포
 
 - **Docker**: `docker build -t linkos .` → `docker run linkos release`(마이그레이션 후 웹) / `worker`
-- **Render**: `render.yaml` 블루프린트 (Postgres + web + worker). `APP_ORIGIN`, `SMTP_URL`, `CREDENTIALS_KEY`, Google 키 입력
+- **Render**: `render.yaml` 블루프린트 — 아래 "테스트 서버" 참고 (무료 플랜, 비밀값 자동 생성)
 - 상세 절차·롤백·백업: [`docs/RUNBOOK.md`](docs/RUNBOOK.md)

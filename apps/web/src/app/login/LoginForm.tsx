@@ -64,6 +64,8 @@ export function LoginForm({
   ssoConsent = false,
   error: initialError,
   oneTapClientId = null,
+  demoLogin = false,
+  mailConfigured = true,
 }: {
   next: string;
   google: boolean;
@@ -73,6 +75,8 @@ export function LoginForm({
   ssoConsent?: boolean;
   error: string | null;
   oneTapClientId?: string | null;
+  demoLogin?: boolean;
+  mailConfigured?: boolean;
 }) {
   const router = useRouter();
   const [step, setStep] = useState<"email" | "code" | "consent">(googleConsent || appleConsent || ssoConsent ? "consent" : "email");
@@ -254,6 +258,7 @@ export function LoginForm({
                 시작하기<em className="text-[var(--color-ember)]">.</em>
               </h1>
               <p className="mt-2 text-[15px] text-[var(--fg-mute)]">이메일로 받은 6자리 코드로 로그인합니다.</p>
+              {demoLogin && <DemoLogin next={next} mailConfigured={mailConfigured} />}
               {(google || apple) && (
                 <>
                   <div className="mt-8 space-y-2">
@@ -389,5 +394,41 @@ export function LoginForm({
         </div>
       </section>
     </main>
+  );
+}
+
+/** Test server only (DEMO_LOGIN=1): a throwaway account in one click, so testers need no mail server. */
+function DemoLogin({ next, mailConfigured }: { next: string; mailConfigured: boolean }) {
+  const [agree, setAgree] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const start = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/auth/demo", { body: { consents: ["terms", "privacy", "age_14"].map((type) => ({ type, granted: true })) } });
+      window.location.href = next === "/app" ? "/app/me/edit?onboarding=1" : next;
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="surface mt-6 space-y-3 p-4" data-testid="demo-login">
+      <p className="eyebrow">테스트 서버</p>
+      <p className="text-[14px] text-[var(--fg-mute)]">
+        입력 없이 임시 계정을 만들어 바로 둘러볼 수 있어요.{mailConfigured ? "" : " 이 서버는 메일 발송이 설정되지 않아 이메일 코드 로그인은 동작하지 않습니다."}
+      </p>
+      <label className="flex items-start gap-2 text-[13.5px]">
+        <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+        <span>
+          만 14세 이상이며 <a className="underline" href="/legal/terms">이용약관</a>과 <a className="underline" href="/legal/privacy">개인정보 처리방침</a>에 동의합니다.
+        </span>
+      </label>
+      <button type="button" className="btn btn-signal w-full" disabled={!agree || busy} onClick={start} data-testid="demo-login-start">
+        {busy ? "만드는 중…" : "테스트 계정으로 바로 시작"}
+      </button>
+      {err && <p role="alert" className="text-[13.5px] text-[var(--color-ember)]">{err}</p>}
+    </div>
   );
 }

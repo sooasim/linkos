@@ -137,7 +137,10 @@ export async function assertSeatAvailable(organizationId: string, db: Db = pool(
     db,
   );
   const used = (await one<{ n: number }>("SELECT count(*)::int AS n FROM organization_members WHERE organization_id=$1 AND status='active'", [organizationId], db))?.n ?? 0;
-  const seats = sub && dunningState({ status: sub.status, graceUntil: sub.grace_until }) !== "suspended" ? sub.seats : 1;
+  // F-191: seats are a purchased quantity. Orgs without a subscription keep the pre-billing behaviour (no seat cap),
+  // and BILLING_ENFORCEMENT=off counts but never blocks — same switch as the usage meters above.
+  if (!sub || process.env.BILLING_ENFORCEMENT === "off") return { used, seats: sub?.seats ?? null };
+  const seats = dunningState({ status: sub.status, graceUntil: sub.grace_until }) !== "suspended" ? sub.seats : 1;
   if (used + 1 > seats) throw paymentRequired({ metric: "seats", plan: sub?.plan ?? "free", limit: seats, used, suggestedPlan: sub ? null : "business", upgradeUrl: `${appOrigin()}/app/billing?org=${organizationId}` });
   return { used, seats };
 }

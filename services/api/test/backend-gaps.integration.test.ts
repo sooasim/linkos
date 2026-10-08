@@ -398,7 +398,12 @@ describe("F-191 seats on every way into an organization", () => {
     const orgId = (await org.createOrg(ctx(owner.id), { name: `좌석 ${stamp}` })).id;
     await org.addDomain(ctx(owner.id), orgId, domain);
 
-    // free org = 1 seat (the owner)
+    // an org without a subscription has no seat cap (pre-billing behaviour); a paid 1-seat plan holds only the owner
+    const free = await user("seat-free", domain);
+    const freeInv = await org.createInvite(ctx(owner.id), orgId, org.inviteInput.parse({ role: "member" }));
+    await org.acceptInvite(ctx(free.id), freeInv.token);
+    await q("UPDATE organization_members SET status='removed' WHERE organization_id=$1 AND user_id=$2", [orgId, free.id]);
+    await grantSeats(orgId, 1);
     const invited = await user("seat-inv", domain);
     const inv = await org.createInvite(ctx(owner.id), orgId, org.inviteInput.parse({ role: "member" }));
     await expect(org.acceptInvite(ctx(invited.id), inv.token)).rejects.toMatchObject({ status: 402, details: { metric: "seats" } });
@@ -431,7 +436,7 @@ describe("F-191 seats on every way into an organization", () => {
     expect(await one("SELECT 1 FROM users WHERE email=$1", [jit.email])).toBeNull();
 
     // the paid plan's seats are enforced exactly: 3 seats → 2 more members, then 402 again
-    await grantSeats(orgId, 3);
+    await q("UPDATE subscriptions SET seats=3 WHERE organization_id=$1", [orgId]);
     await org.acceptInvite(ctx(invited.id), inv.token);
     await org.updateOrg(ctx(owner.id), orgId, { domainJoinMode: "auto" });
     expect(await org.joinByDomain(ctx(auto.id), orgId)).toEqual({ status: "active" });

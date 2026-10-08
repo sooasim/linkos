@@ -1,12 +1,13 @@
 // F-019 암호화 object storage: storage driver interface (S3-compatible / local disk) + envelope encryption.
 // Each object is encrypted with its own random 256-bit data key (AES-256-GCM, object key bound as AAD);
-// the data key is wrapped with CREDENTIALS_KEY and stored in Postgres, never next to the ciphertext.
+// the data key is wrapped with the vault keyring (CREDENTIALS_KEYS/CREDENTIALS_KEY) and stored in Postgres, never next to the ciphertext.
 // Deleting the DB row therefore crypto-shreds the object even if a storage replica lingers.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { unavailable } from "./errors";
 import { log } from "./platform";
+import { sealBytes, unsealBytes } from "./vault";
 
 export interface StorageDriver {
   readonly name: "local" | "s3";
@@ -128,18 +129,9 @@ export function storageDriver(): StorageDriver {
 }
 
 // ---------- envelope encryption ----------
-function kek(): Buffer {
-  const k = process.env.CREDENTIALS_KEY;
-  if (!k) {
-    if (process.env.NODE_ENV === "production") throw unavailable("vault_not_configured", "CREDENTIALS_KEY 가 설정되지 않았습니다.");
-    return Buffer.alloc(32, 7);
-  }
-  const b = Buffer.from(k, "base64");
-  if (b.length !== 32) throw new Error("CREDENTIALS_KEY must be 32 bytes base64");
-  return b;
-}
-
-const WRAP_AAD = Buffer.from("linkos-dek-v1");
+// The data key is wrapped by the vault keyring (F-163 key versioning: CREDENTIALS_KEYS / CREDENTIALS_KEY); legacy
+// wrapped keys (iv|tag|wrapped) still open, and `pnpm vault:rotate` re-wraps them under the active key.
+export const WRAP_AAD = Buffer.from("linkos-dek-v1");
 
 export interface Sealed {
   ciphertext: Buffer;
@@ -155,19 +147,13 @@ export function sealObject(objectKey: string, plaintext: Buffer): Sealed {
   c.setAAD(Buffer.from(objectKey));
   const ciphertext = Buffer.concat([c.update(plaintext), c.final()]);
   const authTag = c.getAuthTag();
-  const wiv = randomBytes(12);
-  const w = createCipheriv("aes-256-gcm", kek(), wiv);
-  w.setAAD(WRAP_AAD);
-  const wrapped = Buffer.concat([w.update(dek), w.final()]);
+  const wrappedKey = sealBytes(dek, WRAP_AAD);
   dek.fill(0);
-  return { ciphertext, wrappedKey: Buffer.concat([wiv, w.getAuthTag(), wrapped]), iv, authTag };
+  return { ciphertext, wrappedKey, iv, authTag };
 }
 
 export function openObject(objectKey: string, s: Sealed): Buffer {
-  const w = createDecipheriv("aes-256-gcm", kek(), s.wrappedKey.subarray(0, 12));
-  w.setAAD(WRAP_AAD);
-  w.setAuthTag(s.wrappedKey.subarray(12, 28));
-  const dek = Buffer.concat([w.update(s.wrappedKey.subarray(28)), w.final()]);
+  const dek = unsealBytes(s.wrappedKey, WRAP_AAD);
   const d = createDecipheriv("aes-256-gcm", dek, s.iv);
   d.setAAD(Buffer.from(objectKey));
   d.setAuthTag(s.authTag);

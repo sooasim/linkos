@@ -9,7 +9,9 @@ export const GET = route(async ({ ctx, req }) => {
   const origin = req.nextUrl.origin;
   if (!apple.appleEnabled()) return NextResponse.redirect(`${origin}/login?error=apple_not_configured`);
   const consentAccepted = req.cookies.get("lk_consent")?.value === "1";
-  const { url } = await apple.appleAuthStart(ctx, { next: safeNext(req.nextUrl.searchParams.get("next")), consentAccepted });
+  // F-064: carry the /r/{code} referral (lk_ref) in the server-side state — the callback POST carries no Lax cookies
+  const referralCode = req.cookies.get("lk_ref")?.value ?? null;
+  const { url } = await apple.appleAuthStart(ctx, { next: safeNext(req.nextUrl.searchParams.get("next")), consentAccepted, referralCode });
   const res = NextResponse.redirect(url);
   res.cookies.delete("lk_consent");
   return res;

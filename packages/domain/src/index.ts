@@ -38,3 +38,5 @@ export * from "./crmDeals";
 export * from "./shareKit";
 export * from "./assistant";
 export * from "./minimize";
+export * from "./auditChain";
+export * from "./webVitals";

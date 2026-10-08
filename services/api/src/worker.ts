@@ -15,6 +15,10 @@ import { processTranscriptions } from "./modules/recording";
 import { notify, processPushQueue } from "./modules/push";
 import { enqueueWebhookDeliveries, processWebhookDeliveries } from "./modules/webhooks";
 import { processPrepBriefs, processReconnectDigests } from "./modules/assistantJobs";
+import { purgeOldVitals } from "./modules/analytics";
+import { sealAuditChain } from "./modules/auditChain";
+import { consumeCatalogEvent } from "./modules/consumers";
+import { enqueueRequiredCrmSync } from "./modules/policy";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -63,6 +67,8 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
          ON CONFLICT (integration_account_id, idempotency_key) DO NOTHING`,
         [payload.contact_id],
       );
+      // F-139 "CRM sync 필수": company-owned org contacts are pushed even before they were ever mapped
+      await enqueueRequiredCrmSync(c, payload.contact_id);
       break;
     }
     case "followup.due": {
@@ -98,7 +104,9 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
       }
       break;
     default:
-      break; // analytics/notification consumers read from outbox_events directly
+      // remaining catalog consumers (guest.claimed, meeting.actions.extracted, privacy.deletion.requested, …)
+      await consumeCatalogEvent(c, type, payload);
+      break;
   }
 }
 
@@ -148,7 +156,10 @@ export async function tick() {
   await q("DELETE FROM webauthn_challenges WHERE expires_at < now() - interval '1 day'");
   await q("DELETE FROM sso_login_states WHERE expires_at < now() - interval '1 day'");
   await q("DELETE FROM card_view_daily WHERE day < current_date - 400"); // X-003 retention: ~13 months of daily counts
-  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests };
+  // §20 audit durability: link rows written while the chain lock was busy (never blocks; next tick retries)
+  const auditSealed = await sealAuditChain().catch((e) => (log("warn", "worker.audit_seal_failed", { error: (e as Error).message }), 0));
+  if (Math.random() < 0.01) await purgeOldVitals().catch(() => 0); // §20 RUM sample retention (90 days)
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -31,6 +31,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound } from "../lib/errors";
 import { type Ctx, appOrigin, audit, hmac, log, rateLimit, sha256 } from "../lib/platform";
 import { requireOrg } from "./org";
+import { isReferralCode } from "./referral";
 import { assertOrgEmailDomain, completeSsoLogin } from "./ssoLogin";
 import { SSO_AVAILABLE_SQL } from "./ssoPolicy";
 
@@ -214,7 +215,7 @@ function verifyRelayState(relay: string | null | undefined): string | null {
 }
 
 /** Returns the IdP redirect URL (HTTP-Redirect binding). `browserBinding` is a random value the caller also sets as a cookie. */
-export async function samlStart(ctx: Ctx, orgId: string, opts: { next?: string | null; consent?: boolean; browserBinding?: string | null } = {}) {
+export async function samlStart(ctx: Ctx, orgId: string, opts: { next?: string | null; consent?: boolean; browserBinding?: string | null; referralCode?: string | null } = {}) {
   await rateLimit(`sso:saml:start:${ctx.ip}`, 30, 600);
   const cfg = await loadConfig(orgId);
   if (!cfg?.enabled) throw notFound("sso");
@@ -222,9 +223,10 @@ export async function samlStart(ctx: Ctx, orgId: string, opts: { next?: string |
   const token = generateToken(32);
   const relayState = `${token}.${relaySig(token)}`;
   await q(
-    `INSERT INTO saml_requests (organization_id, request_id, relay_state_hash, next_path, consent_accepted, browser_binding_hash, expires_at)
-     VALUES ($1,$2,$3,$4,$5,$6, now() + interval '10 minutes')`,
-    [orgId, requestId, sha256(token), opts.next ?? null, opts.consent === true, opts.browserBinding ? sha256(opts.browserBinding) : null],
+    `INSERT INTO saml_requests (organization_id, request_id, relay_state_hash, next_path, consent_accepted, browser_binding_hash, expires_at, referral_code)
+     VALUES ($1,$2,$3,$4,$5,$6, now() + interval '10 minutes', $7)`,
+    // F-064: the /r/{code} referral rides with the request (the ACS POST is cross-site: no Lax cookies)
+    [orgId, requestId, sha256(token), opts.next ?? null, opts.consent === true, opts.browserBinding ? sha256(opts.browserBinding) : null, isReferralCode(opts.referralCode) ? opts.referralCode : null],
   );
   if (Math.random() < 0.02) void q("DELETE FROM saml_requests WHERE expires_at < now() - interval '1 day'").catch(() => undefined);
   const url = await samlClient(cfg, orgId, { requestId }).getAuthorizeUrlAsync(relayState, undefined, {});
@@ -261,8 +263,8 @@ export async function samlAcs(
   if (!cfg?.enabled) throw notFound("sso");
   const token = verifyRelayState(input.relayState);
   if (!token) throw badRequest("invalid_state", "SSO 로그인 요청이 만료되었거나 이미 사용되었습니다.");
-  const req = await one<{ id: string; request_id: string; next_path: string | null; consent_accepted: boolean; browser_binding_hash: string | null; created_at: Date; expires_at: Date; consumed_at: Date | null }>(
-    "SELECT id, request_id, next_path, consent_accepted, browser_binding_hash, created_at, expires_at, consumed_at FROM saml_requests WHERE relay_state_hash=$1 AND organization_id=$2",
+  const req = await one<{ id: string; request_id: string; next_path: string | null; consent_accepted: boolean; browser_binding_hash: string | null; created_at: Date; expires_at: Date; consumed_at: Date | null; referral_code: string | null }>(
+    "SELECT id, request_id, next_path, consent_accepted, browser_binding_hash, created_at, expires_at, consumed_at, referral_code FROM saml_requests WHERE relay_state_hash=$1 AND organization_id=$2",
     [sha256(token), orgId],
   );
   if (!req || req.expires_at < new Date()) throw badRequest("invalid_state", "SSO 로그인 요청이 만료되었거나 이미 사용되었습니다.");
@@ -310,6 +312,7 @@ export async function samlAcs(
       consents: req.consent_accepted ? REQUIRED_CONSENTS : [],
       defaultRole: cfg.default_role,
       method: "saml_sso",
+      referralCode: req.referral_code,
     }),
   );
   return { ...r, next: req.next_path };

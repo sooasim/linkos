@@ -8,6 +8,7 @@ import { ApiError, badRequest, unauthorized } from "../lib/errors";
 import { type Ctx, audit, hmac, log, rateLimit, sha256 } from "../lib/platform";
 import { sendMail } from "../lib/mail";
 import { track } from "../lib/metering";
+import { attributeSignupByCodeTx } from "./referral";
 import { assertSsoAllowed } from "./ssoPolicy";
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -377,6 +378,7 @@ export async function signInWithGoogleIdToken(
   credential: string,
   consents: { type: ConsentType; granted: boolean }[],
   clientKind: ClientKind = "web",
+  referralCode?: string | null,
 ): Promise<{ user: UserRow; sessionToken: string; isNew: boolean }> {
   await rateLimit(`onetap:ip:${ctx.ip}`, 30, 600);
   const g = await verifyGoogleIdToken(credential);
@@ -386,6 +388,34 @@ export async function signInWithGoogleIdToken(
     const { user, isNew } = await upsertUserByEmail(c, email, consents, g.name, "google", g.sub);
     const sessionToken = await createSession(c, user.id, ctx, null, clientKind, "google");
     await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "google_one_tap", client: clientKind });
+    if (isNew) {
+      await track(c, "signup_completed", { userId: user.id }, { method: "google_one_tap" }); // F-188
+      await attributeSignupByCodeTx(c, user.id, referralCode); // F-064
+    }
+    return { user, sessionToken, isNew };
+  });
+}
+
+/**
+ * Sign-in with Google (OAuth code flow, after integration.exchangeGoogleCode verified the user): upsert + session in one
+ * transaction; a NEW account that arrived through a /r/{code} link is attributed (F-064).
+ */
+export async function signInWithGoogleOAuth(
+  ctx: Ctx,
+  g: { sub: string; email: string; name?: string },
+  consents: { type: ConsentType; granted: boolean }[],
+  referralCode?: string | null,
+): Promise<{ user: UserRow; sessionToken: string; isNew: boolean }> {
+  const email = normalizeEmail(g.email);
+  if (!email) throw badRequest("invalid_email");
+  return tx(async (c) => {
+    const { user, isNew } = await upsertUserByEmail(c, email, consents, g.name, "google", g.sub);
+    const sessionToken = await createSession(c, user.id, ctx, null, "web", "google");
+    await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "google", client: "web" });
+    if (isNew) {
+      await track(c, "signup_completed", { userId: user.id }, { method: "google" }); // F-188
+      await attributeSignupByCodeTx(c, user.id, referralCode);
+    }
     return { user, sessionToken, isNew };
   });
 }

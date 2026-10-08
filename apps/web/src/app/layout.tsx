@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Fx } from "@/components/Fx";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { WebVitals } from "./WebVitals";
 
 const serif = localFont({
   src: [
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         <Fx />
         <ServiceWorker />
+        <WebVitals />
       </body>
     </html>
   );

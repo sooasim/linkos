@@ -204,3 +204,40 @@ export function viralMetrics(v: ViralInput) {
     sharesPerClaimed: r(v.sharesByClaimed, v.claims),
   };
 }
+
+// ---------- F-188 / 백서 §23 KPIs: Retention · Match-to-Meeting · Enterprise Active Relationships ----------
+/** Relationship actions counted for "월간 관계 행동 재사용" (each maps to an existing table). */
+export const RELATIONSHIP_ACTIONS = ["exchange", "encounter", "contact_created", "note", "meeting", "followup_done", "message_sent"] as const;
+
+/** Percentage (one decimal) or null when the denominator is empty. */
+export function kpiRate(num: number, den: number): number | null {
+  return den > 0 ? Math.round((Math.min(num, den) / den) * 1000) / 10 : null;
+}
+
+export interface RetentionInput {
+  /** subjects with ≥1 relationship action in the previous window */
+  previousActive: number;
+  /** of those, subjects with ≥1 relationship action again in the current window */
+  retained: number;
+  /** subjects active in the current window (incl. new) */
+  currentActive: number;
+}
+
+/** Retention step: previous-window actives who reused relationship actions in the current window. */
+export function retentionStep(r: RetentionInput) {
+  return { ...r, retentionRate: kpiRate(r.retained, r.previousActive), churned: Math.max(0, r.previousActive - r.retained) };
+}
+
+export function matchToMeeting(matches: number, matchesWithMeeting: number) {
+  return { matches, matchesWithMeeting, matchToMeetingRate: kpiRate(matchesWithMeeting, matches) };
+}
+
+/** p-quantile (0..1) by linear interpolation; null for no samples. */
+export function quantile(values: number[], p: number): number | null {
+  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const idx = (v.length - 1) * Math.min(1, Math.max(0, p));
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  return v[lo]! + (v[hi]! - v[lo]!) * (idx - lo);
+}

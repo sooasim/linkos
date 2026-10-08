@@ -1,6 +1,6 @@
 // Test fixture helper: F-191 seat entitlement — invites, domain joins, approvals and SCIM provisioning now consume
-// seats (billing.assertSeatAvailable). Orgs without a subscription are not capped; tests that exercise limits give the org a
-// paid subscription with a known seat count.
+// seats (billing.assertSeatAvailable). An org without a subscription has 1 seat (its owner), so tests that build a
+// team give the org an active organization subscription first, as a paying customer would have.
 import { q } from "../src/lib/db";
 
 export async function grantSeats(orgId: string, seats = 50, plan: "business" | "enterprise" = "business"): Promise<void> {

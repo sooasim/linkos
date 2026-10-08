@@ -4,6 +4,7 @@ import "server-only";
 // (multipart/form-data, text/plain, x-www-form-urlencoded) are refused so a cross-site <form> can never upload.
 import { randomUUID } from "node:crypto";
 import { ApiError, type Ctx, identity, recordRequest, routeKey, sha256, withIdempotency } from "@linkos/api";
+import { isAllowedOrigin } from "@linkos/domain";
 import { type NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, cookieOptions, errorResponse } from "./server";
 
@@ -40,7 +41,7 @@ export function uploadRoute<P = Record<string, string>>(handler: UploadHandler<P
     try {
       const origin = req.headers.get("origin");
       const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-      if (origin && host && new URL(origin).host !== host) throw new ApiError(403, "bad_origin", "허용되지 않은 요청 출처입니다.");
+      if (!isAllowedOrigin(origin, host, process.env.APP_ORIGIN)) throw new ApiError(403, "bad_origin", "허용되지 않은 요청 출처입니다.");
       const contentType = (req.headers.get("content-type") ?? "application/octet-stream").toLowerCase();
       if (SAFELISTED.test(contentType)) throw new ApiError(415, "unsupported_media_type", "파일 원본(binary)으로 업로드하세요.");
       const ua = req.headers.get("user-agent") ?? "";

@@ -64,6 +64,16 @@ pnpm build && pnpm e2e            # Playwright 모바일/데스크톱 6 시나�
 pnpm traceability --check         # 197개 Feature ID 누락 검사 (CI 게이트)
 ```
 
+## GitHub에서 바로 실행 (Codespaces)
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sooasim/linkos?quickstart=1)
+
+1. 위 버튼 → **Create codespace**. GitHub 안에서 DB와 앱이 자동으로 설치·실행됩니다(처음 5분 정도, 진행 로그: 터미널에서 `tail -f /tmp/linkos.log`).
+2. 준비되면 포트 3000 화면이 브라우저로 열립니다 → **로그인 → "테스트 계정으로 바로 시작"**.
+3. 다른 사람에게 보여주려면: 아래 **PORTS** 탭 → 3000 → 마우스 오른쪽 → **Port Visibility → Public** 으로 직접 바꾸고 그 주소를 공유합니다. (기본은 본인만 접속 가능)
+
+Codespace는 켜져 있는 동안만 접속되고 30분 동안 쓰지 않으면 멈춥니다(무료 사용 시간 월 약 60시간). 오래 공유할 주소가 필요하면 아래 Render를 쓰세요.
+
 ## 테스트 서버 (Render 원클릭 배포)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sooasim/linkos)

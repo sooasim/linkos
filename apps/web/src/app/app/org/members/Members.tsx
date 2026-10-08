@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Page";
+import { type SeatLimit, SeatLimitNotice, seatLimitOf } from "@/components/PlanLimit";
 import { api, relTime } from "@/lib/client";
 
 const ROLES = ["owner", "admin", "manager", "member", "viewer"] as const;
@@ -14,6 +15,7 @@ export function Members({ orgId, myRole, myId, perms }: { orgId: string; myRole:
   const [inv, setInv] = useState({ email: "", role: "member", maxUses: 1 });
   const [link, setLink] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [seats, setSeats] = useState<SeatLimit | null>(null);
   const can = (p: string) => perms.includes(p);
   const load = () => {
     api<{ members: any[] }>(`/orgs/${orgId}/members`).then((r) => setMembers(r.members));
@@ -22,12 +24,16 @@ export function Members({ orgId, myRole, myId, perms }: { orgId: string; myRole:
   useEffect(load, [orgId]);
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
     setMsg(null);
+    setSeats(null);
     try {
       await fn();
       if (ok) setMsg(ok);
       load();
     } catch (e) {
-      setMsg((e as Error).message);
+      // F-131: approving past the purchased seats → 402 plan_limit_reached (seats) with an upgrade link
+      const s = seatLimitOf(e);
+      if (s) setSeats(s);
+      else setMsg((e as Error).message);
     }
   };
   const active = members.filter((m) => m.status === "active");
@@ -44,6 +50,7 @@ export function Members({ orgId, myRole, myId, perms }: { orgId: string; myRole:
 
   return (
     <div className="space-y-6">
+      {seats && <SeatLimitNotice {...seats} admin={can("billing.manage") || myRole === "owner" || myRole === "admin"} />}
       {msg && <p role="status" className="surface p-4 text-[14px]">{msg}</p>}
       {pending.length > 0 && can("members.approve") && (
         <section className="surface space-y-2 p-5">

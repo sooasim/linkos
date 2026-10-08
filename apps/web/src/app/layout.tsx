@@ -2,7 +2,10 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Fx } from "@/components/Fx";
+import { I18nProvider } from "@/components/I18n";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { getLocale } from "@/lib/i18n.server";
+import { WebVitals } from "./WebVitals";
 
 const serif = localFont({
   src: [
@@ -40,13 +43,17 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // F-177: <html lang> follows the chosen app language (cookie lk_lang; default ko). Guest pages additionally mark
+  // their negotiated locale on <main lang>.
+  const locale = await getLocale();
   return (
-    <html lang="ko" className={`${serif.variable} ${inter.variable}`} suppressHydrationWarning>
+    <html lang={locale} className={`${serif.variable} ${inter.variable}`} suppressHydrationWarning>
       <body className="min-h-dvh">
-        {children}
+        <I18nProvider locale={locale}>{children}</I18nProvider>
         <Fx />
         <ServiceWorker />
+        <WebVitals />
       </body>
     </html>
   );

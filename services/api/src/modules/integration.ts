@@ -6,7 +6,7 @@ import { ApiError, badRequest, notFound, unauthorized, unavailable } from "../li
 import { type Ctx, appOrigin, audit, emit, hmac, log } from "../lib/platform";
 import { recordConsents } from "./identity";
 import { assertExportAllowed } from "./policy";
-import { listContacts } from "./relationship";
+import { type ContactDto, type ContactRow, listContacts, toContactDto } from "./relationship";
 
 // ---------- credential vault (AES-256-GCM) — shared with cached idempotent responses ----------
 export { seal, unseal } from "../lib/vault";
@@ -151,7 +151,7 @@ export async function googleAccountWithScope(userId: string, scope: string, db: 
 export async function integrationStatus(userId: string) {
   const accounts = await q<any>("SELECT id, provider, scopes, status, metadata, updated_at FROM integration_accounts WHERE user_id=$1", [userId]);
   const jobs = await q<any>(
-    `SELECT j.id, j.job_type, j.status, j.attempt_count, j.last_error, j.scheduled_at, j.finished_at FROM sync_jobs j JOIN integration_accounts a ON a.id=j.integration_account_id
+    `SELECT j.id, j.job_type, j.provider, j.status, j.attempt_count, j.last_error, j.scheduled_at, j.finished_at FROM sync_jobs j JOIN integration_accounts a ON a.id=j.integration_account_id
      WHERE a.user_id=$1 ORDER BY j.scheduled_at DESC LIMIT 20`,
     [userId],
   );
@@ -228,6 +228,11 @@ async function processAccount(accountId: string, limit: number): Promise<number>
           const out = (await runJob(accountId, job)) as { externalId?: string } | void;
           await q("UPDATE sync_jobs SET status='done', finished_at=now(), attempt_count=attempt_count+1, last_error=NULL, external_id=COALESCE($2, external_id) WHERE id=$1", [job.id, out?.externalId ?? null]);
           done++;
+          // 백서 §3.1 SYNCED: a contact created by an exchange reached the external address book / CRM
+          if (out?.externalId && job.payload?.contactId && /\.(contact|lead)\.upsert$/.test(String(job.job_type))) {
+            const { markExchangeSynced } = await import("./handoff"); // dynamic: avoids a module cycle
+            await markExchangeSynced(String(job.payload.contactId)).catch((e) => log("warn", "sync.exchange_state_failed", { job: job.id, error: (e as Error).message }));
+          }
         } catch (e) {
           const attempts = job.attempt_count + 1;
           const kind = classify(e);
@@ -328,38 +333,186 @@ export async function disconnectGoogle(ctx: Ctx) {
   await audit(pool(), ctx, "integration.google.disconnected", "integration_account", null);
 }
 
-// ---------- Export ----------
+// ---------- Export (F-125 / UX-023) ----------
 export const EXPORT_FORMATS = ["csv", "xlsx", "docx", "vcard", "txt", "json", "pdf"] as const;
 const FIELD_LABELS: Record<string, string> = { fullName: "이름", company: "회사", jobTitle: "직책", department: "부서", email: "이메일", phone: "전화", address: "주소", website: "웹사이트", tags: "태그", lastContactAt: "최근 연락", source: "출처" };
 export const EXPORT_FIELDS = ["fullName", "company", "jobTitle", "department", "email", "phone", "address", "website", "tags", "lastContactAt", "source"] as const;
-export const exportInput = z.object({
+/** contacts = the address book (field selection); meetings / relationships = fact-only reports with fixed columns (no AI text). */
+export const EXPORT_REPORTS = ["contacts", "meetings", "relationships"] as const;
+/** Report files are tabular; vCard/TXT/DOCX/PDF stay contact-only. */
+export const REPORT_FORMATS = ["csv", "xlsx", "json"] as const;
+const isoDate = z
+  .string()
+  .max(40)
+  .refine((s) => !Number.isNaN(Date.parse(s)), "날짜 형식이 올바르지 않습니다.");
+export const exportBaseInput = z.object({
   format: z.enum(EXPORT_FORMATS),
   fields: z.array(z.enum(EXPORT_FIELDS)).min(1).default(["fullName", "company", "jobTitle", "email", "phone"]),
   tag: z.string().max(40).optional(),
+  report: z.enum(EXPORT_REPORTS).default("contacts"),
+  /** period (inclusive). Contacts/relationships: added OR met (encounter) within the period; meetings: meeting date. */
+  since: isoDate.optional(),
+  until: isoDate.optional(),
 });
+export const exportInput = exportBaseInput
+  .refine((v) => !v.since || !v.until || Date.parse(v.since) <= Date.parse(v.until), { message: "시작일이 종료일보다 늦습니다.", path: ["since"] })
+  .refine((v) => v.report === "contacts" || (REPORT_FORMATS as readonly string[]).includes(v.format), { message: "보고서는 CSV · Excel · JSON으로만 내보낼 수 있습니다.", path: ["format"] });
+// callers may omit `report` (defaults to "contacts")
+export type ExportInput = Omit<z.infer<typeof exportInput>, "report"> & { report?: (typeof EXPORT_REPORTS)[number] };
 
-export async function createExport(ctx: Ctx, input: z.infer<typeof exportInput>) {
+interface ExportPeriod {
+  since?: string | null;
+  until?: string | null;
+}
+
+/** A date-only `until` (YYYY-MM-DD) includes that whole day. */
+function periodBounds(p: ExportPeriod): { since: Date | null; until: Date | null } {
+  const since = p.since ? new Date(p.since) : null;
+  let until = p.until ? new Date(p.until) : null;
+  if (until && p.until && /^\d{4}-\d{2}-\d{2}$/.test(p.until)) until = new Date(until.getTime() + 864e5 - 1);
+  return { since, until };
+}
+
+export async function createExport(ctx: Ctx, input: ExportInput) {
   if (!ctx.userId) throw unauthorized();
   await assertExportAllowed(ctx.userId); // F-139
-  const r = await one<{ id: string }>("INSERT INTO export_jobs (user_id, format, fields, kind) VALUES ($1,$2,$3,$4) RETURNING id", [ctx.userId, input.format, input.fields, input.tag ? `contacts:tag:${input.tag}` : "contacts"]);
-  await audit(pool(), ctx, "export.created", "export_job", r!.id, { format: input.format, fields: input.fields });
+  const report = input.report ?? "contacts";
+  const kind = report !== "contacts" ? `report:${report}` : input.tag ? `contacts:tag:${input.tag}` : "contacts";
+  const params = { ...(input.since ? { since: input.since } : {}), ...(input.until ? { until: input.until } : {}) };
+  const r = await one<{ id: string }>("INSERT INTO export_jobs (user_id, format, fields, kind, params) VALUES ($1,$2,$3,$4,$5) RETURNING id", [ctx.userId, input.format, input.fields, kind, JSON.stringify(params)]);
+  // dates are not kept in audit metadata (redact() would mask them); the job row holds the exact period
+  await audit(pool(), ctx, "export.created", "export_job", r!.id, { format: input.format, fields: input.fields, report, period: Boolean(input.since || input.until) });
   return { id: r!.id, status: "ready", downloadUrl: `/api/v1/exports/${r!.id}/download` };
+}
+
+/**
+ * Contacts for an export. Without a period this is the address book as listed (unchanged behavior); with a period it is
+ * every live contact that was added OR met (an encounter occurred) within it.
+ */
+export async function contactsForExport(userId: string, opts: { tag?: string } & ExportPeriod): Promise<ContactDto[]> {
+  if (!opts.since && !opts.until) return listContacts(userId, { limit: 200, tag: opts.tag });
+  const { since, until } = periodBounds(opts);
+  const params: unknown[] = [userId, since, until];
+  let where = "c.owner_user_id=$1 AND c.deleted_at IS NULL AND c.merged_into_id IS NULL";
+  where += ` AND ((($2::timestamptz IS NULL OR c.created_at >= $2) AND ($3::timestamptz IS NULL OR c.created_at <= $3))
+    OR EXISTS (SELECT 1 FROM encounters e WHERE e.owner_user_id=$1 AND e.contact_id=c.id AND ($2::timestamptz IS NULL OR e.occurred_at >= $2) AND ($3::timestamptz IS NULL OR e.occurred_at <= $3)))`;
+  if (opts.tag) {
+    params.push(opts.tag);
+    where += ` AND EXISTS (SELECT 1 FROM contact_tags ct JOIN tags t ON t.id=ct.tag_id WHERE ct.contact_id=c.id AND t.owner_user_id=$1 AND t.name=$${params.length})`;
+  }
+  const rows = await q<ContactRow>(
+    `SELECT c.id, c.owner_user_id, c.linked_user_id, c.full_name, co.name AS company, c.job_title, c.department, c.email, c.phone,
+       c.address, c.website, c.source, c.field_provenance, c.version, c.created_at, c.updated_at, rel.last_contact_at, rel.next_followup_at,
+       COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = c.id), '{}') AS tags
+     FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+     LEFT JOIN relationships rel ON rel.owner_user_id = $1 AND rel.contact_id = c.id
+     WHERE ${where}
+     ORDER BY COALESCE(rel.last_contact_at, c.created_at) DESC
+     LIMIT 2000`,
+    params,
+  );
+  return rows.map(toContactDto);
+}
+
+const MEETING_COLUMNS = ["제목", "날짜", "상대", "회사", "목적", "다음 미팅"] as const;
+/** Meetings report — only what the user recorded (title/date/participants/purpose). No AI summary text. */
+export async function meetingReportRows(userId: string, period: ExportPeriod): Promise<Record<string, string>[]> {
+  const { since, until } = periodBounds(period);
+  const rows = await q<{ title: string | null; at: Date; purpose: string | null; next_meeting_at: Date | null; names: string[] | null; companies: string[] | null }>(
+    `SELECT m.title, COALESCE(m.started_at, m.created_at) AS at, m.purpose, m.next_meeting_at,
+       array_remove(array_agg(c.full_name ORDER BY c.full_name), NULL) AS names,
+       array_remove(array_agg(DISTINCT co.name), NULL) AS companies
+     FROM meetings m
+     LEFT JOIN meeting_participants mp ON mp.meeting_id = m.id
+     LEFT JOIN contacts c ON c.id = mp.contact_id AND c.owner_user_id = $1 AND c.deleted_at IS NULL
+     LEFT JOIN companies co ON co.id = c.company_id
+     WHERE m.owner_user_id=$1 AND ($2::timestamptz IS NULL OR COALESCE(m.started_at, m.created_at) >= $2) AND ($3::timestamptz IS NULL OR COALESCE(m.started_at, m.created_at) <= $3)
+     GROUP BY m.id ORDER BY at DESC LIMIT 2000`,
+    [userId, since, until],
+  );
+  return rows.map((r) => ({
+    제목: r.title ?? "",
+    날짜: new Date(r.at).toISOString(),
+    상대: (r.names ?? []).join("; "),
+    회사: (r.companies ?? []).join("; "),
+    목적: r.purpose ?? "",
+    "다음 미팅": r.next_meeting_at ? new Date(r.next_meeting_at).toISOString() : "",
+  }));
+}
+
+const RELATIONSHIP_COLUMNS = ["이름", "회사", "직책", "관계 강도", "만남 횟수", "마지막 만남", "최근 연락", "다음 후속", "상태"] as const;
+/** Relationships report — stored facts (computed strength score, encounter count/last, follow-up date). */
+export async function relationshipReportRows(userId: string, period: ExportPeriod): Promise<Record<string, string>[]> {
+  const contacts = await contactsForExport(userId, period);
+  if (!contacts.length) return [];
+  const stats = await q<{ contact_id: string; strength: string | null; status: string | null; n: number; last: Date | null }>(
+    `SELECT c.id AS contact_id, rel.strength, rel.status,
+       (SELECT count(*)::int FROM encounters e WHERE e.owner_user_id=$1 AND e.contact_id=c.id) AS n,
+       (SELECT max(e.occurred_at) FROM encounters e WHERE e.owner_user_id=$1 AND e.contact_id=c.id) AS last
+     FROM contacts c LEFT JOIN relationships rel ON rel.owner_user_id=$1 AND rel.contact_id=c.id
+     WHERE c.owner_user_id=$1 AND c.id = ANY($2::uuid[])`,
+    [userId, contacts.map((c) => c.id)],
+  );
+  const by = new Map(stats.map((s) => [s.contact_id, s]));
+  const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : "");
+  return contacts.map((c) => {
+    const s = by.get(c.id);
+    return {
+      이름: c.fullName,
+      회사: c.company ?? "",
+      직책: c.jobTitle ?? "",
+      "관계 강도": s?.strength == null ? "" : String(Math.round(Number(s.strength))),
+      "만남 횟수": String(s?.n ?? 0),
+      "마지막 만남": iso(s?.last),
+      "최근 연락": iso(c.lastContactAt),
+      "다음 후속": iso(c.nextFollowupAt),
+      상태: s?.status ?? "",
+    };
+  });
+}
+
+async function renderTable(format: (typeof EXPORT_FORMATS)[number], name: string, columns: readonly string[], rows: Record<string, unknown>[], stamp: string) {
+  switch (format) {
+    case "csv":
+      return { body: toCsv(rows, [...columns]), contentType: "text/csv; charset=utf-8", filename: `linkos-${name}-${stamp}.csv` };
+    case "json":
+      return { body: JSON.stringify(rows, null, 2), contentType: "application/json", filename: `linkos-${name}-${stamp}.json` };
+    case "xlsx": {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "LINKOS";
+      const ws = wb.addWorksheet(name);
+      ws.columns = columns.map((f) => ({ header: f, key: f, width: 24 }));
+      for (const r of rows) ws.addRow(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^[=+\-@]/.test(v) ? `'${v}` : v])));
+      ws.getRow(1).font = { bold: true };
+      return { body: Buffer.from(await wb.xlsx.writeBuffer()), contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename: `linkos-${name}-${stamp}.xlsx` };
+    }
+    default:
+      throw badRequest("report_format", "보고서는 CSV · Excel · JSON으로만 내보낼 수 있습니다.");
+  }
 }
 
 export async function renderExport(ctx: Ctx, id: string): Promise<{ body: Buffer | string; contentType: string; filename: string }> {
   if (!ctx.userId) throw unauthorized();
-  const job = await one<{ format: (typeof EXPORT_FORMATS)[number]; fields: string[]; kind: string; expires_at: Date }>("SELECT format, fields, kind, expires_at FROM export_jobs WHERE id=$1 AND user_id=$2", [id, ctx.userId]);
+  const job = await one<{ format: (typeof EXPORT_FORMATS)[number]; fields: string[]; kind: string; params: ExportPeriod | null; expires_at: Date }>("SELECT format, fields, kind, params, expires_at FROM export_jobs WHERE id=$1 AND user_id=$2", [id, ctx.userId]);
   if (!job) throw notFound("export");
   if (job.expires_at.getTime() < Date.now()) throw new ApiError(410, "export_expired");
+  const period: ExportPeriod = { since: job.params?.since ?? null, until: job.params?.until ?? null };
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (job.kind === "report:meetings" || job.kind === "report:relationships") {
+    const meetings = job.kind === "report:meetings";
+    const rows = meetings ? await meetingReportRows(ctx.userId, period) : await relationshipReportRows(ctx.userId, period);
+    await audit(pool(), ctx, "export.downloaded", "export_job", id, { rows: rows.length, report: meetings ? "meetings" : "relationships" });
+    return renderTable(job.format, meetings ? "meetings" : "relationships", meetings ? MEETING_COLUMNS : RELATIONSHIP_COLUMNS, rows, stamp);
+  }
   const tag = job.kind.startsWith("contacts:tag:") ? job.kind.slice(13) : undefined;
-  const contacts = await listContacts(ctx.userId, { limit: 200, tag });
+  const contacts = await contactsForExport(ctx.userId, { tag, ...period });
   const rows = contacts.map((c) => {
     const r: Record<string, unknown> = {};
     for (const f of job.fields) r[f] = f === "tags" ? c.tags.join(";") : f === "lastContactAt" ? (c.lastContactAt ? new Date(c.lastContactAt).toISOString() : "") : (c as Record<string, unknown>)[f];
     return r;
   });
   await audit(pool(), ctx, "export.downloaded", "export_job", id, { rows: rows.length });
-  const stamp = new Date().toISOString().slice(0, 10);
   switch (job.format) {
     case "csv":
       return { body: toCsv(rows, job.fields), contentType: "text/csv; charset=utf-8", filename: `linkos-contacts-${stamp}.csv` };
@@ -408,13 +561,13 @@ export async function sheetsStatus(userId: string) {
 }
 
 /** Creates a new spreadsheet (drive.file scope) and writes the selected contact fields as RAW values (no formula evaluation). */
-export const sheetsExportInput = exportInput.omit({ format: true });
+export const sheetsExportInput = exportBaseInput.omit({ format: true, report: true });
 export async function exportToGoogleSheets(ctx: Ctx, input: z.infer<typeof sheetsExportInput>) {
   if (!ctx.userId) throw unauthorized();
   await assertExportAllowed(ctx.userId); // F-139
   const st = await sheetsStatus(ctx.userId);
   if (!st.connected || !st.accountId) throw new ApiError(409, "google_sheets_not_connected", "Google Sheets 권한을 먼저 연결하세요.");
-  const contacts = await listContacts(ctx.userId, { limit: 200, tag: input.tag });
+  const contacts = await contactsForExport(ctx.userId, { tag: input.tag, since: input.since, until: input.until });
   const header = input.fields;
   const rows = contacts.map((c) =>
     header.map((f) => {
@@ -474,7 +627,7 @@ async function driveFolder(accountId: string, token: string): Promise<string> {
 
 export const driveSaveInput = exportInput;
 /** Render an export (any file format) and upload it into the user's LINKOS folder in Google Drive (multipart upload). */
-export async function saveExportToDrive(ctx: Ctx, input: z.infer<typeof driveSaveInput>) {
+export async function saveExportToDrive(ctx: Ctx, input: ExportInput) {
   if (!ctx.userId) throw unauthorized();
   const acct = await googleAccountWithScope(ctx.userId, GOOGLE_SCOPE.driveFile);
   if (!acct) throw new ApiError(409, "google_drive_not_connected", "Google Drive 권한을 먼저 연결하세요.");

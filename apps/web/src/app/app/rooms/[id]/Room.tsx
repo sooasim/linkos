@@ -1,8 +1,48 @@
 "use client";
+// UX-020 Connection Room — 참여자(소개자 · 양측, 역할/직함/동의 상태), 소개 이유, Next Action, 기록, 요약(F-158).
+// 로딩 실패·없는 방은 끝없는 스켈레톤 대신 오류/찾을 수 없음 상태를 보여준다.
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AiLabel, PageHeader } from "@/components/Page";
+import { Avatar, AiLabel, Empty, PageHeader } from "@/components/Page";
 import { RoomFiles } from "@/components/RoomFiles";
-import { api, relTime } from "@/lib/client";
+import { RoomMeeting } from "@/components/RoomMeeting";
+import { ClientError, api, relTime } from "@/lib/client";
+
+const ROLE: Record<string, string> = { introducer: "소개자 (나)", party_a: "소개받는 분 A", party_b: "소개받는 분 B" };
+const STATUS: Record<string, string> = { accepted: "동의함", declined: "거절함", pending: "응답 대기" };
+
+function Participants({ list }: { list: { role: string; name: string | null; company: string | null; jobTitle: string | null; contactId: string | null; status: string }[] }) {
+  if (!list?.length) return null;
+  return (
+    <section className="surface mt-4 p-4" aria-labelledby="room-people-h">
+      <h2 id="room-people-h" className="eyebrow">참여자 {list.length}</h2>
+      <ul className="mt-2 divide-y divide-[var(--line)]" data-testid="room-participants">
+        {list.map((p) => {
+          const body = (
+            <>
+              <Avatar name={p.name ?? "?"} size={36} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{p.name ?? "이름 없음"}</span>
+                <span className="block truncate text-[13px] text-[var(--fg-mute)]">{[p.jobTitle, p.company].filter(Boolean).join(" · ") || ROLE[p.role]}</span>
+              </span>
+              <span className="chip !text-[12px]">{ROLE[p.role] ?? p.role}</span>
+              {p.role !== "introducer" && <span className="text-[12px] text-[var(--fg-mute)]">{STATUS[p.status] ?? p.status}</span>}
+            </>
+          );
+          return (
+            <li key={p.role}>
+              {p.contactId ? (
+                <Link href={`/app/people/${p.contactId}`} className="flex items-center gap-3 py-2.5">{body}</Link>
+              ) : (
+                <div className="flex items-center gap-3 py-2.5">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 // F-158 Room 요약 (진행 상태 / 결정 / 미완료 작업) — suggestion only
 function RoomSummary({ id, initial }: { id: string; initial: any }) {
@@ -31,11 +71,38 @@ export function Room({ id }: { id: string }) {
   const [r, setR] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [next, setNext] = useState("");
-  const load = () => api(`/rooms/${id}`).then((x) => { setR(x); setNext(x.nextAction ?? ""); });
+  const [error, setError] = useState<{ status: number; message: string } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const load = () =>
+    api(`/rooms/${id}`)
+      .then((x) => {
+        setR(x);
+        setNext(x.nextAction ?? "");
+        setError(null);
+      })
+      .catch((e) => setError({ status: e instanceof ClientError ? e.status : 0, message: (e as Error).message }));
+  const act = (p: Promise<unknown>) => p.then(() => setActionError(null)).then(load).catch((e) => setActionError((e as Error).message));
   useEffect(() => {
     load();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!r) return <div className="surface h-40 animate-pulse" />;
+  if (!r && error) {
+    return (
+      <div data-testid="room-error">
+        <PageHeader back="/app/intros" eyebrow="Connection Room" title={error.status === 404 ? "방을 찾을 수 없어요" : "방을 열지 못했어요"} />
+        <Empty
+          title={error.status === 404 ? "삭제되었거나 접근 권한이 없는 Connection Room이에요" : "잠시 후 다시 시도하세요"}
+          body={error.status === 404 ? "소개 화면에서 양측 동의가 끝난 소개의 방을 열 수 있어요." : error.message}
+          action={
+            <span className="flex gap-2">
+              {error.status !== 404 && <button className="btn btn-ghost" onClick={load}>다시 시도</button>}
+              <Link href="/app/intros" className="btn btn-ink">소개 목록</Link>
+            </span>
+          }
+        />
+      </div>
+    );
+  }
+  if (!r) return <div className="surface h-40 animate-pulse" aria-busy="true" aria-label="불러오는 중" />;
   return (
     <div>
       <PageHeader back="/app/intros" eyebrow={r.status === "won" ? "성사" : "Connection Room"} title={r.introduction ? <>{r.introduction.partyA.name} <em>&</em> {r.introduction.partyB.name}</> : r.title} />
@@ -43,11 +110,13 @@ export function Room({ id }: { id: string }) {
         <p className="eyebrow">소개 이유</p>
         <p className="mt-1">{r.purpose}</p>
       </section>
+      <Participants list={r.participants ?? []} />
       <section className="mt-4 flex gap-2">
-        <input className="field" placeholder="Next Action" value={next} onChange={(e) => setNext(e.target.value)} />
-        <button className="btn btn-ink shrink-0" onClick={() => api(`/rooms/${id}`, { method: "PATCH", body: { nextAction: next } }).then(load)}>저장</button>
-        <button className="btn btn-signal shrink-0" onClick={() => api(`/rooms/${id}`, { method: "PATCH", body: { status: "won" } }).then(load)}>성사</button>
+        <input className="field" placeholder="Next Action" aria-label="Next Action" value={next} onChange={(e) => setNext(e.target.value)} />
+        <button className="btn btn-ink shrink-0" onClick={() => act(api(`/rooms/${id}`, { method: "PATCH", body: { nextAction: next } }))}>저장</button>
+        <button className="btn btn-signal shrink-0" onClick={() => act(api(`/rooms/${id}`, { method: "PATCH", body: { status: "won" } }))}>성사</button>
       </section>
+      {actionError && <p role="alert" className="mt-2 text-[13.5px] text-[var(--color-ember)]">{actionError}</p>}
       <RoomSummary id={id} initial={r.summary ?? null} />
       <RoomFiles roomId={id} onChange={load} />
       <ul className="mt-6 space-y-3">
@@ -58,10 +127,11 @@ export function Room({ id }: { id: string }) {
           </li>
         ))}
       </ul>
-      <form className="mt-4 flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (!msg.trim()) return; await api(`/rooms/${id}/messages`, { body: { body: msg } }); setMsg(""); load(); }}>
-        <input className="field" placeholder="자료, 메모, 진행 상황" value={msg} onChange={(e) => setMsg(e.target.value)} />
+      <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!msg.trim()) return; void act(api(`/rooms/${id}/messages`, { body: { body: msg } }).then(() => setMsg(""))); }}>
+        <input className="field" placeholder="자료, 메모, 진행 상황" aria-label="Room 기록" value={msg} onChange={(e) => setMsg(e.target.value)} />
         <button className="btn btn-signal shrink-0">기록</button>
       </form>
+      <RoomMeeting roomId={id} />
     </div>
   );
 }

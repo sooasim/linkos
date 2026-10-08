@@ -1,6 +1,7 @@
 // F-008 B2B SSO — SAML 2.0 SP + SSO enforcement (sso_required) integration tests on real PostgreSQL.
 // The IdP is simulated in-process: self-signed signing certs built with node:crypto, Responses signed with xml-crypto.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { grantSeats } from "./seats";
 import { type IdpKey, type ResponseOpts, b64, buildResponse, idpMetadataXml, makeIdpKey, readAuthnRequest, signXml } from "./fakeSamlIdp";
 import { createSoftAuthenticator } from "./softAuthenticator";
 
@@ -46,6 +47,7 @@ beforeAll(async () => {
   ownerToken = o.sessionToken;
   const created = await org.createOrg(ctx(owner.id), { name: "SAML Corp" });
   orgId = created.id;
+  await grantSeats(orgId, 20, "enterprise");
   slug = created.slug;
   await org.addDomain(ctx(owner.id), orgId, "saml-corp.io");
   sp = saml.spUrls(orgId);

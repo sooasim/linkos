@@ -1,0 +1,4 @@
+{
+  "$comment": "Reviewed, time-boxed exceptions for scripts/audit-gate.mjs (pnpm audit --prod, high/critical). Every entry needs a reason and an expiry; an expired entry fails CI again.",
+  "advisories": []
+}

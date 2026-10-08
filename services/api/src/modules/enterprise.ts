@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   API_KEY_SCOPES,
   type ApiKeyScope,
+  CRM_PROVIDERS,
   type ConsentType,
   ORG_ROLES,
   type OrgRole,
@@ -19,11 +20,15 @@ import {
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type pg from "pg";
 import { z } from "zod";
-import { type Db, one, pool, q, tx } from "../lib/db";
+import { type Db, allowEncounterRewrite, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, notFound, unauthorized, unavailable } from "../lib/errors";
 import { type Ctx, appOrigin, audit, log, rateLimit, sha256 } from "../lib/platform";
 import { seal, unseal } from "./integration";
 import { handleMemberDeparture, requireOrg } from "./org";
+import { purgeAuditLogs } from "./auditChain";
+import { isReferralCode } from "./referral";
+import { enqueueRequiredCrmSync } from "./policy";
+import { assertSeatAvailable } from "./billing";
 import { contactInput, insertContact } from "./relationship";
 import { samlStart } from "./saml";
 import { assertOrgEmailDomain, completeSsoLogin } from "./ssoLogin";
@@ -86,6 +91,9 @@ export const policiesInput = z.object({
   minFieldVisibility: z.enum(["public", "business", "trusted"]).nullish(),
   requiredCardFields: z.array(z.enum(["email", "phone", "mobile", "website", "address"])).max(5).optional(),
   graphPersonalExposure: z.enum(["company_level", "shared_only"]).optional(),
+  // F-139 "CRM sync 필수": company-owned contacts/leads are pushed to an allowed CRM of their owner
+  requireCrmSync: z.boolean().optional(),
+  crmSyncProviders: z.array(z.enum(CRM_PROVIDERS)).max(CRM_PROVIDERS.length).optional(),
 });
 
 export async function updatePolicies(ctx: Ctx, orgId: string, input: z.infer<typeof policiesInput>) {
@@ -160,10 +168,14 @@ export async function processRetention(now: Date = new Date()): Promise<number> 
       const t = await retentionTargets(c, o.id, o.retention, now);
       const leadIds = t.inactive.filter((x) => x.ownership === "company").map((x) => x.id);
       const personalIds = t.inactive.filter((x) => x.ownership !== "company").map((x) => x.id);
-      if (leadIds.length) await c.query("DELETE FROM contacts WHERE id = ANY($1::uuid[]) AND organization_id=$2", [leadIds, o.id]);
+      if (leadIds.length) {
+        await allowEncounterRewrite(c, "delete"); // §9: retention purge may remove the leads' (append-only) Encounters
+        await c.query("DELETE FROM contacts WHERE id = ANY($1::uuid[]) AND organization_id=$2", [leadIds, o.id]);
+      }
       if (personalIds.length) await c.query("UPDATE contacts SET scope='personal', organization_id=NULL, shared_by=NULL, shared_at=NULL WHERE id = ANY($1::uuid[])", [personalIds]);
       const n = t.noteCut ? (await c.query("DELETE FROM notes WHERE organization_id=$1 AND scope='team' AND created_at < $2", [o.id, t.noteCut])).rowCount ?? 0 : 0;
-      const a = t.auditCut ? (await c.query("DELETE FROM audit_logs WHERE organization_id=$1 AND created_at < $2 AND action NOT LIKE 'retention.%'", [o.id, t.auditCut])).rowCount ?? 0 : 0;
+      // §20 audit durability: purged rows leave hash-chain tombstones so the chain still verifies
+      const a = t.auditCut ? await purgeAuditLogs(c, "organization_id=$1 AND created_at < $2 AND action NOT LIKE 'retention.%'", [o.id, t.auditCut], "retention") : 0;
       const sum = leadIds.length + personalIds.length + n + a;
       if (sum) {
         await audit(c, { userId: null }, "retention.purged", "organization", o.id, { companyLeadsDeleted: leadIds.length, personalUnshared: personalIds.length, teamNotesDeleted: n, auditLogsDeleted: a, policy: o.retention }, o.id);
@@ -266,7 +278,9 @@ export async function apiCreateLead(auth: ApiKeyAuth, input: z.infer<typeof cont
     if (!owner) throw unavailable("no_assignee");
     const ids = await insertContact(c, owner.user_id, { ...input, source: "import" });
     await c.query("UPDATE contacts SET organization_id=$2, scope='org', ownership='company', shared_at=now() WHERE id=$1", [ids.contactId, auth.orgId]);
-    await audit(c, { userId: null }, "apikey.lead_created", "contact", ids.contactId, { keyId: auth.keyId }, auth.orgId);
+    // F-139 CRM sync required: queue the push (a missing CRM connection is recorded, never drops the lead)
+    const crm = await enqueueRequiredCrmSync(c, ids.contactId);
+    await audit(c, { userId: null }, "apikey.lead_created", "contact", ids.contactId, { keyId: auth.keyId, ...(crm.required ? { crm_sync: crm.violation ?? (crm.queued ? "queued" : "exists") } : {}) }, auth.orgId);
     return { id: ids.contactId, ownerUserId: owner.user_id };
   });
 }
@@ -361,7 +375,7 @@ const b64url = (b: Buffer) => b.toString("base64url");
 /** GET /auth/sso/start?org=slug | ?email=… → redirect URL to the org's IdP (PKCE S256 + nonce + one-time state). */
 export async function ssoStart(
   ctx: Ctx,
-  opts: { org?: string | null; email?: string | null; next?: string | null; consent?: boolean; browserBinding?: string | null },
+  opts: { org?: string | null; email?: string | null; next?: string | null; consent?: boolean; browserBinding?: string | null; referralCode?: string | null },
 ) {
   await rateLimit(`sso:start:${ctx.ip}`, 30, 600);
   type Found = { id: string; oidc: boolean };
@@ -374,19 +388,20 @@ export async function ssoStart(
   }
   if (!org) throw notFound("sso");
   // OIDC wins when both connections are enabled; otherwise SAML 2.0 (SP-initiated, HTTP-Redirect)
-  if (!org.oidc) return samlStart(ctx, org.id, { next: opts.next, consent: opts.consent, browserBinding: opts.browserBinding });
+  if (!org.oidc) return samlStart(ctx, org.id, { next: opts.next, consent: opts.consent, browserBinding: opts.browserBinding, referralCode: opts.referralCode });
   const cfg = await one<{ issuer: string; client_id: string }>("SELECT issuer, client_id FROM sso_configs WHERE organization_id=$1", [org.id]);
   const disc = await discover(cfg!.issuer);
   const state = generateToken(32);
   const nonce = generateToken(16);
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
-  await q("INSERT INTO sso_login_states (state_hash, organization_id, nonce, code_verifier, next_path, expires_at) VALUES ($1,$2,$3,$4,$5, now() + interval '10 minutes')", [
+  await q("INSERT INTO sso_login_states (state_hash, organization_id, nonce, code_verifier, next_path, expires_at, referral_code) VALUES ($1,$2,$3,$4,$5, now() + interval '10 minutes', $6)", [
     sha256(state),
     org.id,
     nonce,
     verifier,
     opts.next ?? null,
+    isReferralCode(opts.referralCode) ? opts.referralCode : null, // F-064
   ]);
   const params = new URLSearchParams({
     response_type: "code",
@@ -407,7 +422,7 @@ export async function ssoStart(
  * email must be on one of the org's verified domains → user upsert (consents required for new accounts) → membership → session.
  */
 export async function ssoCallback(ctx: Ctx, input: { code: string; state: string; consents: { type: ConsentType; granted: boolean }[] }) {
-  const st = await one<{ id: string; organization_id: string; nonce: string; code_verifier: string; next_path: string | null; expires_at: Date; consumed_at: Date | null }>(
+  const st = await one<{ id: string; organization_id: string; nonce: string; code_verifier: string; next_path: string | null; expires_at: Date; consumed_at: Date | null; referral_code: string | null }>(
     "UPDATE sso_login_states SET consumed_at=now() WHERE state_hash=$1 AND consumed_at IS NULL RETURNING *",
     [sha256(input.state)],
   );
@@ -457,6 +472,7 @@ export async function ssoCallback(ctx: Ctx, input: { code: string; state: string
       consents: input.consents,
       defaultRole: cfg.default_role,
       method: "oidc_sso",
+      referralCode: st.referral_code,
     }),
   );
   return { ...r, next: st.next_path };
@@ -559,6 +575,7 @@ export async function scimCreate(orgId: string, body: unknown) {
     let u = await one<{ id: string }>("SELECT id FROM users WHERE email=$1", [email], c);
     const existing = u ? await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2", [orgId, u.id], c) : null;
     if (existing?.status === "active") throw new ScimError(409, "User already exists", "uniqueness");
+    if (b.active) await scimAssertSeat(c, orgId); // F-191
     if (!u) u = await one<{ id: string }>("INSERT INTO users (email, display_name) VALUES ($1,$2) RETURNING id", [email, scimDisplayName(b)], c);
     await c.query("INSERT INTO identities (user_id, provider, provider_subject) VALUES ($1,$2,$3) ON CONFLICT (provider, provider_subject) DO NOTHING", [u!.id, `scim:${orgId}`, b.externalId ?? email]);
     const role =
@@ -574,6 +591,23 @@ export async function scimCreate(orgId: string, body: unknown) {
   });
 }
 
+/**
+ * F-191 seats for SCIM provisioning: same entitlement as invites/domain joins, reported in the SCIM error schema
+ * (RFC 7644 §3.12 — 403 with a detail; there is no SCIM scimType for quota) instead of the app's 402 body.
+ */
+async function scimAssertSeat(c: pg.PoolClient, orgId: string) {
+  await c.query("SELECT 1 FROM organizations WHERE id=$1 FOR UPDATE", [orgId]);
+  try {
+    await assertSeatAvailable(orgId, c);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 402) {
+      const d = (e.details ?? {}) as { limit?: number; used?: number };
+      throw new ScimError(403, `seat limit reached (${d.used ?? "?"}/${d.limit ?? "?"} seats in use) — add seats to the organization plan`);
+    }
+    throw e;
+  }
+}
+
 async function scimSetActive(c: pg.PoolClient, orgId: string, userId: string, active: boolean) {
   const m = await one<{ status: string }>("SELECT status FROM organization_members WHERE organization_id=$1 AND user_id=$2 FOR UPDATE", [orgId, userId], c);
   if (!m) throw new ScimError(404, "User not found");
@@ -584,6 +618,7 @@ async function scimSetActive(c: pg.PoolClient, orgId: string, userId: string, ac
     if (isOwner && !owners!.n) throw new ScimError(409, "cannot deactivate the last owner", "mutability");
     await handleMemberDeparture(c, orgId, userId, null, { userId: null }, "scim_deprovisioned");
   } else if (active && m.status !== "active") {
+    await scimAssertSeat(c, orgId); // F-191: re-activation takes a seat again
     await c.query("UPDATE organization_members SET status='active', left_at=NULL, joined_at=now() WHERE organization_id=$1 AND user_id=$2", [orgId, userId]);
   }
 }

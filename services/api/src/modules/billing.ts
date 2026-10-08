@@ -137,7 +137,10 @@ export async function assertSeatAvailable(organizationId: string, db: Db = pool(
     db,
   );
   const used = (await one<{ n: number }>("SELECT count(*)::int AS n FROM organization_members WHERE organization_id=$1 AND status='active'", [organizationId], db))?.n ?? 0;
+  // F-191: team features are an organization plan (business: min 3 seats); an org without one holds only its owner.
+  // BILLING_ENFORCEMENT=off counts but never blocks — same switch as the usage meters (test servers, staged rollout).
   const seats = sub && dunningState({ status: sub.status, graceUntil: sub.grace_until }) !== "suspended" ? sub.seats : 1;
+  if (process.env.BILLING_ENFORCEMENT === "off") return { used, seats };
   if (used + 1 > seats) throw paymentRequired({ metric: "seats", plan: sub?.plan ?? "free", limit: seats, used, suggestedPlan: sub ? null : "business", upgradeUrl: `${appOrigin()}/app/billing?org=${organizationId}` });
   return { used, seats };
 }

@@ -1,14 +1,9 @@
-import Link from "next/link";
-import { Icon } from "./Icon";
+import { BackLink } from "./I18n";
 
 export function PageHeader({ eyebrow, title, back, action }: { eyebrow?: string; title: React.ReactNode; back?: string; action?: React.ReactNode }) {
   return (
     <header className="mb-6 animate-rise">
-      {back && (
-        <Link href={back} className="mb-4 inline-flex items-center gap-1 text-[14px] font-medium text-[var(--fg-mute)] hover:text-[var(--fg)]">
-          <Icon name="back" size={16} /> 뒤로
-        </Link>
-      )}
+      {back && <BackLink href={back} />}
       <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
           {eyebrow && <p className="eyebrow">{eyebrow}</p>}

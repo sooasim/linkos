@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { api, relTime } from "@/lib/client";
 import type { OrgInfo } from "../activeOrg";
+import { DangerZone } from "./DangerZone";
 import { SamlSettings } from "./SamlSettings";
 
 function Section({ title, icon, children, note }: { title: string; icon: Parameters<typeof Icon>[0]["name"]; children: React.ReactNode; note?: string }) {
@@ -17,7 +18,7 @@ function Section({ title, icon, children, note }: { title: string; icon: Paramet
 
 const ROLES = ["owner", "admin", "manager", "member", "viewer"] as const;
 
-// F-138 브랜딩 · F-004 도메인 · F-139 정책 · F-136 보존 · F-008 SSO/SCIM · F-140 API 키 · 감사 로그
+// F-138 브랜딩 · F-004 도메인 · F-139 정책 · F-136 보존 · F-008 SSO/SCIM · F-140 API 키 · 감사 로그 · F-129 조직 삭제(Owner)
 export function OrgSettings({ org }: { org: OrgInfo }) {
   const id = org.id;
   const [msg, setMsg] = useState<string | null>(null);
@@ -219,6 +220,8 @@ export function OrgSettings({ org }: { org: OrgInfo }) {
           ))}
         </ul>
       </Section>
+
+      {org.permissions.includes("org.delete") && <DangerZone orgId={id} orgName={org.name} />}
     </div>
   );
 }

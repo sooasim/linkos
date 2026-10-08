@@ -1,6 +1,8 @@
 // Track A integration tests (real PostgreSQL): Organization / Enterprise / Relationship graph / Introductions / Passkey / SSO.
 // Uses its own database (linkos_test_a). External IdP is a local fake OIDC server; WebAuthn uses a software authenticator.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { grantSeats } from "./seats";
+import { encounterMaintenance } from "./encounterMaintenance";
 import { startFakeOidc } from "./fakeOidc";
 import { createSoftAuthenticator } from "./softAuthenticator";
 
@@ -54,6 +56,7 @@ describe("F-129 조직/워크스페이스 + F-004 조직 가입", () => {
     owner = await signUp("ceo@acme-a.io", "대표");
     const o = await org.createOrg(ctx(owner.id), { name: "Acme Korea" });
     orgId = o.id;
+    await grantSeats(orgId); // F-191: the team below needs paid seats
     expect(o).toMatchObject({ role: "owner", slug: "acme-korea" });
     expect((await org.listMyOrgs(owner.id)).activeOrgId).toBe(orgId);
     await org.setActiveOrg(ctx(owner.id), null);
@@ -124,6 +127,7 @@ describe("F-130 역할 권한 — every role enforced in services", () => {
   beforeAll(async () => {
     u.owner = await signUp("owner@rbac.io");
     orgId = (await org.createOrg(ctx(u.owner.id), { name: "RBAC Co" })).id;
+    await grantSeats(orgId);
     for (const role of ["admin", "manager", "member", "viewer"] as const) {
       u[role] = await signUp(`${role}@rbac.io`, role);
       const inv = await org.createInvite(ctx(u.owner.id), orgId, org.inviteInput.parse({ role }));
@@ -218,6 +222,8 @@ describe("F-131 팀 주소록 tenant isolation · F-132 회사 소유 리드 · 
     u.ownerY = await signUp("owner@y-corp.io", "Y오너");
     X = (await org.createOrg(ctx(u.ownerX.id), { name: "X Corp" })).id;
     Y = (await org.createOrg(ctx(u.ownerY.id), { name: "Y Corp" })).id;
+    await grantSeats(X);
+    await grantSeats(Y);
     for (const k of ["salesX", "sales2X"]) {
       const inv = await org.createInvite(ctx(u.ownerX.id), X, org.inviteInput.parse({ role: "member" }));
       await org.acceptInvite(ctx(u[k]!.id), inv.token);
@@ -331,7 +337,7 @@ describe("F-074 관계 강도 · F-098 미접촉 위험 · F-099 Opportunity · 
   });
 
   it("F-098: cooling relationships (VIP / past cadence) are flagged with reasons", async () => {
-    await q("UPDATE encounters SET occurred_at = now() - interval '200 days' WHERE contact_id=$1", [cold]);
+    await encounterMaintenance("UPDATE encounters SET occurred_at = now() - interval '200 days' WHERE contact_id=$1", [cold]);
     await q("UPDATE relationships SET last_contact_at = now() - interval '200 days' WHERE contact_id=$1", [cold]);
     const r = await network.coolingRelationships(ctx(me.id));
     const hit = r.results.find((x) => x.contactId === cold);
@@ -372,6 +378,7 @@ describe("F-133 관계 그래프 · F-134 Who Knows Whom", () => {
     const amy = await signUp("amy@graph.io", "에이미");
     const ben = await signUp("ben@graph.io", "벤");
     const G = (await org.createOrg(ctx(boss.id), { name: "Graph Co" })).id;
+    await grantSeats(G);
     for (const m of [amy, ben]) {
       const inv = await org.createInvite(ctx(boss.id), G, org.inviteInput.parse({ role: "member" }));
       await org.acceptInvite(ctx(m.id), inv.token);
@@ -483,6 +490,7 @@ describe("F-064 Referral Attribution · F-197 Referral Reward", () => {
     // org invite
     const boss = await signUp("boss@ref.io");
     const O = (await org.createOrg(ctx(boss.id), { name: "Ref Org" })).id;
+    await grantSeats(O);
     const inv = await org.createInvite(ctx(boss.id), O, org.inviteInput.parse({ role: "member" }));
     const joiner = await signUp("joiner@ref.io");
     await org.acceptInvite(ctx(joiner.id), inv.token);
@@ -514,6 +522,7 @@ describe("F-135 대시보드 · F-136 Retention · F-138 브랜딩 · F-139 정�
     u.owner = await signUp("owner@ent.io", "엔터오너");
     u.member = await signUp("member@ent.io", "엔터멤버");
     E = (await org.createOrg(ctx(u.owner.id), { name: "Ent Co" })).id;
+    await grantSeats(E);
     const inv = await org.createInvite(ctx(u.owner.id), E, org.inviteInput.parse({ role: "member" }));
     await org.acceptInvite(ctx(u.member.id), inv.token);
   });
@@ -542,7 +551,7 @@ describe("F-135 대시보드 · F-136 Retention · F-138 브랜딩 · F-139 정�
     await org.addTeamNote(ctx(u.owner!.id), E, fresh, "오래된 팀 메모");
     for (const id of [oldLead, oldPersonal]) {
       await q("UPDATE contacts SET updated_at = now() - interval '400 days' WHERE id=$1", [id]);
-      await q("UPDATE encounters SET occurred_at = now() - interval '400 days' WHERE contact_id=$1", [id]);
+      await encounterMaintenance("UPDATE encounters SET occurred_at = now() - interval '400 days' WHERE contact_id=$1", [id]);
     }
     await q("UPDATE notes SET created_at = now() - interval '200 days' WHERE contact_id=$1 AND scope='team'", [fresh]);
     await enterprise.updateRetention(ctx(u.owner!.id), E, { inactiveContactDays: 365, teamNoteDays: 90 });
@@ -616,6 +625,7 @@ describe("F-008 B2B SSO (OIDC) + SCIM 2.0", () => {
     try {
       const admin = await signUp("admin@sso-corp.io", "SSO관리자");
       const S = (await org.createOrg(ctx(admin.id), { name: "SSO Corp" })).id;
+      await grantSeats(S, 20, "enterprise");
       await org.addDomain(ctx(admin.id), S, "sso-corp.io");
       const cfg = await enterprise.saveSsoConfig(ctx(admin.id), S, { issuer: idp.issuer, clientId: "linkos-client", clientSecret: "s3cret", enabled: true, defaultRole: "member" });
       expect(cfg).toMatchObject({ configured: true, enabled: true, hasClientSecret: true, saml: { configured: false, enabled: false }, ssoRequired: false });
@@ -656,6 +666,7 @@ describe("F-008 B2B SSO (OIDC) + SCIM 2.0", () => {
   it("SCIM: token auth, provision, filter, deactivate (→ lead reassignment), consent at first login", async () => {
     const admin = await signUp("admin@scim-corp.io", "SCIM관리자");
     const S = (await org.createOrg(ctx(admin.id), { name: "SCIM Corp" })).id;
+    await grantSeats(S, 20, "enterprise");
     await org.addDomain(ctx(admin.id), S, "scim-corp.io");
     expect(await code(enterprise.rotateScimToken(ctx(admin.id), S))).toBe("sso_not_configured");
     await enterprise.saveSsoConfig(ctx(admin.id), S, { issuer: "https://idp.scim-corp.io", clientId: "c", enabled: false, defaultRole: "member" });

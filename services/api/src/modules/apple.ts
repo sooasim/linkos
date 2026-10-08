@@ -14,6 +14,7 @@ import { track } from "../lib/metering";
 import { type Ctx, appOrigin, audit, log, rateLimit, sha256 } from "../lib/platform";
 import { type ClientKind, createSession, upsertUserByEmail } from "./identity";
 import { seal, unseal } from "./integration";
+import { attributeSignupByCodeTx, isReferralCode } from "./referral";
 
 export const APPLE_ISSUER = "https://appleid.apple.com";
 const STATE_TTL_MIN = 10;
@@ -119,14 +120,15 @@ export async function verifyAppleIdToken(idToken: string, expectedNonce: string,
 }
 
 // ---------- start ----------
-export async function appleAuthStart(ctx: Ctx, opts: { next?: string | null; consentAccepted?: boolean } = {}): Promise<{ url: string }> {
+export async function appleAuthStart(ctx: Ctx, opts: { next?: string | null; consentAccepted?: boolean; referralCode?: string | null } = {}): Promise<{ url: string }> {
   requireConfigured();
   await rateLimit(`apple:start:${ctx.ip}`, 30, 600);
   const state = generateToken(32);
   const nonce = generateToken(16);
+  // F-064: the /r/{code} referral rides in the one-time state row (Apple's form_post callback carries no Lax cookies)
   await q(
-    `INSERT INTO apple_login_states (state_hash, nonce, next_path, consent_accepted, expires_at) VALUES ($1,$2,$3,$4, now() + ($5 || ' minutes')::interval)`,
-    [sha256(state), nonce, opts.next ?? null, Boolean(opts.consentAccepted), String(STATE_TTL_MIN)],
+    `INSERT INTO apple_login_states (state_hash, nonce, next_path, consent_accepted, expires_at, referral_code) VALUES ($1,$2,$3,$4, now() + ($5 || ' minutes')::interval, $6)`,
+    [sha256(state), nonce, opts.next ?? null, Boolean(opts.consentAccepted), String(STATE_TTL_MIN), isReferralCode(opts.referralCode) ? opts.referralCode : null],
   );
   if (Math.random() < 0.05) {
     void q("DELETE FROM apple_login_states WHERE expires_at < now() - interval '1 day'").catch(() => undefined);
@@ -186,8 +188,8 @@ export async function appleCallback(ctx: Ctx, input: AppleCallbackInput, clientK
   requireConfigured();
   await rateLimit(`apple:cb:${ctx.ip}`, 30, 600);
   if (!input.state || input.state.length > 200) throw badRequest("invalid_state", "Apple 로그인 요청이 만료되었거나 이미 사용되었습니다.");
-  const st = await one<{ nonce: string; next_path: string | null; consent_accepted: boolean; expires_at: Date }>(
-    "UPDATE apple_login_states SET consumed_at=now() WHERE state_hash=$1 AND consumed_at IS NULL RETURNING nonce, next_path, consent_accepted, expires_at",
+  const st = await one<{ nonce: string; next_path: string | null; consent_accepted: boolean; expires_at: Date; referral_code: string | null }>(
+    "UPDATE apple_login_states SET consumed_at=now() WHERE state_hash=$1 AND consumed_at IS NULL RETURNING nonce, next_path, consent_accepted, expires_at, referral_code",
     [sha256(input.state)],
   );
   if (!st || st.expires_at < new Date()) throw badRequest("invalid_state", "Apple 로그인 요청이 만료되었거나 이미 사용되었습니다.");
@@ -223,7 +225,10 @@ export async function appleCallback(ctx: Ctx, input: AppleCallbackInput, clientK
       const { user, isNew } = await upsertUserByEmail(c, email ?? "", consents, name ?? undefined, "apple", who.sub);
       const sessionToken = await createSession(c, user.id, ctx, null, clientKind);
       await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: "apple", client: clientKind, private_email: who.isPrivateEmail });
-      if (isNew) await track(c, "signup_completed", { userId: user.id }, { method: "apple" }); // F-188
+      if (isNew) {
+        await track(c, "signup_completed", { userId: user.id }, { method: "apple" }); // F-188
+        await attributeSignupByCodeTx(c, user.id, st.referral_code); // F-064
+      }
       await c.query("DELETE FROM apple_pending_profiles WHERE subject_hash=$1", [subjectHash]);
       return { sessionToken, userId: user.id, isNew, next: st.next_path, privateEmail: who.isPrivateEmail };
     });

@@ -7,5 +7,6 @@ export const GET = route(async ({ ctx, req }) => {
   const funnel = await growth.funnelReport(ctx, days);
   const viral = await growth.adminViral(ctx, days);
   const cost = await growth.costReport(ctx, days);
-  return { funnel, viral, cost };
+  const kpis = await growth.kpiReport(ctx, days); // 백서 §23 Retention / Match-to-Meeting / Enterprise Active Relationships + §20 RUM
+  return { funnel, viral, cost, kpis };
 });

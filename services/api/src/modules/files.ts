@@ -58,6 +58,29 @@ export async function storeObject(input: {
   }
 }
 
+/**
+ * Server-generated content (e.g. the privacy export JSON): encrypted and stored like an upload, but it never came from a
+ * user's device, so upload inspection (magic-byte allow-list, re-encode, AV) does not apply.
+ */
+export async function storeGeneratedObject(input: { ownerUserId: string; purpose: "privacy_export"; bytes: Buffer; contentType: string; filename: string; retentionDays: number }): Promise<StoredObject> {
+  const now = new Date();
+  const objectKey = `${input.purpose.replace(/_/g, "-")}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomUUID()}`;
+  const sealed = sealObject(objectKey, input.bytes);
+  const driver = storageDriver();
+  await driver.put(objectKey, sealed.ciphertext, input.contentType);
+  try {
+    const row = await one<{ id: string; retention_until: Date | null }>(
+      `INSERT INTO stored_objects (owner_user_id, purpose, driver, object_key, content_type, byte_size, sha256, original_name, wrapped_key, iv, auth_tag, scan_status, scan_engine, scan_detail, retention_until, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'clean','server-generated',NULL,$12,'{}') RETURNING id, retention_until`,
+      [input.ownerUserId, input.purpose, driver.name, objectKey, input.contentType, input.bytes.length, createHash("sha256").update(input.bytes).digest("hex"), input.filename, sealed.wrappedKey, sealed.iv, sealed.authTag, days(input.retentionDays)],
+    );
+    return { id: row!.id, contentType: input.contentType, byteSize: input.bytes.length, scanStatus: "clean", scanDetail: null, retentionUntil: row!.retention_until };
+  } catch (e) {
+    await driver.delete(objectKey).catch(() => undefined);
+    throw e;
+  }
+}
+
 /** Hard delete: storage object + row (wrapped key) — cascades to the linking rows. */
 export async function deleteStoredObject(id: string, db: Db = pool()): Promise<void> {
   const r = await one<{ object_key: string; driver: string }>("DELETE FROM stored_objects WHERE id=$1 RETURNING object_key, driver", [id], db);
@@ -96,7 +119,8 @@ export async function downloadSigned(objectId: string, exp: string | null, sig: 
 export async function purgeExpiredObjects(limit = 100): Promise<number> {
   const rows = await q<{ id: string }>("SELECT id FROM stored_objects WHERE retention_until IS NOT NULL AND retention_until < now() ORDER BY retention_until LIMIT $1", [limit]);
   for (const r of rows) await deleteStoredObject(r.id);
-  if (rows.length) await q("INSERT INTO audit_logs (action, entity_type, metadata) VALUES ('storage.retention_purge','stored_object',$1)", [JSON.stringify({ count: rows.length })]);
+  // F-166: through the central writer so the row is linked into the §20 hash chain immediately (counts only)
+  if (rows.length) await audit(pool(), { userId: null }, "storage.retention_purge", "stored_object", null, { count: rows.length });
   return rows.length;
 }
 

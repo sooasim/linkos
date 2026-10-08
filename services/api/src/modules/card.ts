@@ -26,6 +26,21 @@ export const templateOptionsInput = z
   })
   .strict();
 
+/** F-112: one reviewed translation line, bound to the source text it was made from */
+const translationLine = z.object({ src: z.string().max(4000), text: z.string().trim().max(4000) }).strict();
+const translationEntry = z
+  .object({
+    fields: z.object({ jobTitle: translationLine, headline: translationLine, bioShort: translationLine }).partial().strict().default({}),
+    offers: z.array(translationLine).max(24).default([]),
+    needs: z.array(translationLine).max(24).default([]),
+    provenance: z.enum(["ai_inferred", "user"]),
+    model: z.string().max(80).nullish(),
+    reviewedAt: z.string().datetime(),
+  })
+  .strict();
+export const translationsInput = z.object({ en: translationEntry, ja: translationEntry }).partial().strict();
+export type CardTranslations = z.infer<typeof translationsInput>;
+
 export const profileInput = z.object({
   name: z.string().trim().min(1).max(80),
   company: z.string().trim().max(120).nullish(),
@@ -41,6 +56,8 @@ export const profileInput = z.object({
   templateId: z.string().regex(/^[a-z][a-z0-9-]{2,40}$/).nullish(),
   /** X-008 design options (omitted keeps the current ones) */
   templateOptions: templateOptionsInput.optional(),
+  /** F-112 reviewed translations (omitted keeps the current ones, {} clears) */
+  translations: translationsInput.optional(),
   matchingOptIn: z.boolean().default(true),
   deep: z
     .object({
@@ -100,6 +117,7 @@ export interface FullProfile {
   theme: string;
   templateId: string | null;
   templateOptions: CardTemplateOptions;
+  translations: CardTranslations;
   matchingOptIn: boolean;
   deep: Record<string, unknown>;
   fields: ProfileField[];
@@ -144,6 +162,7 @@ export async function loadProfile(id: string, db: Db = pool()): Promise<FullProf
     theme: p.theme,
     templateId: p.template_id ?? null,
     templateOptions: p.template_options ?? {},
+    translations: p.translations ?? {},
     matchingOptIn: p.matching_opt_in,
     deep: p.deep ?? {},
     fields: fields.map((f) => ({ id: f.id, type: f.field_type, label: f.label, value: typeof f.value === "string" ? f.value : String(f.value?.v ?? f.value), visibility: f.visibility })),
@@ -193,6 +212,10 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
       if (validateCardDesign(templateId, templateOptions).length) throw designError(validateCardDesign(templateId, templateOptions));
       if ((cur.template_id ?? null) !== templateId || JSON.stringify(cur.template_options ?? {}) !== JSON.stringify(templateOptions)) changed.push("template");
       await c.query("UPDATE profiles SET template_id=$2, template_options=$3 WHERE id=$1", [id, templateId, JSON.stringify(templateOptions)]);
+      if (input.translations !== undefined) {
+        if (JSON.stringify(cur.translations ?? {}) !== JSON.stringify(input.translations)) changed.push("translations");
+        await c.query("UPDATE profiles SET translations=$2 WHERE id=$1", [id, JSON.stringify(input.translations)]);
+      }
       version = cur.version + 1;
       await c.query(
         `UPDATE profiles SET name=$2, company=$3, job_title=$4, headline=$5, bio_short=$6, bio_long=$7, keywords=$8, industries=$9, regions=$10,
@@ -210,7 +233,7 @@ export async function saveProfile(ctx: Ctx, input: ProfileInput, profileId?: str
       id = row!.id;
       changed = ["created"];
       if (validateCardDesign(input.templateId ?? null, input.templateOptions).length) throw designError(validateCardDesign(input.templateId ?? null, input.templateOptions));
-      await c.query("UPDATE profiles SET template_id=$2, template_options=$3 WHERE id=$1", [id, input.templateId ?? null, JSON.stringify(input.templateOptions ?? {})]);
+      await c.query("UPDATE profiles SET template_id=$2, template_options=$3, translations=$4 WHERE id=$1", [id, input.templateId ?? null, JSON.stringify(input.templateOptions ?? {}), JSON.stringify(input.translations ?? {})]);
       await c.query("UPDATE users SET display_name = COALESCE(display_name, $2) WHERE id=$1", [userId, input.name]);
     }
     await c.query("DELETE FROM profile_fields WHERE profile_id=$1", [id]);
@@ -302,6 +325,27 @@ export interface PublicCard {
   hiddenFields: number;
   /** F-138: org branding on member cards (null unless the org enabled it and the card is attached) */
   brand?: CardBrand | null;
+  /** F-112 reviewed translations of what this audience can see (stale lines dropped) */
+  translations?: PublicTranslations;
+}
+
+export type PublicTranslations = Partial<Record<"en" | "ja", { jobTitle?: string; headline?: string; bioShort?: string; offers: string[]; needs: string[]; provenance: "ai_inferred" | "user"; reviewedAt: string }>>;
+
+/** F-112: keep only translation lines whose source still equals the current (visible) text. */
+export function publicTranslations(t: CardTranslations, cur: { jobTitle: string | null; headline: string | null; bioShort: string | null; offers: string[]; needs: string[] }): PublicTranslations {
+  const out: PublicTranslations = {};
+  for (const lang of ["en", "ja"] as const) {
+    const e = t[lang];
+    if (!e) continue;
+    const pick = (k: "jobTitle" | "headline" | "bioShort") => {
+      const line = e.fields[k];
+      return line && line.text && cur[k] && line.src === cur[k] ? line.text : undefined;
+    };
+    const list = (lines: { src: string; text: string }[], current: string[]) => current.map((src) => lines.find((l) => l.src === src && l.text)?.text).filter((x): x is string => !!x);
+    const entry = { jobTitle: pick("jobTitle"), headline: pick("headline"), bioShort: pick("bioShort"), offers: list(e.offers, cur.offers), needs: list(e.needs, cur.needs), provenance: e.provenance, reviewedAt: e.reviewedAt };
+    if (entry.jobTitle || entry.headline || entry.bioShort || entry.offers.length || entry.needs.length) out[lang] = entry;
+  }
+  return out;
 }
 
 /** Public-safe projection after ACL filtering (F-034). bio_long/deep only for trusted+. */
@@ -325,6 +369,13 @@ export function projectCard(p: FullProfile, audience: Audience): PublicCard {
     needs: p.needs.filter((n) => n.confirmed).map((n) => n.text),
     deep: deepAllowed ? p.deep : null,
     hiddenFields: hiddenFieldCount(p.fields.filter((f) => f.visibility !== "private"), audience),
+    translations: publicTranslations(p.translations ?? {}, {
+      jobTitle: p.jobTitle,
+      headline: p.headline,
+      bioShort: p.bioShort,
+      offers: p.offers.filter((o) => o.confirmed).map((o) => o.text),
+      needs: p.needs.filter((n) => n.confirmed).map((n) => n.text),
+    }),
   };
 }
 

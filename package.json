@@ -24,7 +24,9 @@
     "dr:backup": "bash scripts/dr/dr-backup-copy.sh",
     "dr:verify": "bash scripts/dr/dr-restore-verify.sh",
     "qa": "pnpm --filter @linkos/domain exec vitest run test/qa && pnpm --filter @linkos/api exec vitest run test/qa-api.integration.test.ts",
-    "matrix": "playwright test -c playwright.matrix.config.ts"
+    "matrix": "playwright test -c playwright.matrix.config.ts",
+    "vault:rotate": "tsx scripts/rotate-credentials.ts",
+    "security:scan": "node scripts/security-scan.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
@@ -35,5 +37,10 @@
     "tsx": "^4.23.0",
     "typescript": "~5.9.3",
     "yaml": "^2.8.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "exceljs>uuid": "^11.1.1"
+    }
   }
 }

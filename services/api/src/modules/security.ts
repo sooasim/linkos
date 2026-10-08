@@ -1,15 +1,24 @@
 // security module — 개인정보 export/delete, 감사로그 조회 (Privacy, Security & Compliance)
-import { one, pool, q, tx } from "../lib/db";
-import { unauthorized } from "../lib/errors";
-import { type Ctx, audit, emit } from "../lib/platform";
+import { allowEncounterRewrite, one, pool, q, tx } from "../lib/db";
+import { notFound, unauthorized } from "../lib/errors";
+import { type Ctx, audit, emit, log, rateLimit } from "../lib/platform";
+import { signedFileUrl, storeGeneratedObject } from "./files";
 import { departAllOrgs } from "./org";
 
 export const DELETION_GRACE_DAYS = 7;
 
-/** POST /me/privacy/export — portable JSON of everything the user owns. */
+/**
+ * Portable JSON of everything the user owns (synchronous build). The API serves it as a queued job
+ * (requestPrivacyExport → worker → signed download); this direct form stays for internal callers/tests.
+ */
 export async function exportMyData(ctx: Ctx) {
   if (!ctx.userId) throw unauthorized();
-  const u = ctx.userId;
+  const data = await buildPortableExport(ctx.userId);
+  await audit(pool(), ctx, "privacy.export", "user", ctx.userId);
+  return data;
+}
+
+async function buildPortableExport(u: string) {
   const [user, profiles, fields, offers, needs, contacts, encounters, notes, meetings, actions, followups, consents, exchanges] = await Promise.all([
     one("SELECT id, email, display_name, locale, created_at FROM users WHERE id=$1", [u]),
     q("SELECT * FROM profiles WHERE user_id=$1", [u]),
@@ -35,8 +44,120 @@ export async function exportMyData(ctx: Ctx) {
     q("SELECT id, url, events, active, created_at FROM webhook_endpoints WHERE owner_user_id=$1", [u]),
     q("SELECT provider, object_type, mapping, updated_at FROM crm_field_mappings WHERE owner_user_id=$1", [u]),
   ]);
-  await audit(pool(), ctx, "privacy.export", "user", u);
   return { exportedAt: new Date().toISOString(), format: "linkos-portable-v1", user, profiles, profileFields: fields, offers, needs, contacts, encounters, notes, meetings, actionItems: actions, followups, consents, exchangeSessions: exchanges, messages, templates, sequences, calendarCandidates, bookingPages, webhookEndpoints, fieldMappings };
+}
+
+// ---------- exportMyData as a queued job (04_OPENAPI: POST /me/privacy/export → 202 Queued) ----------
+export const PRIVACY_EXPORT_KIND = "privacy:portable";
+/** download window of a finished export (job + encrypted object) */
+export const PRIVACY_EXPORT_TTL_DAYS = 7;
+const PRIVACY_EXPORT_MAX_ATTEMPTS = 3;
+
+interface PrivacyExportRow {
+  id: string;
+  status: "queued" | "processing" | "done" | "failed";
+  object_id: string | null;
+  error: string | null;
+  created_at: Date;
+  completed_at: Date | null;
+  expires_at: Date;
+}
+
+function privacyExportView(j: PrivacyExportRow) {
+  const expired = j.expires_at.getTime() < Date.now();
+  return {
+    id: j.id,
+    status: expired && j.status === "done" ? ("expired" as const) : j.status,
+    createdAt: j.created_at,
+    completedAt: j.completed_at,
+    expiresAt: j.expires_at,
+    statusUrl: `/api/v1/me/privacy/export/${j.id}`,
+    // short-lived signed link (5 min) to the encrypted JSON — fetched again from statusUrl when it lapses
+    downloadUrl: j.status === "done" && j.object_id && !expired ? `${signedFileUrl(j.object_id)}&download=1` : null,
+    error: j.status === "failed" ? "export_failed" : null,
+  };
+}
+
+/** POST /me/privacy/export — queue a portable export of my data; the worker builds it (processPrivacyExports). */
+export async function requestPrivacyExport(ctx: Ctx) {
+  if (!ctx.userId) throw unauthorized();
+  await rateLimit(`privacy:export:${ctx.userId}`, 10, 3600);
+  const j = await one<PrivacyExportRow>(
+    `INSERT INTO export_jobs (user_id, kind, format, status, expires_at) VALUES ($1,$2,'json','queued', now() + ($3 || ' days')::interval)
+     RETURNING id, status, object_id, error, created_at, completed_at, expires_at`,
+    [ctx.userId, PRIVACY_EXPORT_KIND, String(PRIVACY_EXPORT_TTL_DAYS)],
+  );
+  await audit(pool(), ctx, "privacy.export_requested", "export_job", j!.id);
+  return privacyExportView(j!);
+}
+
+/** GET /me/privacy/export/{id} — job status and, once done, a signed download link. Only the requester sees it. */
+export async function getPrivacyExport(ctx: Ctx, id: string) {
+  if (!ctx.userId) throw unauthorized();
+  const j = await one<PrivacyExportRow>(
+    "SELECT id, status, object_id, error, created_at, completed_at, expires_at FROM export_jobs WHERE id=$1 AND user_id=$2 AND kind=$3",
+    [id, ctx.userId, PRIVACY_EXPORT_KIND],
+  );
+  if (!j) throw notFound("export");
+  return privacyExportView(j);
+}
+
+/** Build one claimed job: JSON → encrypted object store → job done. Returns the data (legacy inline callers). */
+async function runPrivacyExportJob(job: { id: string; user_id: string }) {
+  try {
+    const data = await buildPortableExport(job.user_id);
+    const obj = await storeGeneratedObject({
+      ownerUserId: job.user_id,
+      purpose: "privacy_export",
+      bytes: Buffer.from(JSON.stringify(data, null, 2), "utf8"),
+      contentType: "application/json",
+      filename: "linkos-my-data.json",
+      retentionDays: PRIVACY_EXPORT_TTL_DAYS,
+    });
+    await tx(async (c) => {
+      await c.query("UPDATE export_jobs SET status='done', object_id=$2, completed_at=now(), error=NULL WHERE id=$1", [job.id, obj.id]);
+      await audit(c, { userId: job.user_id }, "privacy.export", "user", job.user_id, { job: job.id });
+    });
+    return data;
+  } catch (e) {
+    await q(
+      "UPDATE export_jobs SET status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'queued' END, error=$2 WHERE id=$1",
+      [job.id, (e as Error).message.slice(0, 300), PRIVACY_EXPORT_MAX_ATTEMPTS],
+    );
+    log("warn", "privacy.export_failed", { job: job.id, error: (e as Error).message });
+    return null;
+  }
+}
+
+async function claimPrivacyExports(limit: number, onlyId?: string) {
+  // a job left 'processing' by a crashed worker is picked up again after 15 minutes
+  return q<{ id: string; user_id: string }>(
+    `UPDATE export_jobs SET status='processing', attempts=attempts+1 WHERE id IN (
+       SELECT id FROM export_jobs WHERE kind=$1 AND ($3::uuid IS NULL OR id=$3)
+         AND (status='queued' OR (status='processing' AND created_at < now() - interval '15 minutes' AND attempts < $4))
+       ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+     RETURNING id, user_id`,
+    [PRIVACY_EXPORT_KIND, limit, onlyId ?? null, PRIVACY_EXPORT_MAX_ATTEMPTS],
+  );
+}
+
+/** Worker: build queued privacy exports. */
+export async function processPrivacyExports(limit = 5): Promise<number> {
+  const jobs = await claimPrivacyExports(limit);
+  for (const j of jobs) await runPrivacyExportJob(j);
+  return jobs.length;
+}
+
+/**
+ * Transitional (deprecated): the pre-job UI expects `{ data }` in the POST response. The job is still created and
+ * recorded exactly like a queued one, then processed right away so the response can carry the same data inline.
+ * Clients that send `Prefer: respond-async` (or `{ "async": true }`) get the plain queued job.
+ */
+export async function requestPrivacyExportInline(ctx: Ctx) {
+  const job = await requestPrivacyExport(ctx);
+  const [claimed] = await claimPrivacyExports(1, job.id);
+  const data = claimed ? await runPrivacyExportJob(claimed) : null;
+  return { ...(await getPrivacyExport(ctx, job.id)), data };
 }
 
 /** POST /me/privacy/delete — revoke sessions now, deactivate, hard-delete after the grace period (worker). */
@@ -66,6 +187,8 @@ export async function processDeletions(): Promise<number> {
     await tx(async (c) => {
       // F-132: company-owned leads are reassigned inside each org before the account (and its personal data) is removed
       await departAllOrgs(c, d.user_id);
+      // §9: privacy deletion is one of the two paths allowed to remove (append-only) Encounters
+      await allowEncounterRewrite(c, "delete");
       await c.query("UPDATE contacts SET linked_user_id=NULL WHERE linked_user_id=$1", [d.user_id]);
       await c.query("DELETE FROM users WHERE id=$1", [d.user_id]);
       await c.query("UPDATE deletion_requests SET status='completed', completed_at=now() WHERE id=$1", [d.id]);
@@ -75,6 +198,28 @@ export async function processDeletions(): Promise<number> {
   return due.length;
 }
 
-export async function myAuditLog(userId: string) {
-  return q<any>("SELECT id, action, entity_type, created_at FROM audit_logs WHERE actor_user_id=$1 ORDER BY created_at DESC LIMIT 100", [userId]);
+/**
+ * F-137 / F-166 "내 활동 기록": my own audit trail, newest first, keyset-paged by id (`before` = last id of the previous page).
+ * Only an allow-list of non-sensitive metadata keys is returned (audit() already runs redact()); audit_logs stores no IP/device.
+ */
+export async function myAuditLog(userId: string, opts: { before?: string | null; limit?: number } = {}) {
+  const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
+  const before = opts.before && /^\d{1,18}$/.test(opts.before) ? opts.before : null;
+  const rows = await q<{ id: string; action: string; entity_type: string | null; organization_id: string | null; metadata: Record<string, unknown> | null; created_at: Date }>(
+    `SELECT id::text AS id, action, entity_type, organization_id, metadata, created_at FROM audit_logs
+     WHERE actor_user_id=$1 AND ($2::bigint IS NULL OR id < $2::bigint) ORDER BY id DESC LIMIT $3`,
+    [userId, before, limit + 1],
+  );
+  const page = rows.slice(0, limit).map((r) => ({ ...r, metadata: pickAuditMeta(r.metadata) }));
+  return { entries: page, nextCursor: rows.length > limit ? page[page.length - 1]!.id : null };
+}
+
+const AUDIT_META_KEYS = ["format", "report", "period", "rows", "provider", "queued", "count", "role", "strategy", "type"] as const;
+function pickAuditMeta(m: Record<string, unknown> | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of AUDIT_META_KEYS) {
+    const v = m?.[k];
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+  }
+  return out;
 }

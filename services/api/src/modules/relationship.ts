@@ -2,7 +2,7 @@
 import { type ContactLike, type MergeableField, findDuplicates, mergeContacts, normalizeCompanyName, normalizeEmail, normalizePhone } from "@linkos/domain";
 import type pg from "pg";
 import { z } from "zod";
-import { type Db, one, pool, q, tx } from "../lib/db";
+import { type Db, allowEncounterRewrite, one, pool, q, tx } from "../lib/db";
 import { badRequest, conflict, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, emit } from "../lib/platform";
 
@@ -329,6 +329,8 @@ export async function mergeContact(ctx: Ctx, primaryId: string, secondaryId: str
       [primaryId, merged.fullName, companyId, merged.jobTitle, merged.department, merged.email, merged.phone, merged.address, merged.website, JSON.stringify(snapshot)],
     );
     await c.query("UPDATE contacts SET merged_into_id=$1, updated_at=now() WHERE id=$2", [primaryId, secondaryId]);
+    // §9: encounters stay append-only; a duplicate merge is the one sanctioned contact_id re-point (DB trigger opt-in)
+    await allowEncounterRewrite(c, "relink");
     for (const t of ["encounters", "notes", "followups"]) await c.query(`UPDATE ${t} SET contact_id=$1 WHERE contact_id=$2`, [primaryId, secondaryId]);
     await c.query("UPDATE business_cards SET contact_id=$1 WHERE contact_id=$2", [primaryId, secondaryId]);
     await c.query("UPDATE action_items SET contact_id=$1 WHERE contact_id=$2", [primaryId, secondaryId]);

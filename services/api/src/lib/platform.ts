@@ -1,7 +1,8 @@
 // 공통 플랫폼 기능: outbox, audit, rate limit, idempotency, 구조화 로그(PII 리댁션)
 import { createHash, createHmac } from "node:crypto";
 import type { DomainEventName, DomainEvents } from "@linkos/domain";
-import { redact } from "@linkos/domain";
+import { AUDIT_GENESIS_HASH, auditChainHash, redact } from "@linkos/domain";
+import pg from "pg";
 import { type Db, one, pool, q } from "./db";
 import { tooMany } from "./errors";
 import { currentTraceId } from "./tracing";
@@ -45,10 +46,79 @@ export async function audit(
   metadata: Record<string, unknown> = {},
   organizationId: string | null = null,
 ): Promise<void> {
-  await db.query(
-    "INSERT INTO audit_logs (organization_id, actor_user_id, action, entity_type, entity_id, metadata) VALUES ($1,$2,$3,$4,$5,$6)",
-    [organizationId, ctx.userId, action, entityType, entityId, JSON.stringify(redact(metadata))],
+  const params = [organizationId, ctx.userId, action, entityType, entityId, JSON.stringify(redact(metadata))];
+  if (db instanceof pg.Pool) {
+    // own short transaction so the chain lock (xact-scoped) is released right after the insert
+    const c = await db.connect();
+    try {
+      await c.query("BEGIN");
+      await auditInsert(c, params);
+      await c.query("COMMIT");
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+    return;
+  }
+  await auditInsert(db, params);
+}
+
+// ---------- 백서 §20 audit durability: tamper-evident hash chain ----------
+/** Advisory lock key serializing chain_seq assignment (writer + sealer). */
+export const AUDIT_CHAIN_LOCK = 727301;
+export const AUDIT_CREATED_AT_SQL = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+export interface AuditDbRow {
+  id: string;
+  organization_id: string | null;
+  actor_user_id: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  metadata: unknown;
+  created_at_iso: string;
+}
+
+export function auditRowFields(r: AuditDbRow, chainSeq: number) {
+  return { chainSeq, id: String(r.id), organizationId: r.organization_id, actorUserId: r.actor_user_id, action: r.action, entityType: r.entity_type, entityId: r.entity_id, metadata: r.metadata ?? {}, createdAt: r.created_at_iso };
+}
+
+/** Current chain head: max(chain_seq) over live rows and tombstones of purged rows. Call while holding AUDIT_CHAIN_LOCK. */
+export async function auditChainHead(c: Db): Promise<{ seq: number; hash: string }> {
+  const r = await c.query<{ seq_text: string; hash: string }>(
+    `SELECT h.seq::text AS seq_text, h.hash FROM (
+       (SELECT chain_seq AS seq, hash FROM audit_logs WHERE chain_seq IS NOT NULL ORDER BY chain_seq DESC LIMIT 1)
+       UNION ALL
+       (SELECT chain_seq AS seq, hash FROM audit_log_tombstones ORDER BY chain_seq DESC LIMIT 1)
+     ) h ORDER BY h.seq DESC LIMIT 1`,
   );
+  return r.rows[0] ? { seq: Number(r.rows[0].seq_text), hash: r.rows[0].hash } : { seq: 0, hash: AUDIT_GENESIS_HASH };
+}
+
+/**
+ * Insert one audit row and, when the chain lock is free, link it into the hash chain immediately. The lock is only
+ * *tried* (never waited for) because the caller's transaction may hold row locks — waiting could deadlock. A row that
+ * could not be linked now is linked, in id order, by `sealAuditChain()` (worker tick / verify), so nothing is lost.
+ * The lock is transaction-scoped: a rolled-back writer leaves no gap in chain_seq.
+ */
+async function auditInsert(c: Db, params: unknown[]): Promise<void> {
+  const locked = (await c.query<{ ok: boolean }>("SELECT pg_try_advisory_xact_lock($1) AS ok", [AUDIT_CHAIN_LOCK])).rows[0]?.ok;
+  if (!locked) {
+    await c.query("INSERT INTO audit_logs (organization_id, actor_user_id, action, entity_type, entity_id, metadata) VALUES ($1,$2,$3,$4,$5,$6)", params);
+    return;
+  }
+  const head = await auditChainHead(c);
+  const seq = head.seq + 1;
+  const ins = await c.query<AuditDbRow>(
+    `INSERT INTO audit_logs (organization_id, actor_user_id, action, entity_type, entity_id, metadata, chain_seq, prev_hash)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING id::text, organization_id::text, actor_user_id::text, action, entity_type, entity_id::text, metadata, ${AUDIT_CREATED_AT_SQL} AS created_at_iso`,
+    [...params, seq, head.hash],
+  );
+  const row = ins.rows[0]!;
+  await c.query("UPDATE audit_logs SET hash=$2 WHERE id=$1", [row.id, auditChainHash(head.hash, auditRowFields(row, seq))]);
 }
 
 /** Fixed-window rate limit stored in Postgres (works across instances). */

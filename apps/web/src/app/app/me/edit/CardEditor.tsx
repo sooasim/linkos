@@ -1,5 +1,5 @@
 "use client";
-// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + X-008 템플릿·아이콘 꾸미기
+// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + X-008 템플릿·아이콘 꾸미기 + F-031 상대별 보기 미리보기
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
@@ -11,7 +11,10 @@ import { Icon } from "@/components/Icon";
 import { CardFace, OfferNeed } from "@/components/LivingCard";
 import { PageHeader } from "@/components/Page";
 import { api } from "@/lib/client";
+import type { CardTranslations as Translations } from "@/lib/cardTranslation";
 import { CardIntel } from "./CardIntel";
+import { CardTranslations } from "./CardTranslations";
+import { VariantPreview } from "./VariantPreview";
 
 type Vis = "public" | "business" | "trusted" | "partner" | "private";
 type FieldRow = { type: string; label?: string | null; value: string; visibility: Vis };
@@ -103,7 +106,15 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
     needs: ((profile?.needs ?? []) as { text: string }[]).map((o) => o.text),
     deep: { projects: [], achievements: [], services: [], assets: [], network: [], interests: [], languages: [], ...(profile?.deep ?? {}) } as Record<string, any>,
     variants: (profile?.variants ?? []).map((v: any) => ({ audience: v.audience, headline: v.content?.headline ?? "", isDefault: v.isDefault })) as { audience: string; headline: string; isDefault: boolean }[],
+    // F-112: reviewed machine translations (en/ja) of the descriptive text — saved with the card
+    translations: (profile?.translations ?? {}) as Translations,
   }));
+  // F-112: the translate API reads the SAVED card; note when translatable text has unsaved edits
+  const savedOffers = ((profile?.offers ?? []) as { text: string }[]).map((o) => o.text);
+  const savedNeeds = ((profile?.needs ?? []) as { text: string }[]).map((o) => o.text);
+  const translationDirty =
+    !!profile &&
+    ((profile.jobTitle ?? "") !== p.jobTitle || (profile.headline ?? "") !== p.headline || (profile.bioShort ?? "") !== p.bioShort || savedOffers.join("\n") !== p.offers.join("\n") || savedNeeds.join("\n") !== p.needs.join("\n"));
   const [scan, setScan] = useState(onboarding && !profile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +151,7 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
       version: profile?.version,
     };
     try {
+      // F-112: reviewed translations travel with the card (omitted keeps, {} clears)
       if (profile) await api(`/profiles/${profile.id}`, { method: "PATCH", body });
       else await api("/profiles", { body });
       router.push(onboarding ? "/app?welcome=1" : "/app/me");
@@ -326,17 +338,37 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
             </label>
           </section>
 
+          <CardTranslations
+            profileId={profile?.id ?? null}
+            source={{ name: p.name, company: p.company || null, jobTitle: profile?.jobTitle ?? null, headline: profile?.headline ?? null, bioShort: profile?.bioShort ?? null, offers: savedOffers, needs: savedNeeds, contactCount: p.fields.length }}
+            dirty={translationDirty}
+            value={p.translations}
+            onChange={(v) => set("translations", v)}
+          />
+
           {profile && <CardIntel profileId={profile.id} hasVariants={(profile.variants ?? []).length > 0} />}
         </div>
         )}
 
         <aside className="lg:sticky lg:top-10 lg:self-start">
           <p className="eyebrow mb-3">미리보기</p>
-          <CardFace card={{ ...p, fields: previewFields, design: designFromState(design) }} />
+          <div data-testid="card-preview">
+            <CardFace card={{ ...p, fields: previewFields, design: designFromState(design) }} />
+          </div>
           {design.template && <p className="mt-2 text-[12.5px] text-[var(--fg-mute)]">템플릿 · {design.template.name.ko}</p>}
           <div className="mt-4">
             <OfferNeed offers={p.offers} needs={p.needs} />
           </div>
+          {profile?.id && (
+            <div className="mt-6">
+              <VariantPreview
+                profileId={profile.id}
+                card={{ ...p, design: designFromState(design) }}
+                fields={p.fields}
+                dirty={JSON.stringify(p.variants.filter((v) => v.headline).map((v) => [v.audience, v.headline]).sort()) !== JSON.stringify(((profile.variants ?? []) as any[]).filter((v) => v.content?.headline).map((v) => [v.audience, v.content.headline]).sort())}
+              />
+            </div>
+          )}
         </aside>
       </div>
 

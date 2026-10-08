@@ -60,6 +60,12 @@ export default function OfflineAgent() {
       <div role="status" aria-live="polite" className="pointer-events-auto flex items-center gap-2 rounded-full bg-[var(--color-ink)] px-4 py-2 text-[13px] font-semibold text-white shadow-lg">
         <span aria-hidden className={`size-2 rounded-full ${online ? "bg-[var(--color-signal)]" : "bg-[var(--color-ember)]"}`} />
         {!online ? <span>오프라인{s.pending ? ` · 전송 대기 ${s.pending}건` : " · 변경사항은 기기에 암호화 보관"}</span> : s.pending ? <span>{syncing ? "동기화 중" : "전송 대기"} {s.pending}건</span> : null}
+        {attention === 0 && s.pending > 0 && (
+          // F-179: queued items are inspectable too, not only conflicts/failures
+          <Link href="/app/sync" className="ml-1 rounded-full px-2 py-0.5 text-white underline underline-offset-2" aria-label={`전송 대기 ${s.pending}건 보기`} data-testid="offline-queue-link">
+            보기
+          </Link>
+        )}
         {attention > 0 && (
           <Link href="/app/sync" className="ml-1 flex items-center gap-1 rounded-full bg-[var(--color-ember)] px-2.5 py-0.5 text-white underline-offset-2 hover:underline">
             <Icon name="merge" size={13} /> 확인 필요 {attention}

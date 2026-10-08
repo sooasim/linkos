@@ -1,4 +1,5 @@
 "use client";
+// F-147 부스 Lead Flow — 빠른 캡처 · BANT · 담당자 배정 · 부스 팀(스태프 추가/해제) · F-149 ROI · F-151 주최자 API 토큰
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
@@ -34,6 +35,9 @@ export function BoothMode({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [cost, setCost] = useState("");
+  const [attendees, setAttendees] = useState<{ userId: string | null; status: string; role: string; fullName: string | null; company: string | null }[]>([]);
+  const [staffPick, setStaffPick] = useState("");
+  const [staffMsg, setStaffMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -42,7 +46,11 @@ export function BoothMode({ id }: { id: string }) {
       setLeads(l.leads);
       setTeam(t.team);
       setRoi(r);
-      if (e.isOwner) setTokens((await api(`/events/${id}/organizer-tokens`)).tokens);
+      if (e.isOwner) {
+        const [tk, at] = await Promise.all([api(`/events/${id}/organizer-tokens`), api(`/events/${id}/attendees`).catch(() => ({ attendees: [] }))]);
+        setTokens(tk.tokens);
+        setAttendees(at.attendees);
+      }
     } catch (x) {
       setError((x as Error).message);
     }
@@ -74,6 +82,20 @@ export function BoothMode({ id }: { id: string }) {
       setSaving(false);
     }
   };
+  // F-147 booth team: the owner adds/removes staff among people who joined the event (POST /events/{id}/team)
+  const setStaff = async (userId: string, staff: boolean, label: string) => {
+    setStaffMsg(null);
+    try {
+      await api(`/events/${id}/team`, { body: { userId, staff } });
+      setStaffPick("");
+      setStaffMsg({ ok: true, text: staff ? `${label}님을 부스 팀에 추가했어요.` : `${label}님을 부스 팀에서 뺐어요.` });
+      await load();
+    } catch (x) {
+      setStaffMsg({ ok: false, text: (x as Error).message });
+    }
+  };
+  const staffCandidates = attendees.filter((a) => a.status === "joined" && a.userId && !team.some((t) => t.user_id === a.userId));
+
   const patch = (leadId: string, body: Record<string, unknown>) => api(`/leads/${leadId}`, { method: "PATCH", body }).then(load).catch((x) => setError(x.message));
 
   if (!ev) return error ? <Empty title="부스 모드를 열 수 없어요" body={error} /> : <div className="surface h-40 animate-pulse" />;
@@ -182,6 +204,40 @@ export function BoothMode({ id }: { id: string }) {
       {ev.isOwner && (
         <section className="mt-8 space-y-4" aria-labelledby="own-h">
           <h2 id="own-h" className="text-[18px] font-semibold">행사 설정</h2>
+          <div className="surface space-y-3 p-4" data-testid="booth-team">
+            <p className="font-semibold">부스 팀</p>
+            <p className="text-[13px] text-[var(--fg-mute)]">스태프는 이 행사의 리드를 보고 저장·배정할 수 있어요. 참가 코드로 입장한 사람만 추가할 수 있습니다.</p>
+            <ul className="space-y-1 text-[14px]">
+              {team.map((t) => (
+                <li key={t.user_id} className="flex items-center gap-2">
+                  <Avatar name={t.name ?? "?"} size={28} />
+                  <span className="min-w-0 flex-1 truncate">{t.name ?? t.user_id.slice(0, 8)}</span>
+                  <span className="chip !text-[12px]">{t.role === "owner" ? "소유자" : "스태프"}</span>
+                  {t.role !== "owner" && (
+                    <button type="button" className="btn btn-ghost !min-h-9 !px-2" onClick={() => setStaff(t.user_id, false, t.name ?? "스태프")} aria-label={`${t.name ?? "스태프"} 부스 팀에서 빼기`}>
+                      <Icon name="x" size={16} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <select className="field !w-auto min-w-0 flex-1" value={staffPick} onChange={(e) => setStaffPick(e.target.value)} aria-label="스태프로 추가할 참가자">
+                <option value="">{staffCandidates.length ? "참가자 선택…" : "추가할 수 있는 참가자가 없어요"}</option>
+                {staffCandidates.map((a) => <option key={a.userId!} value={a.userId!}>{a.fullName ?? a.userId!.slice(0, 8)}{a.company ? ` · ${a.company}` : ""}</option>)}
+              </select>
+              <button
+                type="button"
+                className="btn btn-ink"
+                disabled={!staffPick}
+                onClick={() => setStaff(staffPick, true, staffCandidates.find((a) => a.userId === staffPick)?.fullName ?? "참가자")}
+                data-testid="booth-staff-add"
+              >
+                <Icon name="plus" size={16} /> 스태프 추가
+              </button>
+            </div>
+            {staffMsg && <p role={staffMsg.ok ? "status" : "alert"} className={`text-[13.5px] ${staffMsg.ok ? "" : "text-[var(--color-ember)]"}`}>{staffMsg.text}</p>}
+          </div>
           <div className="surface flex flex-wrap items-end gap-2 p-4">
             <label className="flex-1">
               <span className="label">행사 비용 (원) — ROI 계산</span>

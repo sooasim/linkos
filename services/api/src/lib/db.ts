@@ -97,6 +97,15 @@ async function runTx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * 백서 §9 Encounter append-only (migration 0017 trigger): opt the CURRENT transaction into the two sanctioned rewrites.
+ * "delete" — privacy deletion / retention purge (incl. cascades from users/contacts); "relink" — duplicate merge moving
+ * encounters to the surviving contact. Transaction-local (set_config(..., true)), so it never leaks to pooled sessions.
+ */
+export async function allowEncounterRewrite(c: pg.PoolClient, kind: "delete" | "relink"): Promise<void> {
+  await c.query("SELECT set_config($1, 'on', true)", [kind === "delete" ? "linkos.allow_encounter_delete" : "linkos.allow_encounter_relink"]);
+}
+
 export async function closePool(): Promise<void> {
   if (globalThis.__linkosPool) {
     await globalThis.__linkosPool.end();

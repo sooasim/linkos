@@ -59,7 +59,7 @@ describe("F-060 Sign in with Apple", () => {
 
   it("new user: consent gate first (name parked), then signup with the parked name; client secret is an ES256 JWT", async () => {
     const s = sub();
-    const email = `apple${seq}@example.io`;
+    const email = `apple${Date.now()}.${seq}@example.io`; // unique across runs on a reused DB
     const user: AppleUser = { sub: s, email, name: { firstName: "민지", lastName: "박" } };
     const first = await viaApple(user, { firstLogin: true, next: "/claim" });
     expect(first.user).toContain("민지");

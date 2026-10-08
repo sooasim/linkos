@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Empty } from "@/components/Page";
+import { type SeatLimit, SeatLimitNotice, seatLimitOf } from "@/components/PlanLimit";
 import { api, uid } from "@/lib/client";
 import type { OrgInfo } from "./activeOrg";
+import { MembershipPrefs } from "./MembershipPrefs";
 
 const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", member: "Member", viewer: "Viewer" };
 
@@ -15,7 +17,7 @@ interface MyOrgs {
   discoverable: { id: string; name: string; mode: "join" | "request" | "none" }[];
 }
 
-// F-129 workspace switch + create · F-004 domain join · F-135 activity dashboard
+// F-129 workspace switch + create · F-004 domain join · F-135 activity dashboard · F-134/F-138 내 멤버십 설정
 export function OrgHub({ active }: { active: OrgInfo | null }) {
   const router = useRouter();
   const [mine, setMine] = useState<MyOrgs | null>(null);
@@ -48,9 +50,18 @@ export function OrgHub({ active }: { active: OrgInfo | null }) {
       setErr((x as Error).message);
     }
   };
+  const [seats, setSeats] = useState<SeatLimit | null>(null);
+  // F-004 domain join — a full org answers 402 plan_limit_reached (seats)
   const join = async (id: string) => {
-    const r = await api<{ status: string }>(`/orgs/${id}/join`, { body: {} });
-    setErr(r.status === "pending" ? "가입 요청을 보냈어요. 관리자 승인 후 합류됩니다." : null);
+    setSeats(null);
+    try {
+      const r = await api<{ status: string }>(`/orgs/${id}/join`, { body: {} });
+      setErr(r.status === "pending" ? "가입 요청을 보냈어요. 관리자 승인 후 합류됩니다." : null);
+    } catch (x) {
+      const s = seatLimitOf(x);
+      if (s) setSeats(s);
+      else setErr((x as Error).message);
+    }
     load();
     router.refresh();
   };
@@ -87,6 +98,7 @@ export function OrgHub({ active }: { active: OrgInfo | null }) {
           <input id="orgname" className="field flex-1" placeholder="새 조직 이름 (예: 링코스랩)" value={name} onChange={(e) => setName(e.target.value)} minLength={2} required />
           <button className="btn btn-ink" disabled={name.trim().length < 2}><Icon name="plus" size={16} />만들기</button>
         </form>
+        {seats && <div className="mt-3"><SeatLimitNotice {...seats} admin={false} /></div>}
         {err && <p role="status" className="mt-3 text-[14px] text-[var(--fg-mute)]">{err}</p>}
       </section>
 
@@ -113,6 +125,7 @@ export function OrgHub({ active }: { active: OrgInfo | null }) {
             <Link href="/app/org/members" className="surface flex items-center gap-3 p-4 font-semibold"><Icon name="me" />멤버 · 역할 · 초대</Link>
             {active.permissions.includes("org.update") && <Link href="/app/org/settings" className="surface flex items-center gap-3 p-4 font-semibold"><Icon name="settings" />정책 · 브랜딩 · 보존 · SSO · API 키</Link>}
           </nav>
+          <MembershipPrefs key={active.id} orgId={active.id} initial={{ graphOptOut: !!active.graphOptOut, showBrandingOnCard: !!active.showBrandingOnCard }} />
           {activity && (
             <section className="surface space-y-4 p-5">
               <div className="flex items-center justify-between">

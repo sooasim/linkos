@@ -6,7 +6,9 @@ import type pg from "pg";
 import { type Db, one, pool } from "../lib/db";
 import { ApiError } from "../lib/errors";
 import { type Ctx, audit } from "../lib/platform";
+import { assertSeatAvailable } from "./billing";
 import { createSession, upsertUserByEmail } from "./identity";
+import { attributeSignupByCodeTx } from "./referral";
 
 /** Only e-mails on one of the org's verified domains may sign in through that org's IdP. */
 export async function assertOrgEmailDomain(orgId: string, email: string, db: Db = pool()): Promise<void> {
@@ -38,6 +40,8 @@ export interface SsoIdentity {
   consents: { type: ConsentType; granted: boolean }[];
   defaultRole: OrgRole;
   method: Extract<LoginMethod, "oidc_sso" | "saml_sso">;
+  /** F-064 /r/{code} captured at SSO start (NEW accounts only) */
+  referralCode?: string | null;
 }
 
 export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdentity): Promise<{ sessionToken: string; userId: string; isNew: boolean }> {
@@ -48,6 +52,9 @@ export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdenti
     throw new ApiError(403, "sso_deprovisioned", "조직에서 비활성화된 계정입니다. 회사 관리자에게 문의하세요.");
   }
   if (m?.status !== "active") {
+    // F-191: just-in-time SSO membership takes a seat like an invite/domain join/SCIM provisioning does
+    await c.query("SELECT 1 FROM organizations WHERE id=$1 FOR UPDATE", [id.orgId]);
+    await assertSeatAvailable(id.orgId, c);
     await c.query(
       `INSERT INTO organization_members (organization_id, user_id, role, status, join_source) VALUES ($1,$2,$3,'active','sso')
        ON CONFLICT (organization_id, user_id) DO UPDATE SET status='active', role=EXCLUDED.role, join_source='sso', joined_at=now(), left_at=NULL`,
@@ -57,5 +64,6 @@ export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdenti
   await c.query("UPDATE users SET active_org_id=COALESCE(active_org_id,$2) WHERE id=$1", [user.id, id.orgId]);
   const sessionToken = await createSession(c, user.id, ctx, null, "web", id.method);
   await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: id.method }, id.orgId);
+  if (isNew) await attributeSignupByCodeTx(c, user.id, id.referralCode); // F-064
   return { sessionToken, userId: user.id, isNew };
 }

@@ -101,6 +101,8 @@ async function getOrgInternal(orgId: string, userId: string, db: Db) {
     db,
   );
   const isAdmin = can(m.role, "org.update");
+  // F-138: my primary card carries this org's branding when the card is attached to the org
+  const myCard = await one<{ organization_id: string | null }>("SELECT organization_id FROM profiles WHERE user_id=$1 ORDER BY is_primary DESC, created_at LIMIT 1", [userId], db);
   return {
     id: o.id as string,
     name: o.name as string,
@@ -109,6 +111,7 @@ async function getOrgInternal(orgId: string, userId: string, db: Db) {
     role: m.role,
     permissions: permissionsOf(m.role),
     graphOptOut: m.graph_opt_out,
+    showBrandingOnCard: myCard?.organization_id === orgId,
     branding: (o.branding ?? {}) as OrgBranding,
     counts,
     // settings below are visible to admins only

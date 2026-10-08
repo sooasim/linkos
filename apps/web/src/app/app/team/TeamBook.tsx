@@ -19,7 +19,7 @@ interface TC {
   teamNotes: number;
 }
 
-// F-131 팀 주소록 · F-132 회사 소유 리드 · F-077 담당자 · F-076 공유 메모
+// F-131 팀 주소록 · F-132 회사 소유 리드 · F-077 담당자 · F-076 공유 메모(작성자/관리자 삭제)
 export function TeamBook({ orgId, myId, perms }: { orgId: string; myId: string; perms: string[] }) {
   const can = (p: string) => perms.includes(p);
   const [q, setQ] = useState("");
@@ -123,9 +123,21 @@ export function TeamBook({ orgId, myId, perms }: { orgId: string; myId: string; 
                     <p className="mb-2 text-[12px] text-[var(--fg-mute)]">개인 메모는 여기에 표시되지 않으며 절대 공유되지 않습니다.</p>
                     <ul className="space-y-1.5">
                       {detail.notes.map((n: any) => (
-                        <li key={n.id} className="rounded-xl border border-[var(--line)] px-3 py-2">
-                          <p>{n.body}</p>
-                          <p className="text-[12px] text-[var(--fg-mute)]">{n.author} · {relTime(n.created_at)}</p>
+                        <li key={n.id} className="flex items-start gap-2 rounded-xl border border-[var(--line)] px-3 py-2" data-testid="team-note">
+                          <span className="min-w-0 flex-1">
+                            <p>{n.body}</p>
+                            <p className="text-[12px] text-[var(--fg-mute)]">{n.author} · {relTime(n.created_at)}</p>
+                          </span>
+                          {(n.author_user_id === myId || can("members.remove")) && (
+                            <button
+                              type="button"
+                              className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--fg-mute)] hover:text-[var(--color-ember)]"
+                              aria-label="팀 메모 삭제"
+                              onClick={() => confirm(n.author_user_id === myId ? "이 팀 메모를 삭제할까요? 팀원 모두에게서 사라지며 되돌릴 수 없습니다." : `${n.author}님의 팀 메모를 관리자 권한으로 삭제할까요? 되돌릴 수 없습니다.`) && run(() => api(`/orgs/${orgId}/notes/${n.id}`, { method: "DELETE" }), "팀 메모를 삭제했어요.")}
+                            >
+                              <Icon name="trash" size={16} />
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>

@@ -143,6 +143,7 @@ export async function sendTestPush(ctx: Ctx) {
   return { sent: await processPushQueue(10) };
 }
 
+// F-110 delivery log: `reason` is the stored skip/failure code (vapid_not_configured | no_subscription | preference_off | push_<http status>)
 export async function listNotifications(userId: string) {
-  return q("SELECT id, kind, title, body, url, status, created_at FROM push_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50", [userId]);
+  return q("SELECT id, kind, title, body, url, status, error AS reason, attempts, created_at, sent_at FROM push_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50", [userId]);
 }

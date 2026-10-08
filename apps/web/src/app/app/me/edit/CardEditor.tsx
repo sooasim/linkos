@@ -1,5 +1,5 @@
 "use client";
-// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + X-008 템플릿·아이콘 꾸미기
+// UX-010 Card Editor: 필드·공개범위·audience variant·preview (F-022~F-036) + X-008 템플릿·아이콘 꾸미기 + F-031 상대별 보기 미리보기
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ResolvedGlyph } from "@linkos/domain/cardDesign";
@@ -12,6 +12,7 @@ import { CardFace, OfferNeed } from "@/components/LivingCard";
 import { PageHeader } from "@/components/Page";
 import { api } from "@/lib/client";
 import { CardIntel } from "./CardIntel";
+import { VariantPreview } from "./VariantPreview";
 
 type Vis = "public" | "business" | "trusted" | "partner" | "private";
 type FieldRow = { type: string; label?: string | null; value: string; visibility: Vis };
@@ -337,6 +338,16 @@ export function CardEditor({ profile, onboarding, initialTab = "info" }: { profi
           <div className="mt-4">
             <OfferNeed offers={p.offers} needs={p.needs} />
           </div>
+          {profile?.id && (
+            <div className="mt-6">
+              <VariantPreview
+                profileId={profile.id}
+                card={{ ...p, design: designFromState(design) }}
+                fields={p.fields}
+                dirty={JSON.stringify(p.variants.filter((v) => v.headline).map((v) => [v.audience, v.headline]).sort()) !== JSON.stringify(((profile.variants ?? []) as any[]).filter((v) => v.content?.headline).map((v) => [v.audience, v.content.headline]).sort())}
+              />
+            </div>
+          )}
         </aside>
       </div>
 

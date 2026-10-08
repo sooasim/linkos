@@ -75,6 +75,28 @@ export async function processDeletions(): Promise<number> {
   return due.length;
 }
 
-export async function myAuditLog(userId: string) {
-  return q<any>("SELECT id, action, entity_type, created_at FROM audit_logs WHERE actor_user_id=$1 ORDER BY created_at DESC LIMIT 100", [userId]);
+/**
+ * F-137 / F-166 "내 활동 기록": my own audit trail, newest first, keyset-paged by id (`before` = last id of the previous page).
+ * Only an allow-list of non-sensitive metadata keys is returned (audit() already runs redact()); audit_logs stores no IP/device.
+ */
+export async function myAuditLog(userId: string, opts: { before?: string | null; limit?: number } = {}) {
+  const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
+  const before = opts.before && /^\d{1,18}$/.test(opts.before) ? opts.before : null;
+  const rows = await q<{ id: string; action: string; entity_type: string | null; organization_id: string | null; metadata: Record<string, unknown> | null; created_at: Date }>(
+    `SELECT id::text AS id, action, entity_type, organization_id, metadata, created_at FROM audit_logs
+     WHERE actor_user_id=$1 AND ($2::bigint IS NULL OR id < $2::bigint) ORDER BY id DESC LIMIT $3`,
+    [userId, before, limit + 1],
+  );
+  const page = rows.slice(0, limit).map((r) => ({ ...r, metadata: pickAuditMeta(r.metadata) }));
+  return { entries: page, nextCursor: rows.length > limit ? page[page.length - 1]!.id : null };
+}
+
+const AUDIT_META_KEYS = ["format", "report", "period", "rows", "provider", "queued", "count", "role", "strategy", "type"] as const;
+function pickAuditMeta(m: Record<string, unknown> | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of AUDIT_META_KEYS) {
+    const v = m?.[k];
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+  }
+  return out;
 }

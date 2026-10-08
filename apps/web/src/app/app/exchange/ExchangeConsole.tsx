@@ -376,7 +376,7 @@ export function ExchangeConsole({ group, name }: { group: boolean; name: string 
             <div className="text-center">
               <p className="text-[14px] text-[var(--fg-mute)]">상대가 브라우저에서 입력</p>
               <p className="num mt-1 text-[15px] font-semibold">{new URL(session.url).host}/c</p>
-              <p className="display num mt-3 text-[64px] tracking-[0.12em]" data-testid="short-code" aria-label={`교환 코드 ${session.shortCode.split("").join(" ")}`}>
+              <p className="display num mt-3 text-[72px] tracking-[0.28em]" data-testid="short-code" aria-label={`교환 코드 ${session.shortCode.split("").join(" ")}`}>
                 {session.shortCode}
               </p>
             </div>

@@ -287,9 +287,10 @@ export type PosterSize = "a6" | "a4";
 /** PDF points (1/72 in). */
 export const POSTER_SIZES: Record<PosterSize, { w: number; h: number }> = { a6: { w: 297.64, h: 419.53 }, a4: { w: 595.28, h: 841.89 } };
 
-/** "K7MP2Q" → "K7M 2Q…": groups of three, easier to read aloud from across a table. */
+/** "1234" → "12 34" (4-digit exchange code read aloud as two pairs); longer codes in groups of three. */
 export function formatShortCode(code: string): string {
   const c = code.toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (c.length === 4) return `${c.slice(0, 2)} ${c.slice(2)}`;
   return c.length > 3 ? `${c.slice(0, 3)} ${c.slice(3)}` : c;
 }
 

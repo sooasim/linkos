@@ -11,7 +11,7 @@ import {
   SHORT_CODE_TTL_MS,
   acceptsReply,
   canTransition,
-  generateShortCode,
+  generateExchangeCode,
   generateToken,
   hashToken,
   isWellFormedToken,
@@ -22,8 +22,8 @@ import {
 import type pg from "pg";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
-import { ApiError, badRequest, conflict, gone, notFound, unauthorized } from "../lib/errors";
-import { type Ctx, appOrigin, audit, emit, rateLimit, sha256 } from "../lib/platform";
+import { ApiError, badRequest, conflict, gone, notFound, tooMany, unauthorized } from "../lib/errors";
+import { type Ctx, appOrigin, audit, emit, rateCount, rateHit, rateLimit, sha256 } from "../lib/platform";
 import { type PublicCard, getExchangeCard, loadProfile, primaryProfileId, saveProfile } from "./card";
 import { recordReferral } from "./referral";
 import { recordConsents } from "./identity";
@@ -108,8 +108,10 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
     await consume(c, userId, "exchanges");
     let shortCode: string | null = null;
     if (plan.includes("short_code")) {
-      for (let i = 0; i < 5 && !shortCode; i++) {
-        const cand = generateShortCode();
+      // 4 digits = 10,000 codes: expired/used codes are released here for reuse, so only codes live in the
+      // last 10 minutes can collide; 25 random draws make a failure astronomically unlikely below ~8,000 live codes.
+      for (let i = 0; i < 25 && !shortCode; i++) {
+        const cand = generateExchangeCode();
         const clash = await one("SELECT 1 FROM exchange_sessions WHERE short_code=$1 AND short_code_expires_at > now()", [cand], c);
         if (!clash) {
           await c.query("UPDATE exchange_sessions SET short_code=NULL WHERE short_code=$1", [cand]);
@@ -143,6 +145,35 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
       state: row!.state,
     };
   });
+}
+
+// F-045 4자리 코드 추측 방어: "틀린 코드" 시도만 센다(정상 사용자는 보통 한 번에 맞힘).
+// IP당 10분 8회 · 하루 30회, 서비스 전체 10분 3,000회를 넘으면 코드 조회를 잠시 막는다(분산 추측 대비).
+// 전체 토큰(/x/{token}) 경로에는 적용하지 않는다 — 128bit 이상이라 추측이 불가능하다.
+export const CODE_FAIL_LIMITS = { ipWindow: { limit: 8, sec: 600 }, ipDay: { limit: 30, sec: 86_400 }, global: { limit: 3000, sec: 600 } } as const;
+
+async function findSessionGuarded(tokenOrCode: string, ctx: Ctx, db: Db = pool(), forUpdate = false): Promise<SessionRow> {
+  if (isWellFormedToken(tokenOrCode)) return findSession(tokenOrCode, db, forUpdate);
+  const ip = ctx.ip ?? "unknown";
+  const L = CODE_FAIL_LIMITS;
+  const [w, d, g] = await Promise.all([
+    rateCount(`xch:codefail:${ip}`, L.ipWindow.sec),
+    rateCount(`xch:codefail:day:${ip}`, L.ipDay.sec),
+    rateCount("xch:codefail:all", L.global.sec),
+  ]);
+  if (w >= L.ipWindow.limit || d >= L.ipDay.limit || g >= L.global.limit) throw tooMany(w >= L.ipWindow.limit ? L.ipWindow.sec : 60);
+  try {
+    return await findSession(tokenOrCode, db, forUpdate);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      await Promise.all([
+        rateHit(`xch:codefail:${ip}`, L.ipWindow.sec),
+        rateHit(`xch:codefail:day:${ip}`, L.ipDay.sec),
+        rateHit("xch:codefail:all", L.global.sec),
+      ]);
+    }
+    throw e;
+  }
 }
 
 async function findSession(tokenOrCode: string, db: Db = pool(), forUpdate = false): Promise<SessionRow> {
@@ -235,7 +266,7 @@ export async function getSenderSessionStatus(ctx: Ctx, sessionId: string) {
 export async function getGuestSessionStatus(tokenOrCode: string, ctx: Ctx, opts: { rateLimited?: boolean } = {}) {
   // only the opening request is rate limited; polls inside an already-open stream are not (venue Wi-Fi shares one IP)
   if (opts.rateLimited !== false) await rateLimit(`xch:status:${ctx.ip}`, 120, 60);
-  const s = await findSession(tokenOrCode);
+  const s = await findSessionGuarded(tokenOrCode, ctx);
   const terminal = ["REVOKED", "CANCELLED"].includes(s.state);
   const expired = !terminal && s.expires_at.getTime() < Date.now() && !["EXCHANGED", "CLAIM_PENDING", "CLAIMED", "SYNCED"].includes(s.state);
   return {
@@ -258,7 +289,7 @@ export interface GuestLanding {
 /** F-053 비회원 즉시 열람 — no login wall, public-safe card only. */
 export async function openGuestLanding(tokenOrCode: string, ctx: Ctx, anonymousReceiverId: string): Promise<GuestLanding> {
   await rateLimit(`xch:open:${ctx.ip}`, normalizeShortCode(tokenOrCode) && !isWellFormedToken(tokenOrCode) ? 30 : 120, 60);
-  const s = await findSession(tokenOrCode);
+  const s = await findSessionGuarded(tokenOrCode, ctx);
   if (s.state === "REVOKED" || s.state === "CANCELLED") throw gone("exchange_revoked", "보낸 사람이 교환을 취소했습니다.");
   const open = acceptsReply(s.state, s.expires_at);
   if (!open && s.expires_at.getTime() < Date.now() && !["EXCHANGED", "CLAIM_PENDING", "CLAIMED", "SYNCED"].includes(s.state)) {
@@ -323,7 +354,7 @@ export type ReplyInput = z.infer<typeof replyInput>;
  */
 export async function replyExchange(tokenOrCode: string, ctx: Ctx, input: ReplyInput) {
   await rateLimit(`xch:reply:${ctx.ip}`, 20, 600);
-  return tx(async (c) => applyReply(c, await findSession(tokenOrCode, c, true), ctx, input));
+  return tx(async (c) => applyReply(c, await findSessionGuarded(tokenOrCode, ctx, c, true), ctx, input));
 }
 
 /** Lock-holding core of replyExchange; `s` must have been selected FOR UPDATE on `c`. Also used by F-039 proximity. */

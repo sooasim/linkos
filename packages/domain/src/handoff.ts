@@ -5,7 +5,7 @@ export type Channel =
   | "ble_proximity" // 앱↔앱, foreground BLE + 상호 승인 (네이티브 앱 전용)
   | "os_share" // Web Share / native share 로 일회성 HTTPS 링크
   | "nfc_accessory" // NFC 카드/스티커/링 (NDEF URL)
-  | "short_code" // lk.to + 6자리
+  | "short_code" // 숫자 4자리 교환 코드
   | "web_rendezvous" // 양쪽 웹 exchange 화면에서 서버 rendezvous
   | "acoustic" // 실험 채널 (F-047, P3)
   | "local_receipt" // 오프라인 앱↔앱 서명 영수증 (F-052)

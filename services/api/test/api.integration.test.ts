@@ -93,7 +93,7 @@ describe("Guest Exchange → Claim (F-002, F-003, F-037~F-064)", () => {
     expect(s.channelPlan[0]).toBe("os_share");
     expect(s.channelPlan.at(-1)).toBe("qr");
     expect(s.url).toBe(`https://linkos.test/x/${token}`);
-    expect(s.shortCode).toMatch(/^[2-9A-Z]{6}$/);
+    expect(s.shortCode).toMatch(/^\d{4}$/);
     const row = await one<{ token_hash: string }>("SELECT token_hash FROM exchange_sessions WHERE id=$1", [sessionId]);
     expect(row!.token_hash).not.toBe(token);
     expect(token).not.toMatch(/hong|010|linkos/i);

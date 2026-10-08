@@ -26,18 +26,18 @@ export default function EnterCodePage() {
         <h1 className="display mt-3 text-[56px]">
           코드로 <em>받기</em>
         </h1>
-        <p className="mt-3 text-[16px] text-[var(--fg-mute)]">상대 화면에 보이는 6자리 코드를 입력하세요. 가입은 필요 없어요.</p>
+        <p className="mt-3 text-[16px] text-[var(--fg-mute)]">상대 화면에 보이는 숫자 4자리를 입력하세요. 가입은 필요 없어요.</p>
         <input
           autoFocus
-          inputMode="text"
-          autoCapitalize="characters"
+          inputMode="numeric"
+          pattern="[0-9]*"
           autoComplete="one-time-code"
-          maxLength={7}
+          maxLength={5}
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          aria-label="6자리 교환 코드"
-          className="num mt-8 w-full rounded-[22px] border border-[var(--line-strong)] bg-transparent px-5 py-5 text-center text-[40px] font-semibold tracking-[0.35em] outline-none focus:border-[var(--color-signal)]"
-          placeholder="ABC234"
+          onChange={(e) => setCode(e.target.value.replace(/[^0-9０-９\s-]/g, ""))}
+          aria-label="숫자 4자리 교환 코드"
+          className="num mt-8 w-full rounded-[22px] border border-[var(--line-strong)] bg-transparent px-5 py-5 text-center text-[40px] font-semibold tracking-[0.5em] outline-none focus:border-[var(--color-signal)]"
+          placeholder="0000"
         />
         <button className="btn btn-signal btn-lg mt-5 w-full" disabled={!valid}>
           명함 받기

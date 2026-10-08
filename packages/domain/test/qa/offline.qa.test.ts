@@ -21,6 +21,7 @@ import {
   evaluateProximity,
   fromBase64Url,
   generateEphemeralId,
+  generateExchangeCode,
   generateShortCode,
   hmacSha256Base64Url,
   normalizeRendezvousCode,
@@ -274,16 +275,16 @@ describe("QA · BLE proximity ids & rendezvous codes (500 generated)", () => {
 });
 
 describe("QA · acoustic codec (F-047)", () => {
-  const codes = Array.from({ length: 600 }, () => generateShortCode());
+  const codes = Array.from({ length: 600 }, () => generateExchangeCode());
   it.each(codes.map((c, i) => ({ i, c })))("frame #$i round-trips and detects any single-symbol corruption", ({ c, i }) => {
     const f = encodeAcousticFrame(c);
-    expect(f).toHaveLength(8);
+    expect(f).toHaveLength(6); // preamble + 4 digits + checksum
     expect(f[0]).toBe(ACOUSTIC_PREAMBLE);
     expect(decodeAcousticFrame(f)).toBe(c);
     const r = rng(i);
     const noise = Array.from({ length: r.int(0, 12) }, () => r.int(0, 31));
     expect(decodeAcousticFrame([...noise.filter((x) => x !== ACOUSTIC_PREAMBLE), ...f, ...noise])).toBe(c);
-    const pos = 1 + (i % 7);
+    const pos = 1 + (i % 5);
     const bad = [...f];
     bad[pos] = (bad[pos]! + 1 + r.int(0, 29)) % 31;
     expect(decodeAcousticFrame(bad)).not.toBe(c);

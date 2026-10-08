@@ -1,15 +1,15 @@
-// F-047 음향 페어링 실험 (P3, 실험 플래그 뒤): 6자리 단축코드를 근초음파 FSK 로 전송.
+// F-047 음향 페어링 실험 (P3, 실험 플래그 뒤): 숫자 4자리 교환 코드를 근초음파 FSK 로 전송.
 // 순수 함수만 — 합성(synthesize)과 복호(decode)는 샘플 배열을 입출력으로 받는다. Web Audio 연결은 UI 몫.
 //
-// Frame:  [PRE] [c0] [c1] [c2] [c3] [c4] [c5] [CHK]     (each symbol = tone, then silence gap)
-//   - 32 tones: 0..30 = short-code alphabet index, 31 = preamble
+// Frame:  [PRE] [d0] [d1] [d2] [d3] [CHK]     (each symbol = tone, then silence gap)
+//   - 32 tones: 0..9 = digit, 0..30 = checksum value, 31 = preamble
 //   - CHK = Σ (i+1)·idx(c_i) mod 31  → catches single-symbol errors and transpositions
 //   - sender repeats the frame; the decoder returns the first frame whose checksum verifies.
 // The short code itself still expires in 10 minutes and resolves to the normal guest landing,
 // so a wrong/attacker tone can at worst open someone else's public card — it never exchanges anything.
 import { normalizeShortCode } from "./token";
 
-const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"; // must match token.ts SHORT_ALPHABET
+const DIGITS = 4; // must match token.ts EXCHANGE_CODE_LENGTH
 export const ACOUSTIC_PREAMBLE = 31;
 export const ACOUSTIC_BASE_HZ = 17_000;
 export const ACOUSTIC_SPACING_HZ = 62.5;
@@ -28,23 +28,23 @@ export function acousticChecksum(symbols: number[]): number {
   return s % 31;
 }
 
-/** short code → symbol frame (preamble + 6 data + checksum) */
+/** exchange code → symbol frame (preamble + 4 digits + checksum) */
 export function encodeAcousticFrame(code: string): number[] {
   const c = normalizeShortCode(code);
   if (!c) throw new Error("invalid short code");
-  const data = [...c].map((ch) => ALPHABET.indexOf(ch));
+  const data = [...c].map(Number);
   return [ACOUSTIC_PREAMBLE, ...data, acousticChecksum(data)];
 }
 
 /** symbol stream (may contain noise/partial frames) → first checksum-valid short code */
 export function decodeAcousticFrame(symbols: number[]): string | null {
-  for (let i = 0; i + 7 < symbols.length; i++) {
+  for (let i = 0; i + DIGITS + 1 < symbols.length; i++) {
     if (symbols[i] !== ACOUSTIC_PREAMBLE) continue;
-    const data = symbols.slice(i + 1, i + 7);
-    const chk = symbols[i + 7]!;
-    if (data.some((d) => d < 0 || d > 30)) continue;
+    const data = symbols.slice(i + 1, i + 1 + DIGITS);
+    const chk = symbols[i + 1 + DIGITS]!;
+    if (data.some((d) => !Number.isInteger(d) || d < 0 || d > 9)) continue;
     if (acousticChecksum(data) !== chk) continue;
-    return data.map((d) => ALPHABET[d]).join("");
+    return data.join("");
   }
   return null;
 }

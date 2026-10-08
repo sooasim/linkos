@@ -71,6 +71,27 @@ export async function rateLimit(bucket: string, limit: number, windowSec: number
   }
 }
 
+/** Current count of a fixed-window bucket without incrementing it (used to pre-check failure counters). */
+export async function rateCount(bucket: string, windowSec: number): Promise<number> {
+  if (process.env.RATE_LIMIT_DISABLED === "1") return 0;
+  const now = Date.now();
+  const windowStart = new Date(now - (now % (windowSec * 1000)));
+  const row = await one<{ count: number }>("SELECT count FROM rate_limits WHERE bucket=$1 AND window_start=$2", [bucket, windowStart]);
+  return row?.count ?? 0;
+}
+
+/** Increment a fixed-window bucket without enforcing a limit (pair with rateCount). */
+export async function rateHit(bucket: string, windowSec: number): Promise<void> {
+  if (process.env.RATE_LIMIT_DISABLED === "1") return;
+  const now = Date.now();
+  const windowStart = new Date(now - (now % (windowSec * 1000)));
+  await q(
+    `INSERT INTO rate_limits (bucket, window_start, count) VALUES ($1,$2,1)
+     ON CONFLICT (bucket, window_start) DO UPDATE SET count = rate_limits.count + 1`,
+    [bucket, windowStart],
+  );
+}
+
 export function sha256(s: string): string {
   return createHash("sha256").update(s).digest("hex");
 }
@@ -142,7 +163,7 @@ export function routeKey(method: string, path: string): string {
   const p = path
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
     .replace(/\/[A-Za-z0-9_-]{20,}/g, "/:token")
-    .replace(/\/(c|sessions)\/[2-9A-Z]{6}(?=\/|$)/g, "/$1/:code");
+    .replace(/\/(c|sessions)\/(?:\d{4}|[2-9A-Z]{6})(?=\/|$)/g, "/$1/:code");
   return `${method} ${p}`;
 }
 

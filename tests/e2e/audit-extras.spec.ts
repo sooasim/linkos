@@ -83,7 +83,7 @@ test("X-001/X-002/X-004/X-007 share kit from /app/me", async ({ page, browser })
   await page.getByLabel("장소·행사 이름 (선택)").fill("E2E 부스");
   await page.getByTestId("poster-create").click();
   const code = (await page.getByTestId("poster-code").textContent())!.replace(/\s/g, "");
-  expect(code).toMatch(/^[2-9A-Z]{6}$/);
+  expect(code).toMatch(/^\d{4}$/);
   const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByTestId("poster-download").click()]);
   expect(pdf.suggestedFilename()).toBe("linkos-poster-a4.pdf");
   expect(readFileSync((await pdf.path())!).subarray(0, 5).toString()).toBe("%PDF-");

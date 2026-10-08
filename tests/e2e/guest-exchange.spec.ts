@@ -51,7 +51,7 @@ test("guest receives a card without login, replies, then claims", async ({ page,
     await page.waitForTimeout(600);
   }
   await expect(page.getByTestId("qr-fallback")).toBeVisible();
-  const shortCode = code ?? (await page.evaluate(() => document.body.innerText.match(/\b[2-9A-HJKMNP-Z]{6}\b/)?.[0] ?? null));
+  const shortCode = code ?? (await page.evaluate(() => document.querySelector("[data-testid=short-code]")?.textContent?.match(/\d{4}/)?.[0] ?? null));
 
   // Guest: separate browser context, no session
   const guestCtx = await browser.newContext();

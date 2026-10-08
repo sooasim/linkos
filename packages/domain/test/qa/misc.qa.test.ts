@@ -18,6 +18,7 @@ import {
   canStartRecording,
   constantTimeEqual,
   fmt,
+  generateExchangeCode,
   generateShortCode,
   generateToken,
   hashToken,
@@ -126,21 +127,24 @@ describe("QA · exchange tokens (1,000 generated)", () => {
   it.each([8, 15])("refuses %i-byte (<128 bit) tokens", (n) => expect(() => generateToken(n)).toThrow());
   it.each(["", "short", "a".repeat(21), "a".repeat(129), "has space aaaaaaaaaaaaaaaaaa", "plus+slash/aaaaaaaaaaaaaaa", "=".repeat(30)])("isWellFormedToken rejects %j", (s) => expect(isWellFormedToken(s)).toBe(false));
 
-  const codes = Array.from({ length: 1000 }, () => generateShortCode());
-  it.each(codes.map((c, i) => ({ i, c })))("short code #$i normalizes from any typed form", ({ c }) => {
-    expect(c).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
+  const codes = Array.from({ length: 1000 }, () => generateExchangeCode());
+  it.each(codes.map((c, i) => ({ i, c })))("exchange code #$i normalizes from any typed form", ({ c }) => {
+    expect(c).toMatch(/^\d{4}$/);
     expect(normalizeShortCode(c)).toBe(c);
-    expect(normalizeShortCode(c.toLowerCase())).toBe(c);
-    expect(normalizeShortCode(`${c.slice(0, 3)}-${c.slice(3)}`)).toBe(c);
-    expect(normalizeShortCode(` ${c.slice(0, 3)} ${c.slice(3)} `)).toBe(c);
+    expect(normalizeShortCode(`${c.slice(0, 2)}-${c.slice(2)}`)).toBe(c);
+    expect(normalizeShortCode(` ${c.slice(0, 2)} ${c.slice(2)} `)).toBe(c);
     expect(normalizeShortCode(`lk.to/${c}`)).toBe(c);
+    expect(normalizeShortCode(c.replace(/\d/g, (d) => String.fromCharCode(0xff10 + Number(d))))).toBe(c); // full-width
   });
-  it("short code alphabet is roughly uniform (no modulo bias)", () => {
+  it("exchange code digits are roughly uniform (no modulo bias)", () => {
     const counts = new Map<string, number>();
     for (const c of codes) for (const ch of c) counts.set(ch, (counts.get(ch) ?? 0) + 1);
-    const expected = (codes.length * 6) / 31;
-    for (const n of counts.values()) expect(Math.abs(n - expected) / expected).toBeLessThan(0.35);
-    expect(counts.size).toBe(31);
+    const expected = (codes.length * 4) / 10;
+    for (const n of counts.values()) expect(Math.abs(n - expected) / expected).toBeLessThan(0.2);
+    expect(counts.size).toBe(10);
+  });
+  it("event join codes keep the 6-char unambiguous alphabet", () => {
+    for (let i = 0; i < 300; i++) expect(generateShortCode()).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
   });
   it.each(["", "ABCDE", "ABCDEFG", "ABCDE0", "ABCDEO", "ABCDE1", "ABCDEI", "ABCDEL", "ÄBCDEF"])("normalizeShortCode rejects %j", (s) => expect(normalizeShortCode(s)).toBeNull());
   it.each(cases(200, 1824, (r) => [r.str("ab", 0, 6), r.str("ab", 0, 6)] as const))("constantTimeEqual #$i ≡ ===", ({ c: [a, b] }) => {

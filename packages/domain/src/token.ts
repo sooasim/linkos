@@ -26,32 +26,43 @@ export async function hashToken(token: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// F-045 단축코드: 사람이 입력하기 쉬운 6자리. 엔트로피가 낮으므로 짧은 TTL + rate limit + 1회 해석 후 전체 토큰으로 교체.
-const SHORT_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"; // 0/O, 1/I/L 제외
+// F-045 단축코드(교환 코드): 사람이 읽고 말하기 쉬운 **숫자 4자리**(0000~9999, 무작위 — 순번 아님).
+// 엔트로피가 낮으므로(10,000가지) 반드시 함께 쓰는 방어: 10분 TTL · 1회성 · 만료 즉시 재사용 해제 ·
+// IP별/전체 "틀린 코드" 시도 제한(handoff.guardCodeLookup). 오래 쓰는 행사 참가 코드는 별도(generateShortCode, 6자리).
+export const EXCHANGE_CODE_LENGTH = 4;
 
-export function generateShortCode(length = 6): string {
-  const out: string[] = [];
-  const buf = new Uint8Array(length * 2);
-  globalThis.crypto.getRandomValues(buf);
-  // rejection sampling to avoid modulo bias
-  const limit = 256 - (256 % SHORT_ALPHABET.length);
-  let i = 0;
-  while (out.length < length) {
-    if (i >= buf.length) {
-      globalThis.crypto.getRandomValues(buf);
-      i = 0;
-    }
-    const v = buf[i++]!;
-    if (v < limit) out.push(SHORT_ALPHABET[v % SHORT_ALPHABET.length]!);
+function randomIndex(n: number): number {
+  const limit = 256 - (256 % n);
+  const buf = new Uint8Array(1);
+  for (;;) {
+    globalThis.crypto.getRandomValues(buf);
+    if (buf[0]! < limit) return buf[0]! % n; // rejection sampling: no modulo bias
   }
-  return out.join("");
 }
 
+/** 4 uniformly random digits, e.g. "0427" (leading zeros allowed). */
+export function generateExchangeCode(): string {
+  let out = "";
+  for (let i = 0; i < EXCHANGE_CODE_LENGTH; i++) out += String(randomIndex(10));
+  return out;
+}
+
+// 행사 참가 코드 등 오래 유지되는 코드: 6자리, 헷갈리는 0/O, 1/I/L 제외
+const SHORT_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+
+export function generateShortCode(length = 6): string {
+  let out = "";
+  for (let i = 0; i < length; i++) out += SHORT_ALPHABET[randomIndex(SHORT_ALPHABET.length)]!;
+  return out;
+}
+
+/** User input → canonical exchange code ("12 34", "12-34", "lk.to/1234", full-width "１２３４" → "1234"); null if not 4 digits. */
 export function normalizeShortCode(input: string): string | null {
-  const s = input.toUpperCase().replace(/[\s-]/g, "").replace(/^LK\.TO\//, "");
-  if (s.length !== 6) return null;
-  for (const ch of s) if (!SHORT_ALPHABET.includes(ch)) return null;
-  return s;
+  const s = input
+    .normalize("NFKC")
+    .replace(/^\s*(https?:\/\/)?(lk\.to|[^/]+\/c)\//i, "")
+    .replace(/[\s-]/g, "");
+  return /^\d{4}$/.test(s) ? s : null;
 }
 
 export function constantTimeEqual(a: string, b: string): boolean {

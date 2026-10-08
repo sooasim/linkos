@@ -48,7 +48,7 @@ async function shortCodeFor(page: Page): Promise<string> {
     await page.getByTestId("next-channel").click();
     await page.waitForTimeout(600);
   }
-  return (await page.evaluate(() => document.body.innerText.match(/\b[2-9A-HJKMNP-Z]{6}\b/)?.[0] ?? null))!;
+  return (await page.evaluate(() => document.querySelector("[data-testid=short-code]")?.textContent?.match(/\d{4}/)?.[0] ?? null))!;
 }
 
 test("X-008 apply a template from the gallery → guest landing renders it", async ({ page, browser }) => {

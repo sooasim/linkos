@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
+import { generateExchangeCode,
   acceptsReply,
   assertGrounded,
   canSee,
@@ -44,14 +44,27 @@ describe("F-050 token security", () => {
     expect(() => generateToken(8)).toThrow();
     expect(isWellFormedToken("short")).toBe(false);
   });
-  it("F-045 short codes are 6 chars from an unambiguous alphabet", () => {
-    for (let i = 0; i < 200; i++) {
-      const c = generateShortCode();
-      expect(c).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
-      expect(normalizeShortCode(c.toLowerCase())).toBe(c);
+  it("F-045 exchange codes are 4 random digits; input is normalized", () => {
+    const seen = new Set<string>();
+    const firstDigit = new Array(10).fill(0);
+    for (let i = 0; i < 5000; i++) {
+      const c = generateExchangeCode();
+      expect(c).toMatch(/^\d{4}$/);
+      expect(normalizeShortCode(c)).toBe(c);
+      seen.add(c);
+      firstDigit[Number(c[0])]++;
     }
-    expect(normalizeShortCode("lk.to/abc 234")).toBe("ABC234");
-    expect(normalizeShortCode("O0O0O0")).toBeNull();
+    expect(seen.size).toBeGreaterThan(3500); // ~3,935 distinct expected out of 10,000 for 5,000 uniform draws
+    for (const n of firstDigit) expect(n).toBeGreaterThan(350); // uniform: ~500 each; leading zeros allowed
+    expect(normalizeShortCode("12 34")).toBe("1234");
+    expect(normalizeShortCode("12-34")).toBe("1234");
+    expect(normalizeShortCode("１２３４")).toBe("1234");
+    expect(normalizeShortCode("lk.to/0427")).toBe("0427");
+    expect(normalizeShortCode("https://linkos.app/c/0427")).toBe("0427");
+    for (const bad of ["123", "12345", "12a4", "ABC234", "", "    "]) expect(normalizeShortCode(bad)).toBeNull();
+  });
+  it("event join codes stay 6 chars from an unambiguous alphabet", () => {
+    for (let i = 0; i < 200; i++) expect(generateShortCode()).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
   });
 });
 

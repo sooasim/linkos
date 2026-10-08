@@ -36,6 +36,7 @@ import {
   verifyOfflinePass,
   verifyOfflineReceiptSignature,
   type OfflinePassClaims,
+  generateExchangeCode,
 } from "../src/index";
 
 describe("pure SHA-256 / HMAC (Hermes-safe) matches node:crypto", () => {
@@ -162,25 +163,26 @@ describe("F-047 acoustic FSK (experimental)", () => {
   }
 
   it("frame encode/decode with checksum", () => {
-    const code = generateShortCode();
+    const code = generateExchangeCode();
     const frame = encodeAcousticFrame(code);
     expect(frame[0]).toBe(ACOUSTIC_PREAMBLE);
-    expect(frame).toHaveLength(8);
+    expect(frame).toHaveLength(6);
     expect(decodeAcousticFrame(frame)).toBe(code);
     expect(decodeAcousticFrame([3, 7, ...frame, 1])).toBe(code);
     const bad = [...frame];
     bad[3] = (bad[3]! + 1) % 31;
     expect(decodeAcousticFrame(bad)).toBeNull();
-    const data = frame.slice(1, 7);
+    const data = frame.slice(1, 5);
     if (data[0] !== data[1]) {
       const swapped = [data[1]!, data[0]!, ...data.slice(2)];
       expect(acousticChecksum(swapped)).not.toBe(acousticChecksum(data));
     }
-    expect(() => encodeAcousticFrame("0OIL11")).toThrow();
+    expect(() => encodeAcousticFrame("12a4")).toThrow();
+    expect(() => encodeAcousticFrame("ABC234")).toThrow();
   });
 
   it.each([48_000, 44_100])("synthesize → detect roundtrip at %i Hz with noise", (sr) => {
-    const code = "AB23ZZ"; // includes a repeated symbol (ZZ)
+    const code = "0770"; // leading zero + a repeated symbol (77)
     const pcm = synthesizeAcoustic(code, sr, 2, 0.3);
     const r = rng(42);
     const lead = Math.round(sr / 4);

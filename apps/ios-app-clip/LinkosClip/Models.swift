@@ -73,8 +73,8 @@ enum Invocation: Equatable {
         switch parts[0] {
         case "x" where (22...128).contains(value.count) && value.unicodeScalars.allSatisfy(tokenChars.contains):
             self = .token(value)
-        case "c" where value.count == 6:
-            self = .shortCode(value.uppercased())
+        case "c" where value.count == 4 && value.allSatisfy({ $0.isASCII && $0.isNumber }):  // 4-digit exchange code (F-045)
+            self = .shortCode(value)
         case "n" where (22...128).contains(value.count) && value.unicodeScalars.allSatisfy(tokenChars.contains):
             self = .nfcTag(value)
         default:

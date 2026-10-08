@@ -1,7 +1,9 @@
 "use client";
+// F-106 초안 목록 · 초안 삭제(확인 후) · F-111 템플릿 · 후속 시퀀스
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { MessageComposer, type MessageDto } from "@/components/MessageComposer";
+import { Icon } from "@/components/Icon";
 import { Empty } from "@/components/Page";
 import { api, fmtDate, relTime, uid } from "@/lib/client";
 
@@ -28,6 +30,17 @@ export function Messages() {
 function MessageList({ status }: { status: "draft" | "sent" }) {
   const [list, setList] = useState<MessageDto[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const discard = async (m: MessageDto) => {
+    if (!confirm(`‘${m.subject ?? "제목 없음"}’ 초안을 삭제할까요? 발송되지 않으며 목록에서 사라집니다.`)) return;
+    setErr(null);
+    try {
+      await api(`/messages/${m.id}`, { method: "DELETE" });
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
   const load = useCallback(() => api<{ messages: MessageDto[] }>(`/messages?status=${status}`).then((r) => setList(r.messages)), [status]);
   useEffect(() => {
     load();
@@ -36,18 +49,26 @@ function MessageList({ status }: { status: "draft" | "sent" }) {
   if (!list.length) return <Empty title={status === "draft" ? "초안이 없어요" : "보낸 메일이 없어요"} body="사람 상세 화면에서 AI 초안이나 템플릿으로 메일을 작성하세요. 발송은 항상 직접 승인해야 합니다." />;
   return (
     <ul className="space-y-2">
+      {err && <li className="text-[13px] text-[var(--color-ember)]" role="alert">{err}</li>}
       {list.map((m) => (
-        <li key={m.id}>
+        <li key={m.id} className="relative">
           {open === m.id ? (
-            <MessageComposer initial={m} contactId={m.contactId} onChange={load} />
+            <MessageComposer initial={m} contactId={m.contactId} onChange={load} onDiscard={() => setOpen(null)} />
           ) : (
-            <button className="surface flex w-full items-center gap-3 p-4 text-left" onClick={() => setOpen(m.id)}>
+            <div className="surface flex items-center">
+            <button className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left" onClick={() => setOpen(m.id)}>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">{m.subject ?? (m.channel === "sms" ? "문자 초안" : "(제목 없음)")}</span>
                 <span className="block truncate text-[13px] text-[var(--fg-mute)]">{m.toName ?? m.toAddress ?? "받는 사람 없음"} · {m.body.slice(0, 60)}</span>
               </span>
               <span className="text-[12px] text-[var(--fg-mute)]">{m.sentAt ? relTime(m.sentAt) : m.provider === "gmail" && m.gmailDraftId ? "Gmail 초안" : ""}</span>
             </button>
+            {status === "draft" && (
+              <button type="button" className="mr-2 grid size-10 shrink-0 place-items-center rounded-full text-[var(--fg-mute)] hover:text-[var(--color-ember)]" aria-label={`‘${m.subject ?? "제목 없음"}’ 초안 삭제`} onClick={() => discard(m)} data-testid="discard-draft-row">
+                <Icon name="trash" size={17} />
+              </button>
+            )}
+            </div>
           )}
         </li>
       ))}

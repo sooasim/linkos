@@ -1,5 +1,5 @@
 "use client";
-// F-104 AI 초안 · F-111 템플릿 · F-112 번역 · F-115 Gmail 초안 · F-106 승인 후 발송. 기본값은 초안 — 발송은 확인 체크 + 명시적 승인 버튼으로만.
+// F-104 AI 초안 · F-111 템플릿 · F-112 번역 · F-115 Gmail 초안 · F-106 승인 후 발송 · F-106 초안 삭제(확인 후 DELETE /messages/{id}). 기본값은 초안 — 발송은 확인 체크 + 명시적 승인 버튼으로만.
 import { shortMessage } from "@linkos/domain";
 import { useEffect, useState } from "react";
 import { AiLabel } from "@/components/Page";
@@ -26,7 +26,7 @@ export interface MessageDto {
 const LANGS: [string, string][] = [["en", "영어"], ["ja", "일본어"], ["zh", "중국어"], ["vi", "베트남어"], ["es", "스페인어"], ["ko", "한국어"]];
 const PROV_LABEL: Record<string, string> = { ai_inferred: "AI 초안 · 확인 후 사용", rules: "템플릿 초안", template: "템플릿", user_edited: "AI 초안 · 수정됨" };
 
-export function MessageComposer({ contactId, email, phone, initial, onChange }: { contactId?: string | null; email?: string | null; phone?: string | null; initial?: MessageDto | null; onChange?: () => void }) {
+export function MessageComposer({ contactId, email, phone, initial, onChange, onDiscard }: { contactId?: string | null; email?: string | null; phone?: string | null; initial?: MessageDto | null; onChange?: () => void; onDiscard?: () => void }) {
   const [msg, setMsg] = useState<MessageDto | null>(initial ?? null);
   const [to, setTo] = useState(initial?.toAddress ?? email ?? "");
   const [subject, setSubject] = useState(initial?.subject ?? "");
@@ -104,6 +104,25 @@ export function MessageComposer({ contactId, email, phone, initial, onChange }: 
     setFlash(`${r.toAddress}에게 보냈어요 (${r.provider}).`);
   });
 
+  const discard = () => {
+    if (!msg) return;
+    if (!confirm("이 초안을 삭제할까요? 삭제한 초안은 목록에서 사라지며 발송되지 않습니다.")) return;
+    run(async () => {
+      await api(`/messages/${msg.id}`, { method: "DELETE" });
+      setMsg(null);
+      setTo(email ?? "");
+      setSubject("");
+      setBody("");
+      setConfirming(false);
+      setApproved(false);
+      setTranslation(null);
+      setFlash("초안을 삭제했어요.");
+      onChange?.();
+      onDiscard?.();
+    });
+  };
+  const discardable = !!msg && (msg.status === "draft" || msg.status === "failed");
+
   const channels = options ? (["gmail", "outlook", "smtp"] as const).filter((k) => options[k]) : [];
   const canSend = channels.length > 0;
 
@@ -158,6 +177,7 @@ export function MessageComposer({ contactId, email, phone, initial, onChange }: 
             to && <a className="btn btn-signal !min-h-10 text-[14px]" href={`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}>메일 앱에서 열기</a>
           )}
           {phone && <a className="btn btn-ghost !min-h-10 text-[14px]" href={`sms:${phone}?body=${encodeURIComponent(shortMessage(body, 90))}`}>짧은 문자</a>}
+          {discardable && <button className="btn btn-ghost !min-h-10 text-[14px] text-[var(--color-ember)]" disabled={busy} onClick={discard} data-testid="discard-draft"><Icon name="trash" size={15} />초안 삭제</button>}
         </div>
       )}
 

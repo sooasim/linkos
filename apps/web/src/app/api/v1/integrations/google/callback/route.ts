@@ -1,4 +1,4 @@
-import { identity, integration, tx } from "@linkos/api";
+import { identity, integration } from "@linkos/api";
 import { NextResponse } from "next/server";
 import { route, safeNext, setSession } from "@/lib/server";
 
@@ -17,14 +17,14 @@ export const GET = route(async ({ req, ctx }) => {
   const consentAccepted = req.cookies.get("lk_consent")?.value === "1";
   const consents = consentAccepted ? (["terms", "privacy", "age_14"] as const).map((type) => ({ type, granted: true })) : [];
   try {
-    const result = await tx(async (c) => {
-      const { user: u, isNew } = await identity.upsertUserByEmail(c, user.email.toLowerCase(), consents, user.name, "google", user.sub);
-      const token = await identity.createSession(c, u.id, ctx, null, "web", "google");
-      return { token, isNew };
-    });
+    // F-064: a NEW account that arrived through someone's /r/{code} link is attributed (lk_ref is SameSite=Lax — the
+    // top-level GET redirect back from Google carries it)
+    const ref = req.cookies.get("lk_ref")?.value ?? null;
+    const result = await identity.signInWithGoogleOAuth(ctx, user, consents, ref);
     const res = NextResponse.redirect(`${origin}${safeNext(req.cookies.get("lk_next")?.value)}`);
     res.cookies.delete("lk_next");
-    return setSession(res, result.token);
+    if (ref && result.isNew) res.cookies.delete("lk_ref");
+    return setSession(res, result.sessionToken);
   } catch (e) {
     if ((e as { code?: string }).code === "consent_required") return NextResponse.redirect(`${origin}/login?consent=google`);
     // F-008 sso_required: this company account must use the company IdP → continue there (no PII in the URL)

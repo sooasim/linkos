@@ -22,6 +22,8 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - name: Contract tests (04_OPENAPI paths/methods/status ↔ route handlers, 06_EVENT_CATALOG ↔ events.ts)
+        run: pnpm --filter @linkos/api exec vitest run test/openapi-contract.test.ts
       - name: Unit + integration tests (domain, api against Postgres)
         run: pnpm test
       - name: Migration dry-run is idempotent
@@ -37,6 +39,21 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: playwright-report, path: playwright-report }
+  security:
+    # 백서 §21 release gate: dependency vulnerabilities (fail on unaccepted high/critical) + lightweight SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency audit (pnpm audit --prod; high/critical fail unless time-boxed in .github/audit-allowlist.json)
+        run: node scripts/audit-gate.mjs
+      - name: SAST self-test
+        run: node scripts/security-scan.mjs --self-test
+      - name: SAST (hard-coded secrets, eval, unsanitized dangerouslySetInnerHTML, SQL built from request input)
+        run: node scripts/security-scan.mjs
   docker:
     runs-on: ubuntu-latest
     needs: verify

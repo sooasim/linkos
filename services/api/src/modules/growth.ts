@@ -15,6 +15,7 @@ import { one, pool, q } from "../lib/db";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../lib/errors";
 import { type Subject, subjectKey, track } from "../lib/metering";
 import { type Ctx, audit, rateLimit } from "../lib/platform";
+import { enterpriseActiveRelationships, matchToMeetingKpi, retentionKpi, webVitalsKpi } from "./analytics";
 
 // ---------- admin ----------
 function adminEmails(): Set<string> {
@@ -348,4 +349,19 @@ export async function costReport(ctx: Ctx, days = 30) {
     byType: byType.map((r) => ({ jobType: r.job_type, provider: r.provider, units: Number(r.units), jobs: r.n, usd: usd(r.cost_micros) })),
     topTenants: tenants.map((t) => ({ tenant: t.tenant, kind: t.kind, jobs: t.n, usd: usd(t.cost_micros) })),
   };
+}
+
+/**
+ * 백서 §23 KPIs for platform admins (F-188): Retention (월간 관계 행동 재사용), Match-to-Meeting, Enterprise Active
+ * Relationships, plus §20 RUM p75 (guest landing LCP). Computed from existing tables; counts only, no PII.
+ */
+export async function kpiReport(ctx: Ctx, days = 30) {
+  await requireAdmin(ctx);
+  const [retention, matchToMeeting, activeRelationships, webVitals] = await Promise.all([
+    retentionKpi(null, days),
+    matchToMeetingKpi(null, days),
+    enterpriseActiveRelationships(null, days),
+    webVitalsKpi(days),
+  ]);
+  return { windowDays: days, retention, matchToMeeting, enterpriseActiveRelationships: activeRelationships, webVitals };
 }

@@ -1,6 +1,7 @@
 // F-129 조직/워크스페이스 · F-130 역할 권한(RBAC) · F-004 조직 가입(도메인) · F-139 정책 강제 · F-136 Data Retention · F-140 API 키
 // Pure logic only (no I/O). Services call `can()` before every org-scoped read/write.
 import type { Visibility } from "./acl";
+import type { CrmProvider } from "./fieldMapping";
 
 export const ORG_ROLES = ["owner", "admin", "manager", "member", "viewer"] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
@@ -156,6 +157,10 @@ export interface OrgPolicies {
   requiredCardFields?: string[];
   /** who-knows-whom exposure of personal contacts: company-level aggregate (default) or shared contacts only */
   graphPersonalExposure?: "company_level" | "shared_only";
+  /** F-139 "CRM sync 필수": company-owned (org-scope) contacts/leads must be pushed to the CRM of their owner */
+  requireCrmSync?: boolean;
+  /** CRM providers that satisfy `requireCrmSync` (empty/undefined = any connected CRM) */
+  crmSyncProviders?: CrmProvider[];
 }
 
 const VIS_RANK: Record<string, number> = { public: 0, business: 1, trusted: 2, partner: 3, private: 4 };
@@ -169,8 +174,33 @@ export function mergePolicies(list: OrgPolicies[]): OrgPolicies {
     if (p.minFieldVisibility && (!out.minFieldVisibility || VIS_RANK[p.minFieldVisibility]! > VIS_RANK[out.minFieldVisibility]!)) out.minFieldVisibility = p.minFieldVisibility;
     if (p.requiredCardFields?.length) out.requiredCardFields = [...new Set([...(out.requiredCardFields ?? []), ...p.requiredCardFields])];
     if (p.graphPersonalExposure === "shared_only") out.graphPersonalExposure = "shared_only";
+    if (p.requireCrmSync) {
+      out.requireCrmSync = true;
+      // strictest: intersection of the allowed provider lists of every org that requires sync (undefined = any)
+      if (p.crmSyncProviders?.length) out.crmSyncProviders = out.crmSyncProviders ? out.crmSyncProviders.filter((x) => p.crmSyncProviders!.includes(x)) : [...p.crmSyncProviders];
+    }
   }
   return out;
+}
+
+export interface CrmSyncDecision {
+  /** policy requires this contact to be synced */
+  required: boolean;
+  /** provider to push to (first connected allowed provider) */
+  provider: CrmProvider | null;
+  /** required but cannot be satisfied */
+  violation: "crm_not_connected" | null;
+}
+
+/**
+ * F-139 CRM sync required: a company-owned org contact must be pushed to an allowed CRM the owner has connected.
+ * Personal contacts are never forced into a CRM (사용자 소유 데이터).
+ */
+export function crmSyncDecision(policy: OrgPolicies, contact: { scope: string; ownership: string }, connected: CrmProvider[]): CrmSyncDecision {
+  if (!policy.requireCrmSync || contact.scope !== "org" || contact.ownership !== "company") return { required: false, provider: null, violation: null };
+  const allowed = policy.crmSyncProviders;
+  const provider = connected.find((p) => !allowed || allowed.includes(p)) ?? null;
+  return { required: true, provider, violation: provider ? null : "crm_not_connected" };
 }
 
 export const POLICY_GUARDED_FIELDS = ["email", "phone", "mobile"];

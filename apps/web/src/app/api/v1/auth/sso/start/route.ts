@@ -16,6 +16,8 @@ export const GET = route(async ({ ctx, req }) => {
       // new accounts accept terms on the consent screen first; recorded with the request (the ACS POST carries no Lax cookies)
       consent: req.cookies.get("lk_consent")?.value === "1",
       browserBinding: binding,
+      // F-064: /r/{code} referral recorded with the one-time state (OIDC/SAML callbacks attribute NEW accounts)
+      referralCode: req.cookies.get("lk_ref")?.value ?? null,
     });
     const res = NextResponse.redirect(url);
     if (binding) res.cookies.set(SAML_BINDING_COOKIE, binding, { httpOnly: true, secure: true, sameSite: "none", path: "/api/v1/sso/saml", maxAge: 600 });

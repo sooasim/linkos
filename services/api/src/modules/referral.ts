@@ -49,12 +49,25 @@ async function ensureCode(userId: string, db: Db = pool()): Promise<string> {
   throw new Error("could not allocate referral code");
 }
 
+export function isReferralCode(code: string | null | undefined): code is string {
+  return !!code && /^[A-Z0-9]{8}$/.test(code);
+}
+
+/**
+ * Link-based attribution inside the sign-up transaction (/r/{code} → lk_ref cookie → any sign-up method: email OTP,
+ * Google OAuth/One Tap, Apple, OIDC/SAML SSO). Only NEW accounts are attributed, once (recordReferral rules).
+ */
+export async function attributeSignupByCodeTx(db: Db, referredUserId: string, code: string | null | undefined): Promise<{ attributed: boolean; reason?: string }> {
+  if (!isReferralCode(code)) return { attributed: false, reason: "invalid_code" };
+  const ref = await one<{ id: string }>("SELECT id FROM users WHERE referral_code=$1 AND status='active'", [code], db);
+  if (!ref) return { attributed: false, reason: "unknown_code" };
+  return recordReferral(db, { referrerId: ref.id, referredId: referredUserId, source: "link", touchpointAt: new Date(Date.now() - 60_000) });
+}
+
 /** Link-based attribution (/r/{code} → cookie → signup). Called right after a NEW account is created. */
 export async function attributeSignupByCode(referredUserId: string, code: string | null | undefined): Promise<{ attributed: boolean; reason?: string }> {
-  if (!code || !/^[A-Z0-9]{8}$/.test(code)) return { attributed: false, reason: "invalid_code" };
-  const ref = await one<{ id: string }>("SELECT id FROM users WHERE referral_code=$1 AND status='active'", [code]);
-  if (!ref) return { attributed: false, reason: "unknown_code" };
-  return tx((c) => recordReferral(c, { referrerId: ref.id, referredId: referredUserId, source: "link", touchpointAt: new Date(Date.now() - 60_000) }));
+  if (!isReferralCode(code)) return { attributed: false, reason: "invalid_code" };
+  return tx((c) => attributeSignupByCodeTx(c, referredUserId, code));
 }
 
 export async function myReferrals(ctx: Ctx) {

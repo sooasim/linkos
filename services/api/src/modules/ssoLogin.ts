@@ -7,6 +7,7 @@ import { type Db, one, pool } from "../lib/db";
 import { ApiError } from "../lib/errors";
 import { type Ctx, audit } from "../lib/platform";
 import { createSession, upsertUserByEmail } from "./identity";
+import { attributeSignupByCodeTx } from "./referral";
 
 /** Only e-mails on one of the org's verified domains may sign in through that org's IdP. */
 export async function assertOrgEmailDomain(orgId: string, email: string, db: Db = pool()): Promise<void> {
@@ -38,6 +39,8 @@ export interface SsoIdentity {
   consents: { type: ConsentType; granted: boolean }[];
   defaultRole: OrgRole;
   method: Extract<LoginMethod, "oidc_sso" | "saml_sso">;
+  /** F-064 /r/{code} captured at SSO start (NEW accounts only) */
+  referralCode?: string | null;
 }
 
 export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdentity): Promise<{ sessionToken: string; userId: string; isNew: boolean }> {
@@ -57,5 +60,6 @@ export async function completeSsoLogin(c: pg.PoolClient, ctx: Ctx, id: SsoIdenti
   await c.query("UPDATE users SET active_org_id=COALESCE(active_org_id,$2) WHERE id=$1", [user.id, id.orgId]);
   const sessionToken = await createSession(c, user.id, ctx, null, "web", id.method);
   await audit(c, { userId: user.id }, isNew ? "auth.signup" : "auth.login", "user", user.id, { method: id.method }, id.orgId);
+  if (isNew) await attributeSignupByCodeTx(c, user.id, id.referralCode); // F-064
   return { sessionToken, userId: user.id, isNew };
 }

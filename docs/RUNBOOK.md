@@ -7,7 +7,9 @@
 | `APP_ORIGIN` | 공개 https 오리진. 교환 링크와 OAuth 콜백에 사용, https 이면 쿠키 Secure |
 | `AUTH_SECRET` | 32바이트 이상 랜덤. 없으면 프로덕션에서 OTP 발급 거부 |
 | `SMTP_URL`, `MAIL_FROM` | 로그인 코드 메일 발송 (예: `smtps://user:pass@smtp.host:465`) |
-| `CREDENTIALS_KEY` | 32바이트 base64 — 외부 연동 자격증명 AES-256-GCM 암호화 키 |
+| `CREDENTIALS_KEY` | 32바이트 base64 — 외부 연동 자격증명 AES-256-GCM 암호화 키 (단일 키, 하위 호환) |
+| `CREDENTIALS_KEYS` | 선택. 키 버전 링 `v2:<base64>,v1:<base64>` — **첫 번째가 활성(새 암호화)**, 나머지는 복호화 전용. 설정 시 `CREDENTIALS_KEY` 보다 우선. 아래 "자격증명 키 로테이션" |
+| `NEXT_PUBLIC_RUM_SAMPLE_RATE` | 선택. RUM(web vitals) 샘플링 비율 0~1, 기본 0.25. `0` 이면 수집 안 함 |
 | `GOOGLE_CLIENT_ID/SECRET` | 선택. 리디렉션 URI: `${APP_ORIGIN}/api/v1/integrations/google/callback` |
 | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` | 선택. Sign in with Apple(웹). 네 값이 모두 있어야 /login·/claim 에 "Apple로 계속" 표시. 아래 "Apple 로그인 설정" 참고 |
 | `HUBSPOT_CLIENT_ID/SECRET` | 선택. HubSpot 연락처·회사·딜 동기화(F-121). 아래 "HubSpot 회사·딜" 참고 |
@@ -86,6 +88,28 @@
 ## 장애 대응
 - 동기화 실패: `sync_jobs.status='dead'` 행과 `integration.sync.failed` outbox 이벤트 확인. 재시도는 `UPDATE sync_jobs SET status='retry', scheduled_at=now() WHERE id=...`
 - 로그는 JSON 한 줄, 전화/이메일/토큰은 자동 마스킹. 요청 추적은 응답 헤더 `x-request-id`.
+
+## 자격증명 키 로테이션 (F-163/F-165)
+봉인 대상: `integration_accounts.encrypted_credentials`, `sso_configs.encrypted_client_secret`, `booking_pages.token_sealed`,
+`webhook_endpoints.secret_sealed`, `apple_pending_profiles.encrypted_profile`, `exchange_rendezvous.token_enc`,
+`device_exchange_keys.secret_enc`, `stored_objects.wrapped_key`(파일 데이터 키 — 파일 본문은 재암호화 불필요),
+`idempotency_keys.response.sealed` (목록: `services/api/src/lib/vaultRotate.ts` `SEALED_COLUMNS`).
+암호문 형식: `LKV1 | 키ID 길이 | 키ID | iv | tag | ciphertext` — 키 ID 로 해당 키를 골라 복호화한다. 버전 헤더 없는 기존 암호문(iv|tag|ct)은 링의 모든 키로 시도해 계속 읽힌다.
+1. 새 키 생성: `openssl rand -base64 32`
+2. 배포: `CREDENTIALS_KEYS="v2:<새 키>,v1:<기존 CREDENTIALS_KEY>"` (기존 `CREDENTIALS_KEY` 는 그대로 둬도 됨 — 같은 키는 중복 등록되지 않음). 이후 새 쓰기는 v2.
+3. 재봉인: `pnpm vault:rotate --dry-run` → 건수 확인 → `pnpm vault:rotate` (온라인·멱등. 각 행은 `WHERE col = <이전 암호문>` 낙관적 갱신이라 동시 쓰기를 덮어쓰지 않음). 출력은 테이블별 scanned/resealed/skipped/failed 건수만(키·평문 없음). `failed>0` 이면 종료 코드 2 — 링에 없는 키로 봉인된 행이므로 해당 키를 링에 추가 후 재실행.
+4. 한 번 더 실행해 `resealed=0` 확인 → `CREDENTIALS_KEYS="v2:<새 키>"` 로 구 키 제거, `CREDENTIALS_KEY` 삭제(또는 새 키로 교체) 후 재배포.
+- 키 유출 의심 시: 위 절차를 즉시 수행하고, 구 키 제거 후 OAuth 토큰(Google/CRM)은 공급자 측에서도 폐기·재연결을 권장.
+
+## 감사 로그 무결성 (백서 §20 "Audit log durability")
+- `audit_logs` 는 해시 체인: `hash = SHA-256(prev_hash ‖ "\n" ‖ canonical(row))`, `chain_seq` 1,2,3… 연속. 작성자(`audit()`)가 체인 잠금(advisory lock)을 **기다리지 않고** 시도해 즉시 연결하고, 잠금이 바쁘면 워커(`sealAuditChain`, 매 tick)가 id 순으로 연결한다 — 요청 경로에서 대기·교착 없음.
+- 보존 정책(F-136)으로 삭제되는 행은 `audit_log_tombstones(chain_seq, hash)` 를 남겨 체인이 계속 검증된다. 그 밖의 수정·삭제·재정렬은 검증 실패.
+- 검증: `auditChain.verifyAuditChain()` (services/api) → `{ ok, checked, tombstones, head, unsealed, break? }`. 워커는 연결할 때마다 체인 헤드(`audit.chain.head` seq/hash)를 로그로 남긴다 — 로그 싱크/WORM 저장소에 보관된 헤드를 `anchor` 로 넘기면 최근 행 잘라내기(tail truncation)·재작성도 검출한다.
+- 수동 SQL 로 `audit_logs` 를 TRUNCATE/DELETE 하지 말 것(테스트 DB 제외). 불일치 발견 시 `break.chainSeq` 부근을 백업과 대조하고 보안 사고로 처리.
+
+## RUM (백서 §20 Guest landing LCP p75 < 2.5s)
+- 루트 레이아웃의 `WebVitals`(next/web-vitals)가 샘플링된 LCP/INP/CLS/FCP/TTFB 를 `POST /api/v1/vitals` 로 beacon. 저장은 `web_vitals_samples(route 패턴, metric, value, rating)` 뿐 — 사용자 ID·IP·UA·쿼리·토큰 없음(`/x/<token>` → `/x/[token]`). 90일 보관(워커).
+- 조회: `GET /api/v1/insights/kpis` 의 `guestLandingLcpP75Ms`, 관리자 `GET /api/v1/admin/analytics` 의 `kpis.webVitals`(라우트·지표별 p75, good 비율).
 
 ## 출시 전 남은 게이트 (백서 21.1)
 TRACEABILITY 의 P0/P1 미완 항목, 침투 테스트, 접근성 감사, 개인정보 처리방침·약관 법률 검토, Google 샌드박스 검증, DR 훈련.

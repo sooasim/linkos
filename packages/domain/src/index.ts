@@ -38,3 +38,4 @@ export * from "./crmDeals";
 export * from "./shareKit";
 export * from "./assistant";
 export * from "./minimize";
+export * from "./origin";

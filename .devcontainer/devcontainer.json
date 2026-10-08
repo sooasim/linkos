@@ -1,0 +1,15 @@
+// GitHub Codespaces / Dev Containers: Postgres + the LINKOS app start on their own.
+// Open: https://codespaces.new/sooasim/linkos?quickstart=1 — the app opens on port 3000 when ready (first start ~5 min).
+// The port is private (only you, signed in to GitHub). To share it, change it to Public yourself in the PORTS tab.
+{
+  "name": "LINKOS",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "forwardPorts": [3000],
+  "portsAttributes": { "3000": { "label": "LINKOS", "onAutoForward": "openBrowser" } },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/launch.sh",
+  "customizations": { "codespaces": { "openFiles": ["README.md"] } }
+}

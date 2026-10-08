@@ -1,0 +1,14 @@
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm
+    volumes: ["../..:/workspaces:cached"]
+    command: sleep infinity
+    # share the db container's network so Postgres is on localhost:5432
+    network_mode: service:db
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment: { POSTGRES_USER: linkos, POSTGRES_PASSWORD: linkos, POSTGRES_DB: linkos }
+    volumes: [pgdata:/var/lib/postgresql/data]
+volumes:
+  pgdata:

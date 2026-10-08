@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { ApiError, type Ctx, identity, idempotencyLookup, idempotencyStore, isValidIdempotencyKey, log, mapInputError, recordRequest, routeKey, sha256, tracing } from "@linkos/api";
-import { generateToken } from "@linkos/domain";
+import { generateToken, isAllowedOrigin } from "@linkos/domain";
 import { cookies, headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, type ZodType } from "zod";
@@ -85,7 +85,7 @@ function handle<P>(handler: Handler<P>, opts: RouteOptions) {
       if (mutating) {
         const origin = req.headers.get("origin");
         const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-        if (origin && host && new URL(origin).host !== host) throw new ApiError(403, "bad_origin", "허용되지 않은 요청 출처입니다.");
+        if (!isAllowedOrigin(origin, host, process.env.APP_ORIGIN)) throw new ApiError(403, "bad_origin", "허용되지 않은 요청 출처입니다.");
       }
       const ua = req.headers.get("user-agent") ?? "";
       const { session } = await resolveRequestSession(req, true);

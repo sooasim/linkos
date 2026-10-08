@@ -19,3 +19,4 @@ apps/web/.*.mjs
 
 # local encrypted object storage (OBJECT_STORAGE_LOCAL_DIR default)
 .data/
+.devcontainer/.secrets

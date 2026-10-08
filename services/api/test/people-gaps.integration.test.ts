@@ -66,7 +66,7 @@ describe("F-070 tags-only PATCH", () => {
   it("adds and removes tags without bumping the contact version", async () => {
     const before = await relationship.getContactRow(userId, contactId);
     const added = await relationship.updateContact(ctx(userId), contactId, relationship.contactInput.partial().parse({ tags: ["VIP", "의료"] }));
-    expect(added.tags).toEqual(["VIP", "의료"]);
+    expect([...added.tags].sort()).toEqual(["VIP", "의료"].sort()); // DB collation decides order (C vs en_US.utf8)
     const removed = await relationship.updateContact(ctx(userId), contactId, relationship.contactInput.partial().parse({ tags: ["의료"] }));
     expect(removed.tags).toEqual(["의료"]);
     expect(removed.version).toBe(before.version);

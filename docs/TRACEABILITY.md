@@ -9,10 +9,10 @@
 | 우선순위 | 전체 | ✅ T | 🟢 I | 🟡 P | ⬜ N |
 |---|---|---|---|---|---|
 | P0 | 81 | 78 | 2 | 1 | 0 |
-| P1 | 85 | 83 | 1 | 1 | 0 |
+| P1 | 85 | 83 | 2 | 0 | 0 |
 | P2 | 29 | 28 | 1 | 0 | 0 |
 | P3 | 2 | 2 | 0 | 0 | 0 |
-| 합계 | 197 | 191 | 4 | 2 | 0 |
+| 합계 | 197 | 191 | 5 | 1 | 0 |
 
 ## IAM · Identity & Onboarding
 
@@ -71,7 +71,7 @@
 | F-039 | P1 | 앱 근접 교환 | 🟢 구현 | apps/mobile ProximityStep | /exchange/manage/{id}/proximity, /exchange/proximity/resolve, /exchange/proximity/matches/{id}/confirm | modules/channels.ts, packages/domain/src/pairing.ts | services/api/test/track-e.integration.test.ts, packages/domain/test/native-channels.test.ts | 서버·규칙 테스트. BLE 실기기 동작·RSSI 보정 미검증 |
 | F-040 | P2 | 근접 확인 | 🟢 구현 | apps/mobile | /exchange/proximity/matches/{id}, /exchange/proximity/matches/{id}/confirm | modules/channels.ts | services/api/test/track-e.integration.test.ts, packages/domain/test/native-channels.test.ts | 4자리 상호 확인 후 원자적 교환. 실기기 미검증 |
 | F-041 | P0 | OS Share | ✅ 구현+자동테스트 | /app/exchange | /exchange/manage/{id}/attempts | handoff | tests/e2e/audit-extras.spec.ts | navigator.share — 헤드리스 테스트 불가 |
-| F-042 | P1 | iOS App Clip | 🟡 부분 | apps/ios-app-clip |  | SwiftUI App Clip |  | 코드 작성; Swift 툴체인이 없어 컴파일 미검증. TEAMID 자리표시자 |
+| F-042 | P1 | iOS App Clip | 🟢 구현 | apps/ios-app-clip |  | SwiftUI App Clip (XcodeGen project.yml) | .github/workflows/ci.yml job ios-clip | 매 PR 에서 xcodegen generate 후 시뮬레이터용으로 컴파일한다(서명 없음). 동작 자동테스트는 없다 — 배포하려면 TEAMID 자리표시자를 실제 Apple Team ID 로 바꾸고 호스트 앱의 Embed App Clips 에 넣어야 하며, 실기기 App Clip 실행은 미검증 |
 | F-043 | P0 | Android PWA Landing | ✅ 구현+자동테스트 | /x/[token] (PWA) |  | web | tests/e2e/guest-exchange.spec.ts |  |
 | F-044 | P1 | NFC 액세서리 | ✅ 구현+자동테스트 | /app/exchange | /nfc-tags, /n/{tagId} | modules/channels.ts | services/api/test/track-e.integration.test.ts | 128bit 태그 해시 저장, 1회성 세션 생성, rate limit |
 | F-045 | P1 | 단축코드 수신 | ✅ 구현+자동테스트 | /c, /c/[code] | /exchange/sessions/{code} | handoff, packages/domain/src/codeGuard.ts | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, services/api/test/code-guard.integration.test.ts, packages/domain/test/codeGuard.test.ts | 틀린 코드만 센다(IP 10분 8회·하루 30회). 전역 압력은 전면 차단이 아니라 IP별 허용치를 좁히는 신호 — 전면 차단은 self-DoS 였다 |
@@ -256,7 +256,7 @@
 | F-180 | P0 | 관찰성 | ✅ 구현+자동테스트 |  |  | services/api/src/lib/tracing.ts (OTLP) | services/api/test/track-d.integration.test.ts | OTEL_EXPORTER_OTLP_ENDPOINT 설정 시만 동작; 트랜잭션 내 직접 client.query 는 스팬 없음 |
 | F-181 | P1 | Feature Flag | ✅ 구현+자동테스트 | /app/admin | /admin/flags | modules/growth.ts, lib/flags.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 사용자/조직 타게팅, % 롤아웃, 킬스위치 |
 | F-182 | P0 | 모바일 딥링크 | ✅ 구현+자동테스트 |  |  | apple-app-site-association, assetlinks.json, apps/mobile/app.config.ts | tests/e2e/audit-extras.spec.ts | AASA/assetlinks 제공 e2e. 실제 Team ID·앱 서명 지문은 계정 필요 |
-| F-183 | P0 | CI/CD | ✅ 구현+자동테스트 |  |  | .github/workflows/ci.yml |  | typecheck·unit·integration·migrate·traceability·build·e2e·100 시나리오·docker |
+| F-183 | P0 | CI/CD | ✅ 구현+자동테스트 |  |  | .github/workflows/ci.yml |  | typecheck·unit·integration·migrate·traceability·build·e2e·100 시나리오·docker·백업/DR 리허설(dr)·네이티브 앱 타입체크(mobile)·App Clip 컴파일(ios-clip) |
 | F-184 | P0 | 백업/복구 | ✅ 구현+자동테스트 |  |  | scripts/backup.sh, scripts/restore-drill.sh, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 pg_dump → 별도 DB pg_restore → 12개 핵심 테이블 행 수 비교(시드 데이터 기준). 운영은 관리형 PITR 병행 |
 | F-185 | P0 | 성능예산 | ✅ 구현+자동테스트 |  |  | scripts/loadtest.mjs |  | 5,000 연락처·동시 20, 8개 시나리오 p95 SLO 통과(통계 낡은 최악 조건 포함) |
 | F-186 | P1 | 재해복구 | ✅ 구현+자동테스트 |  |  | scripts/dr/*, RUNBOOK.md, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 2개 위치 복제 → 보조 위치만으로 복원 검증(체크섬·매니페스트·schema_migrations·행 수·스모크·RPO/RTO). 디렉터리 경로로 리허설하며 S3/GCS 전송 경로는 미검증 |

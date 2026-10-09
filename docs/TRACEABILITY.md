@@ -8,11 +8,11 @@
 
 | 우선순위 | 전체 | ✅ T | 🟢 I | 🟡 P | ⬜ N |
 |---|---|---|---|---|---|
-| P0 | 81 | 77 | 3 | 1 | 0 |
-| P1 | 85 | 81 | 3 | 1 | 0 |
+| P0 | 81 | 78 | 2 | 1 | 0 |
+| P1 | 85 | 83 | 1 | 1 | 0 |
 | P2 | 29 | 28 | 1 | 0 | 0 |
 | P3 | 2 | 2 | 0 | 0 | 0 |
-| 합계 | 197 | 188 | 7 | 2 | 0 |
+| 합계 | 197 | 191 | 4 | 2 | 0 |
 
 ## IAM · Identity & Onboarding
 
@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|---|---|---|
 | F-010 | P0 | 카메라 명함 촬영 | ✅ 구현+자동테스트 | /app/scan |  | packages/domain/src/imaging.ts, lib/imagePipeline.ts | packages/domain/test/imaging.test.ts | 테두리 검출·원근 보정·대비 보정(합성 이미지 단위테스트). 실 OCR 브라우저 테스트는 CDN 데이터 필요로 미실시 |
 | F-011 | P0 | 앞·뒤면 병합 | ✅ 구현+자동테스트 | /app/scan | /capture/cards (backLines) | capture | services/api/test/audit.integration.test.ts |  |
-| F-012 | P1 | 사진첩 일괄 가져오기 | 🟢 구현 | /app/scan/import | /capture/cards | BatchImport.tsx (암호화 온디바이스 큐) |  | 최대 200장, 재개 가능. 브라우저 테스트 없음; 페이지가 열려 있을 때만 진행 |
+| F-012 | P1 | 사진첩 일괄 가져오기 | ✅ 구현+자동테스트 | /app/scan/import | /capture/cards | BatchImport.tsx (암호화 온디바이스 큐) | tests/e2e/batch-import.spec.ts | 200장 상한·암호화 큐 적재·새로고침 재개를 브라우저에서 검증. 기기 OCR 엔진은 CDN 언어 데이터가 필요해 e2e 에서 제외(파서는 S-051~S-062). 페이지가 열려 있을 때만 진행 |
 | F-013 | P1 | 다중 명함 분리 | ✅ 구현+자동테스트 | /app/scan |  | packages/domain/src/imaging.ts | packages/domain/test/imaging.test.ts | 한 장에 여러 명함 분할 |
 | F-014 | P1 | 배지 스캔 | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/leads | packages/domain/src/badge.ts | services/api/test/track-c.integration.test.ts, packages/domain/test/track-c.test.ts, tests/scenarios/k-capture-files.spec.ts | 배지 파서 → 행사 리드(단일 트랜잭션) |
 | F-015 | P0 | OCR 다국어 | 🟢 구현 | /app/scan (언어 선택) | /capture/parse | tesseract.js kor/jpn/chi_sim + parser | packages/domain/test/domain.test.ts, tests/scenarios S-051~S-054 | 구조화 파서는 4개 언어 자동테스트; 기기 OCR 엔진 자체는 실기기 수동 검증 |
@@ -49,7 +49,7 @@
 |---|---|---|---|---|---|---|---|---|
 | F-022 | P0 | 3초 카드 | ✅ 구현+자동테스트 | LivingCard 3초 | /profiles | card | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, packages/domain/test/cardDesign.test.ts, services/api/test/card-templates.integration.test.ts, tests/e2e/card-templates.spec.ts | 3초 카드 + 디자인 스튜디오(X-008): 오리지널 템플릿 50종(8 레이아웃·8 카테고리, 전 템플릿 WCAG AA 자동 검사), 아이콘 291·이모지 912 뱅크, 업종별 추천 |
 | F-023 | P0 | 30초 카드 | ✅ 구현+자동테스트 | LivingCard 30초 | /profiles | card | services/api/test/audit.integration.test.ts |  |
-| F-024 | P1 | 딥 프로필 | ✅ 구현+자동테스트 | LivingCard 딥 | /profiles | card | services/api/test/track-c.integration.test.ts | 미디어/파일 업로드 미구현 |
+| F-024 | P1 | 딥 프로필 | ✅ 구현+자동테스트 | LivingCard 딥 | /profiles, /profiles/{id}/media | card, files.addProfileMedia | services/api/test/track-c.integration.test.ts | 미디어/파일 업로드 포함(최대 21MB, 악성코드 검사 후 암호화 저장, 공개범위별 ACL 필터) |
 | F-025 | P0 | Offer | ✅ 구현+자동테스트 | CardEditor | /profiles | card | services/api/test/api.integration.test.ts |  |
 | F-026 | P0 | Need | ✅ 구현+자동테스트 | CardEditor | /profiles | card | services/api/test/api.integration.test.ts |  |
 | F-027 | P1 | Interest | ✅ 구현+자동테스트 | CardEditor | /profiles | card (deep.interests) | services/api/test/audit.integration.test.ts |  |
@@ -61,7 +61,7 @@
 | F-033 | P1 | Living Update | ✅ 구현+자동테스트 | /app/inbox | /living-updates | living.fanOutLivingUpdate | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 연결 상대에게 갱신 알림, 수락 시 provenance=sync |
 | F-034 | P0 | 공개범위 | ✅ 구현+자동테스트 | CardEditor | /p/{slug}, /exchange/sessions/{token} | domain/acl | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-014~S-016,S-037 |  |
 | F-035 | P1 | Access Request | ✅ 구현+자동테스트 | /p/[slug], /app/me | /profiles/{id}/access-requests, /access-requests | card | tests/scenarios S-016 |  |
-| F-036 | P0 | Action Card | ✅ 구현+자동테스트 | LivingCard |  | LivingCard (tel/mailto/vCard) | services/api/test/track-d.integration.test.ts | 예약/견적/NDA CTA 미구현 |
+| F-036 | P0 | Action Card | ✅ 구현+자동테스트 | LivingCard, /app/me/edit (Action Card 설정), /app/inbox (받은 요청) | /action-requests, /action-requests/{id} | LivingCard (tel/mailto/vCard), components/ActionCtas.tsx, living.listActionRequests | services/api/test/track-d.integration.test.ts, services/api/test/qa-api.integration.test.ts | 예약·견적·제안·NDA 요청 CTA 구현. 로그인 없이 보내고 rate limit 적용, 받은 요청은 알림함에서 답장·완료·거절 |
 ## XCH · Adaptive Handoff & Exchange
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
@@ -74,7 +74,7 @@
 | F-042 | P1 | iOS App Clip | 🟡 부분 | apps/ios-app-clip |  | SwiftUI App Clip |  | 코드 작성; Swift 툴체인이 없어 컴파일 미검증. TEAMID 자리표시자 |
 | F-043 | P0 | Android PWA Landing | ✅ 구현+자동테스트 | /x/[token] (PWA) |  | web | tests/e2e/guest-exchange.spec.ts |  |
 | F-044 | P1 | NFC 액세서리 | ✅ 구현+자동테스트 | /app/exchange | /nfc-tags, /n/{tagId} | modules/channels.ts | services/api/test/track-e.integration.test.ts | 128bit 태그 해시 저장, 1회성 세션 생성, rate limit |
-| F-045 | P1 | 단축코드 수신 | ✅ 구현+자동테스트 | /c, /c/[code] | /exchange/sessions/{code} | handoff | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
+| F-045 | P1 | 단축코드 수신 | ✅ 구현+자동테스트 | /c, /c/[code] | /exchange/sessions/{code} | handoff, packages/domain/src/codeGuard.ts | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, services/api/test/code-guard.integration.test.ts, packages/domain/test/codeGuard.test.ts | 틀린 코드만 센다(IP 10분 8회·하루 30회). 전역 압력은 전면 차단이 아니라 IP별 허용치를 좁히는 신호 — 전면 차단은 self-DoS 였다 |
 | F-046 | P1 | 웹-웹 페어링 | ✅ 구현+자동테스트 | /c, /app/exchange | /exchange/manage/{id}/rendezvous, /exchange/rendezvous, /exchange/rendezvous/{listenToken} | components/ReceiveMode.tsx | services/api/test/track-e.integration.test.ts | 4자리 90초 코드, 8회 시도 제한 |
 | F-047 | P3 | 음향 페어링 실험 | ✅ 구현+자동테스트 | /app/exchange |  | packages/domain/src/acoustic.ts | packages/domain/test/native-channels.test.ts | P3 실험(기본 꺼짐). 실제 스피커/마이크 미검증 |
 | F-048 | P0 | QR 최종 폴백 | ✅ 구현+자동테스트 | /app/exchange | /exchange/manage/{id}/attempts | domain/handoff | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
@@ -158,7 +158,7 @@
 | F-106 | P1 | 이메일 발송 | ✅ 구현+자동테스트 | /app/messages, /app/messages (초안 삭제) | /messages/{id}/send | modules/comms.ts | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | approved:true 필수, Gmail→Outlook→SMTP, 중복 발송 방지, 감사로그(주소 원문 없음) |
 | F-107 | P1 | 캘린더 예약 | ✅ 구현+자동테스트 | /b/[token], /app/calendar | /booking/* | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 로그인 없는 예약 페이지, 슬롯=가용-바쁨-여유시간 |
 | F-108 | P1 | 일정 승인 | ✅ 구현+자동테스트 | /app/meetings/[id] | /calendar/candidates/{id}/decision, /calendar/candidates/{id}/ics | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 승인 후 Google 이벤트(클라이언트 id로 중복 방지), If-Match, ICS |
-| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요), /app/people/[id] (리마인더 기한), 알림함 배지 | worker.processReminders | followup.due + SMTP | services/api/test/assist.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | 푸시 미구현, 메일은 SMTP 설정 시 |
+| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요), /app/people/[id] (리마인더 기한), 알림함 배지 | worker.processReminders | followup.due → push.notify + SMTP | services/api/test/assist.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | followup.due 아웃박스를 워커가 받아 Web Push(F-110) 로 알린다. 메일은 SMTP 설정 시 함께 발송 |
 | F-110 | P2 | Web Push | ✅ 구현+자동테스트 | /app/settings, /app/settings (푸시 기록) | /push/* | modules/push.ts (VAPID web-push) | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 410 구독 삭제, 유형별 설정, 인앱 알림함에도 미러링. iOS는 홈화면 PWA만 |
 | F-111 | P1 | 템플릿 | ✅ 구현+자동테스트 | /app/messages | /templates | packages/domain/src/template.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | 개인·팀 템플릿, 미지정 변수 거부 |
 | F-112 | P2 | 언어 번역 | ✅ 구현+자동테스트 | /app/messages, /app/me/edit (번역본 만들기·검토), /p/[slug]?lang= | /translate | modules/comms.ts (structured()) | services/api/test/track-b.integration.test.ts, services/api/test/card-translations.integration.test.ts, tests/e2e/i18n-app-voice.spec.ts | 메시지 UI만; 카드 번역은 API 전용 |
@@ -233,14 +233,14 @@
 | F-161 | P0 | Consent Ledger | ✅ 구현+자동테스트 | /app/settings | /me/consents | consent_records | services/api/test/api.integration.test.ts, services/api/test/backend-gaps.integration.test.ts |  |
 | F-162 | P0 | 데이터 최소화 | ✅ 구현+자동테스트 |  |  | on-device OCR, 선택 필드만 전송 | services/api/test/audit.integration.test.ts |  |
 | F-163 | P0 | 암호화 | 🟡 부분 |  |  | AES-256-GCM 자격증명, TLS(HSTS) | services/api/test/whitepaper-gaps.integration.test.ts | DB at-rest 암호화는 인프라 설정 |
-| F-164 | P0 | 테넌트 격리 | ✅ 구현+자동테스트 |  |  | owner-scoped queries | services/api/test/api.integration.test.ts, tests/scenarios S-018,S-019,S-034,S-069,S-086,S-091 | 개인 범위 격리. 조직 테넌트 미구현 |
+| F-164 | P0 | 테넌트 격리 | ✅ 구현+자동테스트 |  |  | owner-scoped queries, organization_id scoping | services/api/test/api.integration.test.ts, services/api/test/track-a.integration.test.ts, tests/scenarios S-018,S-019,S-034,S-069,S-086,S-091 | 개인 범위 격리 + 조직 간 격리(팀 주소록·회사 리드·API 키·SCIM 모두 다른 조직 데이터 불가, 비멤버에게는 존재 자체를 숨겨 404) |
 | F-165 | P0 | 비밀관리 | ✅ 구현+자동테스트 |  |  | .env.example, render.yaml | services/api/test/audit.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts |  |
 | F-166 | P0 | 감사 추적 | ✅ 구현+자동테스트 | /app/settings (내 활동 기록) |  | audit_logs | services/api/test/api.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts, services/api/test/whitepaper-gaps.integration.test.ts, services/api/test/backend-gaps.integration.test.ts |  |
 | F-167 | P0 | 삭제/탈퇴 | ✅ 구현+자동테스트 | /app/settings | /me/privacy/delete | security | services/api/test/api.integration.test.ts, tests/scenarios S-093, services/api/test/backend-gaps.integration.test.ts | 7일 유예 후 하드 삭제 |
 | F-168 | P1 | 데이터 이동성 | ✅ 구현+자동테스트 | /app/settings, /app/settings (개인정보 내보내기 대기열·다운로드) | /me/privacy/export | security | services/api/test/api.integration.test.ts, tests/scenarios S-092, services/api/test/backend-gaps.integration.test.ts, tests/e2e/i18n-app-voice.spec.ts |  |
 | F-169 | P0 | 녹음 준수 | ✅ 구현+자동테스트 |  | /meetings/{id}/recordings | meeting | services/api/test/api.integration.test.ts |  |
 | F-170 | P0 | Rate Limit | ✅ 구현+자동테스트 |  | all | platform.rateLimit | services/api/test/audit.integration.test.ts |  |
-| F-171 | P0 | Anti-enumeration | ✅ 구현+자동테스트 |  | /exchange | high-entropy tokens + short-code rate limit | packages/domain/test/domain.test.ts, tests/scenarios S-030 |  |
+| F-171 | P0 | Anti-enumeration | ✅ 구현+자동테스트 |  | /exchange | high-entropy tokens + short-code rate limit (packages/domain/src/codeGuard.ts) | packages/domain/test/domain.test.ts, tests/scenarios S-030, packages/domain/test/codeGuard.test.ts, services/api/test/code-guard.integration.test.ts | 남는 위험: IP 를 많이 가진 분산 공격자는 IP 마다 첫 시도가 통과하므로 여전히 쓸어볼 수 있다. 근본 해결은 코드 엔트로피 상향(F-045 제품 결정) 또는 코드-기기 바인딩 |
 | F-172 | P1 | Malware Scan | ✅ 구현+자동테스트 |  | /files | lib/filescan.ts | services/api/test/track-c.integration.test.ts | 매직바이트·크기, EXIF 제거 재인코딩, 활성 PDF·EICAR 격리, 선택적 ClamAV |
 | F-173 | P0 | DLP/PII 로그 마스킹 | ✅ 구현+자동테스트 |  |  | domain/redact | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts |  |
 ## OPS · Platform, Offline, Quality & Ops
@@ -257,9 +257,9 @@
 | F-181 | P1 | Feature Flag | ✅ 구현+자동테스트 | /app/admin | /admin/flags | modules/growth.ts, lib/flags.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 사용자/조직 타게팅, % 롤아웃, 킬스위치 |
 | F-182 | P0 | 모바일 딥링크 | ✅ 구현+자동테스트 |  |  | apple-app-site-association, assetlinks.json, apps/mobile/app.config.ts | tests/e2e/audit-extras.spec.ts | AASA/assetlinks 제공 e2e. 실제 Team ID·앱 서명 지문은 계정 필요 |
 | F-183 | P0 | CI/CD | ✅ 구현+자동테스트 |  |  | .github/workflows/ci.yml |  | typecheck·unit·integration·migrate·traceability·build·e2e·100 시나리오·docker |
-| F-184 | P0 | 백업/복구 | 🟢 구현 |  |  | scripts/backup.sh, scripts/restore-drill.sh |  | 로컬 복구 리허설 통과(12개 핵심 테이블 행 수 일치). 운영은 관리형 PITR 병행 |
+| F-184 | P0 | 백업/복구 | ✅ 구현+자동테스트 |  |  | scripts/backup.sh, scripts/restore-drill.sh, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 pg_dump → 별도 DB pg_restore → 12개 핵심 테이블 행 수 비교(시드 데이터 기준). 운영은 관리형 PITR 병행 |
 | F-185 | P0 | 성능예산 | ✅ 구현+자동테스트 |  |  | scripts/loadtest.mjs |  | 5,000 연락처·동시 20, 8개 시나리오 p95 SLO 통과(통계 낡은 최악 조건 포함) |
-| F-186 | P1 | 재해복구 | 🟢 구현 |  |  | scripts/dr/*, RUNBOOK.md |  | 백업 복제·복원 검증 스크립트(로컬 디렉터리로 리허설). S3/GCS 경로 미검증 |
+| F-186 | P1 | 재해복구 | ✅ 구현+자동테스트 |  |  | scripts/dr/*, RUNBOOK.md, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 2개 위치 복제 → 보조 위치만으로 복원 검증(체크섬·매니페스트·schema_migrations·행 수·스모크·RPO/RTO). 디렉터리 경로로 리허설하며 S3/GCS 전송 경로는 미검증 |
 | F-187 | P1 | 비용계측 | ✅ 구현+자동테스트 | /app/admin |  | lib/metering.ts recordCost | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 추정 단가(COST_RATES_JSON 재정의) |
 ## BIZ · Analytics, Billing & Growth
 

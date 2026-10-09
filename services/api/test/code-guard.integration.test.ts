@@ -83,6 +83,45 @@ describe("F-045 4-digit exchange code", () => {
     }
   });
 
+  // 전역 "틀린 코드" 압력을 직접 만들어 둔다. 예전 구현은 이 상태에서 모든 코드 조회를 거부했고(self-DoS),
+  // 봇넷이 틀린 코드 3,000개만 던지면 정상 사용자의 교환까지 멈출 수 있었다.
+  describe("전역 압력 중에도 정상 사용자는 교환할 수 있다 (self-DoS 회귀 테스트)", () => {
+    const BUCKET = "xch:codefail:all";
+    const windowStart = () => {
+      const ms = handoff.CODE_FAIL_LIMITS.global.sec * 1000;
+      return new Date(Date.now() - (Date.now() % ms));
+    };
+
+    beforeAll(async () => {
+      await q("INSERT INTO rate_limits (bucket, window_start, count) VALUES ($1,$2,$3) ON CONFLICT (bucket, window_start) DO UPDATE SET count = EXCLUDED.count", [
+        BUCKET,
+        windowStart(),
+        handoff.CODE_FAIL_LIMITS.global.limit + 1,
+      ]);
+    });
+    afterAll(async () => {
+      await q("DELETE FROM rate_limits WHERE bucket=$1", [BUCKET]);
+    });
+
+    it("한 번도 틀리지 않은 손님은 올바른 코드로 그대로 들어온다", async () => {
+      const uid = await sender();
+      const s = await handoff.createExchangeSession(ctx(uid, ip()), { capabilities: {}, group: false, context: {} });
+      expect((await handoff.openGuestLanding(s.shortCode!, ctx(null, ip()), "clean")).sessionId).toBe(s.sessionId);
+    });
+
+    it("압력 중에는 한 번만 틀려도 그 IP 는 바로 막힌다 (평시 8회 예산이 1회로 줄어든다)", async () => {
+      const uid = await sender();
+      const s = await handoff.createExchangeSession(ctx(uid, ip()), { capabilities: {}, group: false, context: {} });
+      const attacker = ip();
+      const [wrong] = await deadCodes(1);
+      await expect(handoff.openGuestLanding(wrong!, ctx(null, attacker), "x")).rejects.toMatchObject({ status: 404 });
+      // 평시라면 아직 7번 더 시도할 수 있었다
+      await expect(handoff.openGuestLanding(s.shortCode!, ctx(null, attacker), "x")).rejects.toMatchObject({ status: 429, code: "rate_limited" });
+      // 그 사이에도 깨끗한 IP 는 영향을 받지 않는다
+      expect((await handoff.openGuestLanding(s.shortCode!, ctx(null, ip()), "other")).sessionId).toBe(s.sessionId);
+    });
+  });
+
   it("an expired code stops working immediately", async () => {
     const uid = await sender();
     const s = await handoff.createExchangeSession(ctx(uid, ip()), { capabilities: {}, group: false, context: {} });

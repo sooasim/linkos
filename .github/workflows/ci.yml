@@ -60,3 +60,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t linkos:ci .
+  dr:
+    # F-184 백업/복구 · F-186 재해복구: 지금까지 사람이 손으로 돌렸던 리허설을 CI에서 매 PR 검증한다.
+    # pg_dump → 별도 DB로 pg_restore → 핵심 테이블 행 수 비교까지 실제로 수행하므로,
+    # 복원할 수 없는 마이그레이션이나 매니페스트 불일치가 들어오면 여기서 막힌다.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: linkos, POSTGRES_PASSWORD: linkos, POSTGRES_DB: linkos_dr }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U linkos" --health-interval 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://linkos:linkos@localhost:5432/linkos_dr
+      ADMIN_URL: postgres://linkos:linkos@localhost:5432/postgres
+      AUTH_SECRET: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      # pg_dump/pg_restore must match the server major version (16), so pin the client instead of
+      # relying on whatever the runner image happens to ship.
+      - name: PostgreSQL 16 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_dump --version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - name: Seed so the drills compare real rows, not 0 == 0
+        run: pnpm db:seed
+      - name: F-184 restore drill (backup → scratch DB → core table row counts match)
+        run: pnpm restore-drill
+      - name: F-186 DR copy to two locations + cross-region restore verify (manifest, checksum, RPO/RTO)
+        run: |
+          pnpm dr:backup
+          pnpm dr:verify
+        env:
+          DR_PRIMARY: ${{ runner.temp }}/dr-primary
+          DR_SECONDARY: ${{ runner.temp }}/dr-secondary
+          DR_SOURCE: ${{ runner.temp }}/dr-secondary

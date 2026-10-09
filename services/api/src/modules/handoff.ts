@@ -4,6 +4,7 @@ import {
   CLAIM_TTL_MS,
   type CapabilityVector,
   type Channel,
+  type CodeGuardLimits,
   DEFAULT_CAPABILITIES,
   EXCHANGE_TTL_MS,
   type ExchangeState,
@@ -13,6 +14,7 @@ import {
   acceptsReply,
   canTransition,
   creationPath,
+  decideCodeLookup,
   generateExchangeCode,
   generateToken,
   hashToken,
@@ -29,7 +31,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { type Db, one, pool, q, tx } from "../lib/db";
 import { ApiError, badRequest, conflict, gone, notFound, tooMany, unauthorized } from "../lib/errors";
-import { type Ctx, appOrigin, audit, emit, rateCount, rateHit, rateLimit, sha256 } from "../lib/platform";
+import { type Ctx, appOrigin, audit, emit, log, rateCount, rateHit, rateLimit, sha256 } from "../lib/platform";
 import { type PublicCard, getExchangeCard, loadProfile, primaryProfileId, saveProfile } from "./card";
 import { recordReferral } from "./referral";
 import { recordConsents } from "./identity";
@@ -168,20 +170,32 @@ export async function createExchangeSession(ctx: Ctx, input: z.infer<typeof crea
 }
 
 // F-045 4자리 코드 추측 방어: "틀린 코드" 시도만 센다(정상 사용자는 보통 한 번에 맞힘).
-// IP당 10분 8회 · 하루 30회, 서비스 전체 10분 3,000회를 넘으면 코드 조회를 잠시 막는다(분산 추측 대비).
+// IP당 10분 8회 · 하루 30회. 서비스 전체 10분 3,000회를 넘으면 **전면 차단이 아니라** IP별 허용치를
+// strictIpLimit 으로 좁힌다 — 전면 차단은 봇넷이 틀린 코드 3,000개만 던져 정상 교환을 멈추게 하는
+// self-DoS 수단이 된다. 판단 규칙과 그 근거는 packages/domain/src/codeGuard.ts 에 있다(단위테스트 포함).
 // 전체 토큰(/x/{token}) 경로에는 적용하지 않는다 — 128bit 이상이라 추측이 불가능하다.
-export const CODE_FAIL_LIMITS = { ipWindow: { limit: 8, sec: 600 }, ipDay: { limit: 30, sec: 86_400 }, global: { limit: 3000, sec: 600 } } as const;
+export const CODE_FAIL_LIMITS: CodeGuardLimits = {
+  ipWindow: { limit: 8, sec: 600 },
+  ipDay: { limit: 30, sec: 86_400 },
+  global: { limit: 3000, sec: 600, strictIpLimit: 1 },
+};
 
 async function findSessionGuarded(tokenOrCode: string, ctx: Ctx, db: Db = pool(), forUpdate = false): Promise<SessionRow> {
   if (isWellFormedToken(tokenOrCode)) return findSession(tokenOrCode, db, forUpdate);
   const ip = ctx.ip ?? "unknown";
   const L = CODE_FAIL_LIMITS;
-  const [w, d, g] = await Promise.all([
+  const [ipFails, ipDayFails, globalFails] = await Promise.all([
     rateCount(`xch:codefail:${ip}`, L.ipWindow.sec),
     rateCount(`xch:codefail:day:${ip}`, L.ipDay.sec),
     rateCount("xch:codefail:all", L.global.sec),
   ]);
-  if (w >= L.ipWindow.limit || d >= L.ipDay.limit || g >= L.global.limit) throw tooMany(w >= L.ipWindow.limit ? L.ipWindow.sec : 60);
+  const decision = decideCodeLookup({ ipFails, ipDayFails, globalFails }, L);
+  // 분산 추측이 진행 중이라는 사실은 운영자에게 보여야 한다(이전에는 전면 429 만 남아 장애와 구분되지 않았다).
+  // 공격 중에는 요청이 많으므로 표본만 남기고, IP 는 기록하지 않는다.
+  if (decision.underPressure && Math.random() < 0.01) {
+    log("warn", "exchange.code_guard.pressure", { globalFails, windowSec: L.global.sec, denied: !decision.allow });
+  }
+  if (!decision.allow) throw tooMany(decision.retryAfterSec);
   try {
     return await findSession(tokenOrCode, db, forUpdate);
   } catch (e) {

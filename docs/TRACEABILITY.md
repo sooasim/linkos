@@ -74,7 +74,7 @@
 | F-042 | P1 | iOS App Clip | 🟡 부분 | apps/ios-app-clip |  | SwiftUI App Clip |  | 코드 작성; Swift 툴체인이 없어 컴파일 미검증. TEAMID 자리표시자 |
 | F-043 | P0 | Android PWA Landing | ✅ 구현+자동테스트 | /x/[token] (PWA) |  | web | tests/e2e/guest-exchange.spec.ts |  |
 | F-044 | P1 | NFC 액세서리 | ✅ 구현+자동테스트 | /app/exchange | /nfc-tags, /n/{tagId} | modules/channels.ts | services/api/test/track-e.integration.test.ts | 128bit 태그 해시 저장, 1회성 세션 생성, rate limit |
-| F-045 | P1 | 단축코드 수신 | ✅ 구현+자동테스트 | /c, /c/[code] | /exchange/sessions/{code} | handoff | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
+| F-045 | P1 | 단축코드 수신 | ✅ 구현+자동테스트 | /c, /c/[code] | /exchange/sessions/{code} | handoff, packages/domain/src/codeGuard.ts | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, services/api/test/code-guard.integration.test.ts, packages/domain/test/codeGuard.test.ts | 틀린 코드만 센다(IP 10분 8회·하루 30회). 전역 압력은 전면 차단이 아니라 IP별 허용치를 좁히는 신호 — 전면 차단은 self-DoS 였다 |
 | F-046 | P1 | 웹-웹 페어링 | ✅ 구현+자동테스트 | /c, /app/exchange | /exchange/manage/{id}/rendezvous, /exchange/rendezvous, /exchange/rendezvous/{listenToken} | components/ReceiveMode.tsx | services/api/test/track-e.integration.test.ts | 4자리 90초 코드, 8회 시도 제한 |
 | F-047 | P3 | 음향 페어링 실험 | ✅ 구현+자동테스트 | /app/exchange |  | packages/domain/src/acoustic.ts | packages/domain/test/native-channels.test.ts | P3 실험(기본 꺼짐). 실제 스피커/마이크 미검증 |
 | F-048 | P0 | QR 최종 폴백 | ✅ 구현+자동테스트 | /app/exchange | /exchange/manage/{id}/attempts | domain/handoff | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts |  |
@@ -240,7 +240,7 @@
 | F-168 | P1 | 데이터 이동성 | ✅ 구현+자동테스트 | /app/settings, /app/settings (개인정보 내보내기 대기열·다운로드) | /me/privacy/export | security | services/api/test/api.integration.test.ts, tests/scenarios S-092, services/api/test/backend-gaps.integration.test.ts, tests/e2e/i18n-app-voice.spec.ts |  |
 | F-169 | P0 | 녹음 준수 | ✅ 구현+자동테스트 |  | /meetings/{id}/recordings | meeting | services/api/test/api.integration.test.ts |  |
 | F-170 | P0 | Rate Limit | ✅ 구현+자동테스트 |  | all | platform.rateLimit | services/api/test/audit.integration.test.ts |  |
-| F-171 | P0 | Anti-enumeration | ✅ 구현+자동테스트 |  | /exchange | high-entropy tokens + short-code rate limit | packages/domain/test/domain.test.ts, tests/scenarios S-030 |  |
+| F-171 | P0 | Anti-enumeration | ✅ 구현+자동테스트 |  | /exchange | high-entropy tokens + short-code rate limit (packages/domain/src/codeGuard.ts) | packages/domain/test/domain.test.ts, tests/scenarios S-030, packages/domain/test/codeGuard.test.ts, services/api/test/code-guard.integration.test.ts | 남는 위험: IP 를 많이 가진 분산 공격자는 IP 마다 첫 시도가 통과하므로 여전히 쓸어볼 수 있다. 근본 해결은 코드 엔트로피 상향(F-045 제품 결정) 또는 코드-기기 바인딩 |
 | F-172 | P1 | Malware Scan | ✅ 구현+자동테스트 |  | /files | lib/filescan.ts | services/api/test/track-c.integration.test.ts | 매직바이트·크기, EXIF 제거 재인코딩, 활성 PDF·EICAR 격리, 선택적 ClamAV |
 | F-173 | P0 | DLP/PII 로그 마스킹 | ✅ 구현+자동테스트 |  |  | domain/redact | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts |  |
 ## OPS · Platform, Offline, Quality & Ops

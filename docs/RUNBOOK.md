@@ -89,6 +89,9 @@
 ## 장애 대응
 - 동기화 실패: `sync_jobs.status='dead'` 행과 `integration.sync.failed` outbox 이벤트 확인. 재시도는 `UPDATE sync_jobs SET status='retry', scheduled_at=now() WHERE id=...`
 - 로그는 JSON 한 줄, 전화/이메일/토큰은 자동 마스킹. 요청 추적은 응답 헤더 `x-request-id`.
+- **4자리 코드 분산 추측 (F-045/F-171)**: `exchange.code_guard.pressure` 경고 로그(표본 1%)가 보이면 누군가 코드 공간을 쓸고 있다는 뜻이다. 이때 정상 사용자는 영향을 받지 않는다 — 전역 압력은 전면 차단이 아니라 *이미 틀린 적 있는 IP* 만 막는다(`CODE_FAIL_LIMITS.global.strictIpLimit`). 압력 크기는 `SELECT count FROM rate_limits WHERE bucket='xch:codefail:all' ORDER BY window_start DESC LIMIT 1` 로 본다.
+  - 공격이 길어지면 `strictIpLimit` 을 그대로 두고 `ipWindow.limit` 을 낮추는 쪽이 안전하다. **전역 한도를 다시 전면 차단으로 되돌리지 말 것** — 봇넷이 틀린 코드 3,000개만 던져 전체 교환을 멈추게 하는 self-DoS 수단이 된다.
+  - 남는 위험: IP 를 충분히 많이 가진 공격자는 IP 마다 첫 시도가 통과하므로 여전히 쓸어볼 수 있다. 근본 해결은 코드 엔트로피를 올리거나(4자리라는 F-045 제품 결정 변경) 코드를 기기·세션에 묶는 것이다.
 
 ## 자격증명 키 로테이션 (F-163/F-165)
 봉인 대상: `integration_accounts.encrypted_credentials`, `sso_configs.encrypted_client_secret`, `booking_pages.token_sealed`,

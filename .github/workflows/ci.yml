@@ -102,3 +102,38 @@ jobs:
           DR_PRIMARY: ${{ runner.temp }}/dr-primary
           DR_SECONDARY: ${{ runner.temp }}/dr-secondary
           DR_SOURCE: ${{ runner.temp }}/dr-secondary
+  mobile:
+    # apps/mobile(Expo/React Native)은 네이티브 의존성 때문에 pnpm 워크스페이스에서 제외돼 있어
+    # 지금까지 CI 가 한 번도 보지 않았다. @linkos/domain 을 경로로 직접 가져다 쓰므로
+    # (tsconfig paths), 도메인 시그니처가 바뀌면 웹·API 는 통과하고 네이티브 앱만 조용히 깨진다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
+      - run: npm ci
+        working-directory: apps/mobile
+      - name: Typecheck the native app against packages/domain
+        run: npm run typecheck
+        working-directory: apps/mobile
+  ios-clip:
+    # F-042 iOS App Clip: Swift 소스가 실제로 컴파일되는지 확인한다. 저장소에는 .xcodeproj 가 없고
+    # XcodeGen 스펙(project.yml)만 있으므로 먼저 생성한다. DEVELOPMENT_TEAM 은 자리표시자(TEAMID)라
+    # 서명은 끄고 시뮬레이터용으로만 빌드한다 — 배포 서명은 Apple 개발자 계정이 있어야 한다.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Generate LinkosClip.xcodeproj from project.yml
+        run: xcodegen generate
+        working-directory: apps/ios-app-clip
+      - name: Build for the simulator (no code signing)
+        working-directory: apps/ios-app-clip
+        run: |
+          xcodebuild build \
+            -project LinkosClip.xcodeproj \
+            -scheme LinkosClip \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=

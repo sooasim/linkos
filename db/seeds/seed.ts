@@ -114,12 +114,12 @@ export async function seed(): Promise<Record<string, number>> {
   await run(
     "consent_records",
     `INSERT INTO consent_records (subject_user_id, consent_type, policy_version, granted)
-     SELECT v.user_id::uuid, v.consent_type, '2026-10-01', v.granted
-       FROM (VALUES ($1, 'service', true), ($1, 'privacy', true), ($1, 'marketing', false),
-                    ($2, 'service', true), ($2, 'privacy', true)) AS v(user_id, consent_type, granted)
+     SELECT v.user_id, v.consent_type, '2026-10-01', v.granted
+       FROM (VALUES ($1::uuid, 'service'::text, true), ($1::uuid, 'privacy', true), ($1::uuid, 'marketing', false),
+                    ($2::uuid, 'service', true), ($2::uuid, 'privacy', true)) AS v(user_id, consent_type, granted)
       WHERE NOT EXISTS (
         SELECT 1 FROM consent_records c
-         WHERE c.subject_user_id = v.user_id::uuid AND c.consent_type = v.consent_type AND c.policy_version = '2026-10-01')`,
+         WHERE c.subject_user_id = v.user_id AND c.consent_type = v.consent_type AND c.policy_version = '2026-10-01')`,
     [ID.userA, ID.userB],
   );
 
@@ -132,10 +132,11 @@ export async function seed(): Promise<Record<string, number>> {
   );
 
   // audit_logs / outbox_events are append-only (bigserial / uuid), so guard re-runs with a NOT EXISTS probe.
+  // INSERT ... SELECT does not infer a parameter's type from the target column, so every $n is cast explicitly.
   await run(
     "audit_logs",
     `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata)
-     SELECT $1, 'seed.applied', 'user', $1, '{"source":"db/seeds/seed.ts"}'::jsonb
+     SELECT $1::uuid, 'seed.applied', 'user', $1::uuid, '{"source":"db/seeds/seed.ts"}'::jsonb
      WHERE NOT EXISTS (SELECT 1 FROM audit_logs WHERE action='seed.applied')`,
     [ID.userA],
   );
@@ -143,9 +144,9 @@ export async function seed(): Promise<Record<string, number>> {
   await run(
     "outbox_events",
     `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, published_at)
-     SELECT 'exchange_session', $1, 'exchange.session.created',
-            jsonb_build_object('session_id', $1, 'sender_id', $2, 'channel_candidates', ARRAY['os_share']), now()
-     WHERE NOT EXISTS (SELECT 1 FROM outbox_events WHERE event_type='exchange.session.created' AND aggregate_id=$1)`,
+     SELECT 'exchange_session', $1::uuid, 'exchange.session.created',
+            jsonb_build_object('session_id', $1::uuid, 'sender_id', $2::uuid, 'channel_candidates', ARRAY['os_share']), now()
+     WHERE NOT EXISTS (SELECT 1 FROM outbox_events WHERE event_type='exchange.session.created' AND aggregate_id=$1::uuid)`,
     [ID.session, ID.userA],
   );
 

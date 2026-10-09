@@ -8,11 +8,11 @@
 
 | 우선순위 | 전체 | ✅ T | 🟢 I | 🟡 P | ⬜ N |
 |---|---|---|---|---|---|
-| P0 | 81 | 77 | 3 | 1 | 0 |
-| P1 | 85 | 81 | 3 | 1 | 0 |
+| P0 | 81 | 78 | 2 | 1 | 0 |
+| P1 | 85 | 83 | 1 | 1 | 0 |
 | P2 | 29 | 28 | 1 | 0 | 0 |
 | P3 | 2 | 2 | 0 | 0 | 0 |
-| 합계 | 197 | 188 | 7 | 2 | 0 |
+| 합계 | 197 | 191 | 4 | 2 | 0 |
 
 ## IAM · Identity & Onboarding
 
@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|---|---|---|
 | F-010 | P0 | 카메라 명함 촬영 | ✅ 구현+자동테스트 | /app/scan |  | packages/domain/src/imaging.ts, lib/imagePipeline.ts | packages/domain/test/imaging.test.ts | 테두리 검출·원근 보정·대비 보정(합성 이미지 단위테스트). 실 OCR 브라우저 테스트는 CDN 데이터 필요로 미실시 |
 | F-011 | P0 | 앞·뒤면 병합 | ✅ 구현+자동테스트 | /app/scan | /capture/cards (backLines) | capture | services/api/test/audit.integration.test.ts |  |
-| F-012 | P1 | 사진첩 일괄 가져오기 | 🟢 구현 | /app/scan/import | /capture/cards | BatchImport.tsx (암호화 온디바이스 큐) |  | 최대 200장, 재개 가능. 브라우저 테스트 없음; 페이지가 열려 있을 때만 진행 |
+| F-012 | P1 | 사진첩 일괄 가져오기 | ✅ 구현+자동테스트 | /app/scan/import | /capture/cards | BatchImport.tsx (암호화 온디바이스 큐) | tests/e2e/batch-import.spec.ts | 200장 상한·암호화 큐 적재·새로고침 재개를 브라우저에서 검증. 기기 OCR 엔진은 CDN 언어 데이터가 필요해 e2e 에서 제외(파서는 S-051~S-062). 페이지가 열려 있을 때만 진행 |
 | F-013 | P1 | 다중 명함 분리 | ✅ 구현+자동테스트 | /app/scan |  | packages/domain/src/imaging.ts | packages/domain/test/imaging.test.ts | 한 장에 여러 명함 분할 |
 | F-014 | P1 | 배지 스캔 | ✅ 구현+자동테스트 | /app/events/[id] | /events/{id}/leads | packages/domain/src/badge.ts | services/api/test/track-c.integration.test.ts, packages/domain/test/track-c.test.ts, tests/scenarios/k-capture-files.spec.ts | 배지 파서 → 행사 리드(단일 트랜잭션) |
 | F-015 | P0 | OCR 다국어 | 🟢 구현 | /app/scan (언어 선택) | /capture/parse | tesseract.js kor/jpn/chi_sim + parser | packages/domain/test/domain.test.ts, tests/scenarios S-051~S-054 | 구조화 파서는 4개 언어 자동테스트; 기기 OCR 엔진 자체는 실기기 수동 검증 |
@@ -257,9 +257,9 @@
 | F-181 | P1 | Feature Flag | ✅ 구현+자동테스트 | /app/admin | /admin/flags | modules/growth.ts, lib/flags.ts | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 사용자/조직 타게팅, % 롤아웃, 킬스위치 |
 | F-182 | P0 | 모바일 딥링크 | ✅ 구현+자동테스트 |  |  | apple-app-site-association, assetlinks.json, apps/mobile/app.config.ts | tests/e2e/audit-extras.spec.ts | AASA/assetlinks 제공 e2e. 실제 Team ID·앱 서명 지문은 계정 필요 |
 | F-183 | P0 | CI/CD | ✅ 구현+자동테스트 |  |  | .github/workflows/ci.yml |  | typecheck·unit·integration·migrate·traceability·build·e2e·100 시나리오·docker |
-| F-184 | P0 | 백업/복구 | 🟢 구현 |  |  | scripts/backup.sh, scripts/restore-drill.sh |  | 로컬 복구 리허설 통과(12개 핵심 테이블 행 수 일치). 운영은 관리형 PITR 병행 |
+| F-184 | P0 | 백업/복구 | ✅ 구현+자동테스트 |  |  | scripts/backup.sh, scripts/restore-drill.sh, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 pg_dump → 별도 DB pg_restore → 12개 핵심 테이블 행 수 비교(시드 데이터 기준). 운영은 관리형 PITR 병행 |
 | F-185 | P0 | 성능예산 | ✅ 구현+자동테스트 |  |  | scripts/loadtest.mjs |  | 5,000 연락처·동시 20, 8개 시나리오 p95 SLO 통과(통계 낡은 최악 조건 포함) |
-| F-186 | P1 | 재해복구 | 🟢 구현 |  |  | scripts/dr/*, RUNBOOK.md |  | 백업 복제·복원 검증 스크립트(로컬 디렉터리로 리허설). S3/GCS 경로 미검증 |
+| F-186 | P1 | 재해복구 | ✅ 구현+자동테스트 |  |  | scripts/dr/*, RUNBOOK.md, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 2개 위치 복제 → 보조 위치만으로 복원 검증(체크섬·매니페스트·schema_migrations·행 수·스모크·RPO/RTO). 디렉터리 경로로 리허설하며 S3/GCS 전송 경로는 미검증 |
 | F-187 | P1 | 비용계측 | ✅ 구현+자동테스트 | /app/admin |  | lib/metering.ts recordCost | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 추정 단가(COST_RATES_JSON 재정의) |
 ## BIZ · Analytics, Billing & Growth
 

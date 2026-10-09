@@ -40,6 +40,7 @@
 - 관리형 PostgreSQL 의 PITR 을 켠다(Render/Cloud SQL/RDS).
 - 논리 백업: `DATABASE_URL=... scripts/backup.sh ./backups` (pg_dump custom + sha256).
 - 복구 리허설: `DATABASE_URL=... ADMIN_URL=postgres://.../postgres pnpm restore-drill` — 백업 → 임시 DB 복원 → 핵심 12개 테이블 행 수 비교. 2026-10-07 로컬 리허설 통과(2초). 운영 DB에서는 분기마다 실행하고 결과를 기록.
+- **CI 자동 리허설**: `.github/workflows/ci.yml` 의 `dr` 작업이 매 PR 에서 `pnpm db:migrate && pnpm db:seed` 뒤에 `pnpm restore-drill` 과 `pnpm dr:backup && pnpm dr:verify` 를 실행한다. 복원할 수 없는 마이그레이션·매니페스트 불일치는 머지 전에 막힌다. 운영 DB 리허설을 대체하지는 않는다(데이터 규모·네트워크·S3/GCS 전송 경로는 CI 에서 검증되지 않음).
 
 ## Google 연동 설정
 - Google Cloud Console에서 OAuth 클라이언트(웹) 생성, 승인된 리디렉션 URI: `${APP_ORIGIN}/api/v1/integrations/google/callback`

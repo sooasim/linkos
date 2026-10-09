@@ -26,6 +26,11 @@
 2. 이미지 빌드 → `release` 커맨드가 마이그레이션 후 웹을 띄움 (마이그레이션은 advisory lock 으로 동시 실행 안전, 추가 전용)
 3. `worker` 프로세스 1개 이상 실행 (outbox 릴레이, Google 동기화, 세션 만료, 삭제 유예 처리)
 4. 헬스체크 `GET /api/v1/health` → `{"status":"ok"}`
+5. **배포가 실제로 교체됐는지 확인**: 같은 응답의 `revision` 이 방금 머지한 커밋의 짧은 SHA 인지 본다.
+   ```bash
+   curl -s https://<호스트>/api/v1/health | jq -r '.revision'   # 예: 98077e4
+   ```
+   `revision` 은 `APP_REVISION` → `RENDER_GIT_COMMIT` → `VERCEL_GIT_COMMIT_SHA` → `GITHUB_SHA` 순으로 읽는다(Render 는 자동 주입). `null` 이면 빌드가 커밋 정보를 못 받은 것이므로 배포 파이프라인을 먼저 확인한다 — 화면 내용을 눈으로 비교하는 방식은 보안 수정처럼 눈에 보이지 않는 변경을 확인하지 못한다.
 
 ## 무료 테스트 서버 (Render 블루프린트)
 - README 의 Deploy to Render 버튼 → Apply. `render.yaml` 은 무료 Postgres + 무료 웹 1개를 만든다.

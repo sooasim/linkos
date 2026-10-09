@@ -23,6 +23,25 @@ export function log(level: "info" | "warn" | "error", msg: string, data?: Record
   else if (process.env.NODE_ENV !== "test") console.log(line);
 }
 
+/**
+ * 지금 돌고 있는 빌드가 어느 커밋인지 알려준다(/api/v1/health).
+ *
+ * 왜 필요한가: APP_VERSION 은 어디에서도 설정되지 않아 배포본이 늘 "1.0.0" 을 돌려줬다. 그래서 머지한 내용이
+ * 실제로 떴는지 확인하려면 화면 내용을 눈으로 비교하는 수밖에 없었다 — 눈에 보이지 않는 변경(보안 수정 등)은
+ * 확인할 방법이 아예 없었다. 플랫폼이 넣어 주는 커밋 SHA 를 그대로 쓴다.
+ *
+ * 짧은 SHA(7자)만 노출한다. 비밀이 아니며(배포 아티팩트의 식별자일 뿐) 롤백·장애 대응에서 가장 먼저 필요한 값이다.
+ */
+export function buildInfo(): { version: string; revision: string | null } {
+  const sha =
+    process.env.APP_REVISION ?? // 직접 지정(도커 빌드 인자 등)
+    process.env.RENDER_GIT_COMMIT ?? // Render 가 자동으로 넣어 준다
+    process.env.VERCEL_GIT_COMMIT_SHA ??
+    process.env.GITHUB_SHA ??
+    null;
+  return { version: process.env.APP_VERSION ?? "1.0.0", revision: sha ? sha.slice(0, 7) : null };
+}
+
 /** Transactional outbox: call with the same client used for the domain write. */
 export async function emit<E extends DomainEventName>(
   db: Db,

@@ -49,7 +49,7 @@
 |---|---|---|---|---|---|---|---|---|
 | F-022 | P0 | 3초 카드 | ✅ 구현+자동테스트 | LivingCard 3초 | /profiles | card | services/api/test/api.integration.test.ts, tests/e2e/guest-exchange.spec.ts, packages/domain/test/cardDesign.test.ts, services/api/test/card-templates.integration.test.ts, tests/e2e/card-templates.spec.ts | 3초 카드 + 디자인 스튜디오(X-008): 오리지널 템플릿 50종(8 레이아웃·8 카테고리, 전 템플릿 WCAG AA 자동 검사), 아이콘 291·이모지 912 뱅크, 업종별 추천 |
 | F-023 | P0 | 30초 카드 | ✅ 구현+자동테스트 | LivingCard 30초 | /profiles | card | services/api/test/audit.integration.test.ts |  |
-| F-024 | P1 | 딥 프로필 | ✅ 구현+자동테스트 | LivingCard 딥 | /profiles | card | services/api/test/track-c.integration.test.ts | 미디어/파일 업로드 미구현 |
+| F-024 | P1 | 딥 프로필 | ✅ 구현+자동테스트 | LivingCard 딥 | /profiles, /profiles/{id}/media | card, files.addProfileMedia | services/api/test/track-c.integration.test.ts | 미디어/파일 업로드 포함(최대 21MB, 악성코드 검사 후 암호화 저장, 공개범위별 ACL 필터) |
 | F-025 | P0 | Offer | ✅ 구현+자동테스트 | CardEditor | /profiles | card | services/api/test/api.integration.test.ts |  |
 | F-026 | P0 | Need | ✅ 구현+자동테스트 | CardEditor | /profiles | card | services/api/test/api.integration.test.ts |  |
 | F-027 | P1 | Interest | ✅ 구현+자동테스트 | CardEditor | /profiles | card (deep.interests) | services/api/test/audit.integration.test.ts |  |
@@ -61,7 +61,7 @@
 | F-033 | P1 | Living Update | ✅ 구현+자동테스트 | /app/inbox | /living-updates | living.fanOutLivingUpdate | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 연결 상대에게 갱신 알림, 수락 시 provenance=sync |
 | F-034 | P0 | 공개범위 | ✅ 구현+자동테스트 | CardEditor | /p/{slug}, /exchange/sessions/{token} | domain/acl | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, tests/scenarios S-014~S-016,S-037 |  |
 | F-035 | P1 | Access Request | ✅ 구현+자동테스트 | /p/[slug], /app/me | /profiles/{id}/access-requests, /access-requests | card | tests/scenarios S-016 |  |
-| F-036 | P0 | Action Card | ✅ 구현+자동테스트 | LivingCard |  | LivingCard (tel/mailto/vCard) | services/api/test/track-d.integration.test.ts | 예약/견적/NDA CTA 미구현 |
+| F-036 | P0 | Action Card | ✅ 구현+자동테스트 | LivingCard, /app/me/edit (Action Card 설정), /app/inbox (받은 요청) | /action-requests, /action-requests/{id} | LivingCard (tel/mailto/vCard), components/ActionCtas.tsx, living.listActionRequests | services/api/test/track-d.integration.test.ts, services/api/test/qa-api.integration.test.ts | 예약·견적·제안·NDA 요청 CTA 구현. 로그인 없이 보내고 rate limit 적용, 받은 요청은 알림함에서 답장·완료·거절 |
 ## XCH · Adaptive Handoff & Exchange
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
@@ -158,7 +158,7 @@
 | F-106 | P1 | 이메일 발송 | ✅ 구현+자동테스트 | /app/messages, /app/messages (초안 삭제) | /messages/{id}/send | modules/comms.ts | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | approved:true 필수, Gmail→Outlook→SMTP, 중복 발송 방지, 감사로그(주소 원문 없음) |
 | F-107 | P1 | 캘린더 예약 | ✅ 구현+자동테스트 | /b/[token], /app/calendar | /booking/* | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 로그인 없는 예약 페이지, 슬롯=가용-바쁨-여유시간 |
 | F-108 | P1 | 일정 승인 | ✅ 구현+자동테스트 | /app/meetings/[id] | /calendar/candidates/{id}/decision, /calendar/candidates/{id}/ics | modules/calendar.ts | services/api/test/track-b.integration.test.ts | 승인 후 Google 이벤트(클라이언트 id로 중복 방지), If-Match, ICS |
-| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요), /app/people/[id] (리마인더 기한), 알림함 배지 | worker.processReminders | followup.due + SMTP | services/api/test/assist.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | 푸시 미구현, 메일은 SMTP 설정 시 |
+| F-109 | P0 | 리마인더 | ✅ 구현+자동테스트 | /app (후속 필요), /app/people/[id] (리마인더 기한), 알림함 배지 | worker.processReminders | followup.due → push.notify + SMTP | services/api/test/assist.integration.test.ts, tests/e2e/people-gaps.spec.ts, services/api/test/people-gaps.integration.test.ts | followup.due 아웃박스를 워커가 받아 Web Push(F-110) 로 알린다. 메일은 SMTP 설정 시 함께 발송 |
 | F-110 | P2 | Web Push | ✅ 구현+자동테스트 | /app/settings, /app/settings (푸시 기록) | /push/* | modules/push.ts (VAPID web-push) | services/api/test/track-b.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts | 410 구독 삭제, 유형별 설정, 인앱 알림함에도 미러링. iOS는 홈화면 PWA만 |
 | F-111 | P1 | 템플릿 | ✅ 구현+자동테스트 | /app/messages | /templates | packages/domain/src/template.ts | services/api/test/track-b.integration.test.ts, packages/domain/test/comms.test.ts | 개인·팀 템플릿, 미지정 변수 거부 |
 | F-112 | P2 | 언어 번역 | ✅ 구현+자동테스트 | /app/messages, /app/me/edit (번역본 만들기·검토), /p/[slug]?lang= | /translate | modules/comms.ts (structured()) | services/api/test/track-b.integration.test.ts, services/api/test/card-translations.integration.test.ts, tests/e2e/i18n-app-voice.spec.ts | 메시지 UI만; 카드 번역은 API 전용 |
@@ -233,7 +233,7 @@
 | F-161 | P0 | Consent Ledger | ✅ 구현+자동테스트 | /app/settings | /me/consents | consent_records | services/api/test/api.integration.test.ts, services/api/test/backend-gaps.integration.test.ts |  |
 | F-162 | P0 | 데이터 최소화 | ✅ 구현+자동테스트 |  |  | on-device OCR, 선택 필드만 전송 | services/api/test/audit.integration.test.ts |  |
 | F-163 | P0 | 암호화 | 🟡 부분 |  |  | AES-256-GCM 자격증명, TLS(HSTS) | services/api/test/whitepaper-gaps.integration.test.ts | DB at-rest 암호화는 인프라 설정 |
-| F-164 | P0 | 테넌트 격리 | ✅ 구현+자동테스트 |  |  | owner-scoped queries | services/api/test/api.integration.test.ts, tests/scenarios S-018,S-019,S-034,S-069,S-086,S-091 | 개인 범위 격리. 조직 테넌트 미구현 |
+| F-164 | P0 | 테넌트 격리 | ✅ 구현+자동테스트 |  |  | owner-scoped queries, organization_id scoping | services/api/test/api.integration.test.ts, services/api/test/track-a.integration.test.ts, tests/scenarios S-018,S-019,S-034,S-069,S-086,S-091 | 개인 범위 격리 + 조직 간 격리(팀 주소록·회사 리드·API 키·SCIM 모두 다른 조직 데이터 불가, 비멤버에게는 존재 자체를 숨겨 404) |
 | F-165 | P0 | 비밀관리 | ✅ 구현+자동테스트 |  |  | .env.example, render.yaml | services/api/test/audit.integration.test.ts, services/api/test/whitepaper-gaps.integration.test.ts |  |
 | F-166 | P0 | 감사 추적 | ✅ 구현+자동테스트 | /app/settings (내 활동 기록) |  | audit_logs | services/api/test/api.integration.test.ts, services/api/test/settings-gaps.integration.test.ts, tests/e2e/settings-gaps.spec.ts, services/api/test/whitepaper-gaps.integration.test.ts, services/api/test/backend-gaps.integration.test.ts |  |
 | F-167 | P0 | 삭제/탈퇴 | ✅ 구현+자동테스트 | /app/settings | /me/privacy/delete | security | services/api/test/api.integration.test.ts, tests/scenarios S-093, services/api/test/backend-gaps.integration.test.ts | 7일 유예 후 하드 삭제 |

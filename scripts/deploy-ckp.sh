@@ -26,8 +26,11 @@ export NODE_OPTIONS=--max-old-space-size=2048
 
 log "소스 갱신 ($REF)"
 cd "$APP_DIR"
+# 서버의 체크아웃은 main 만 가진 shallow clone 이라 다른 브랜치의 원격 추적 ref
+# (refs/remotes/origin/<branch>)가 없다. 방금 받은 FETCH_HEAD 를 그대로 쓰면
+# 브랜치·태그·SHA 어느 쪽을 넘겨도 똑같이 동작한다.
 git fetch --depth=1 origin "${REF#origin/}"
-git reset --hard "$REF"
+git reset --hard FETCH_HEAD
 git log --oneline -1
 
 log "의존성"

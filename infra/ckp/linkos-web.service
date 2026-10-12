@@ -1,0 +1,43 @@
+[Unit]
+# LINKOS 화면 + /api/v1/* (Next.js standalone). 역프록시: nginx vhost linkos-kr -> 127.0.0.1:4300
+Description=LINKOS web/API (Next.js standalone) for linkos.ckp.kr
+Documentation=https://github.com/sooasim/linkos
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=linkos
+Group=linkos
+# standalone 출력의 루트. server.js 는 자기 위치 기준으로 .next/static·public 을 찾으므로
+# Dockerfile 과 같은 배치(루트에서 apps/web/server.js 실행)를 그대로 쓴다.
+WorkingDirectory=/var/www/linkos/apps/web/.next/standalone
+EnvironmentFile=/etc/linkos/linkos.env
+# 배포 스크립트가 매 배포마다 다시 쓴다(APP_REVISION). 없어도 기동한다.
+EnvironmentFile=-/etc/linkos/revision.env
+# 시스템 node 는 v20 이고 package.json 의 engines 는 >=22 라 전용 런타임을 쓴다.
+ExecStart=/opt/node24/bin/node apps/web/server.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=linkos-web
+
+# 하드닝 — 쓰기는 업로드 저장소와 Next 런타임 캐시에만 허용한다.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+# OBJECT_STORAGE_LOCAL_DIR(업로드) + Next 의 런타임 fetch 캐시. 앞의 "-" 는
+# 경로가 아직 없어도 유닛이 기동되게 한다(최초 배포 순서 의존을 없앤다).
+ReadWritePaths=/var/lib/linkos
+ReadWritePaths=-/var/www/linkos/apps/web/.next/standalone/apps/web/.next/cache
+
+[Install]
+WantedBy=multi-user.target

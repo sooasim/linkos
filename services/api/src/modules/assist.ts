@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { one, q } from "../lib/db";
 import { notFound, unauthorized } from "../lib/errors";
-import { LLM_MODEL, structured } from "../lib/llm";
+import { structured } from "../lib/llm";
 import type { Ctx } from "../lib/platform";
 import { loadProfile } from "./card";
 import { getContactRow } from "./relationship";
@@ -138,5 +138,3 @@ export async function draftFollowup(ctx: Ctx, contactId: string, kind: "thank_yo
   };
   return { result: { subject: subjects[kind], body: bodies[kind] + sign }, provenance: "rules", model: "rules-v1", needsConfirmation: true };
 }
-
-export { LLM_MODEL };

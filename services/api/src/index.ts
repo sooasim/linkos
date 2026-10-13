@@ -25,7 +25,7 @@ export * as growth from "./modules/growth";
 export * as passkey from "./modules/passkey";
 export * as policy from "./modules/policy";
 export { llmEnabled } from "./lib/llm";
-export { llmActiveModels } from "./lib/llmModels";
+export { llmActiveModels, resetLlmCatalog } from "./lib/llmModels";
 export * as billing from "./modules/billing";
 export * as referral from "./modules/referral";
 export * as living from "./modules/living";

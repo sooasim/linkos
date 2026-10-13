@@ -28,8 +28,30 @@ ssh ckp 'bash /var/www/linkos/scripts/deploy-ckp.sh'
 
 ```bash
 curl -s https://linkos.ckp.kr/api/v1/health
-# {"status":"ok","db":"ok","migrations":18,"version":"1.0.0","revision":"a093b27"}
+# {"status":"ok","db":"ok","migrations":18,"version":"1.0.0","revision":"06a1819",
+#  "ai":{"enabled":true,"models":{"cheap":"claude-haiku-5-5","standard":"claude-sonnet-5-5","deep":"claude-opus-5-5"}}}
 ```
+
+## AI (Anthropic)
+
+`/etc/linkos/linkos.env` 에 `ANTHROPIC_API_KEY` 와 `ANTHROPIC_WORKSPACE_ID` 가 들어 있다.
+**모델은 지정하지 않는다** — 호출 종류마다 티어가 있고(`packages/domain/src/llmRouting.ts`),
+티어를 만족하는 가장 싼 계열의 최신 모델을 Models API 로 찾아 쓴다(6시간 캐시).
+새 모델이 나오면 캐시가 만료되는 순간 자동으로 옮겨탄다 — 배포가 필요 없다.
+지금 무엇이 쓰이는지는 위 헬스체크의 `ai.models` 로 확인한다.
+
+| 호출 | 티어 | 모델(현재) |
+|---|---|---|
+| `profile_summary` · `room_summary` · `schedule_hint` | cheap | Haiku |
+| `followup_draft` · `intro_draft` · `translate` · `adaptive_card` · `meeting_extract` | standard | Sonnet |
+
+- ⚠️ **워크스페이스 ID 가 필요한 이유**: 지금 키는 워크스페이스에 스코프되지 않은 유형이라
+  `anthropic-workspace-id` 헤더가 없으면 **모든 요청이 400** 이다. 콘솔에서 워크스페이스
+  전용 키(`sk-ant-api…`)를 발급받아 바꾸면 `ANTHROPIC_WORKSPACE_ID` 는 지워도 된다.
+- 특정 모델로 고정해야 하면 `LLM_MODEL`(전체) 또는 `LLM_MODEL_CHEAP`/`_STANDARD`/`_DEEP`.
+  AI 를 통째로 끄려면 `LLM_DISABLED=1` — 모든 기능이 규칙 기반 폴백으로 조용히 동작한다.
+- 비용은 `cost_ledger` 에 **계열별 요율**로 쌓인다(`llm.input_token.haiku` 등). 같은 토큰
+  수라도 Haiku 와 Sonnet 이 20배 차이 나므로, 하나의 평균 요율로는 라우팅 효과가 안 보인다.
 
 ## 이 서버에서만 다른 점 (반드시 유지)
 

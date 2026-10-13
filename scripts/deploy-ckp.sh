@@ -16,6 +16,19 @@ PORT=4300
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
+# 아래 `git reset --hard` 는 이 스크립트 파일 자체도 갈아치운다. 대상 ref 에 이 파일이
+# 없으면(아직 머지되지 않은 브랜치 ↔ main 을 오갈 때) 실행 도중 사라져서
+# "No such file or directory" 로 죽는다. bash 는 스크립트를 조금씩 읽어 들이기 때문이다.
+# 저장소 안에서 실행됐다면 /tmp 복사본으로 다시 실행해 체크아웃과 분리한다.
+case "$0" in
+  "$APP_DIR"/*)
+    _self="$(mktemp /tmp/linkos-deploy.XXXXXX.sh)"
+    cp "$0" "$_self"
+    exec bash "$_self" "$@"
+    ;;
+  /tmp/linkos-deploy.*) trap 'rm -f "$0"' EXIT ;;
+esac
+
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE — 최초 설치는 docs/DEPLOY_CKP.md 를 보세요" >&2; exit 1; }
 
 export PATH="$NODE_BIN:$PATH"

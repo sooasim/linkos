@@ -75,6 +75,7 @@ import { type Db, one, pool, q, tx } from "../lib/db";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../lib/errors";
 import { type Ctx, audit, log } from "../lib/platform";
 import { activeOrgId } from "./org";
+import { upsertCompany } from "./relationship";
 
 const DEFAULT_SHARE: SharePermission = "path_only";
 const COLLEAGUE_STRENGTH = 0.7;
@@ -1385,10 +1386,10 @@ export async function addRole(ctx: Ctx, body: { contactId: string; companyName: 
   if (body.roleCategory && !ROLE_CATEGORIES.some((c) => c.name === body.roleCategory)) throw badRequest("invalid_role_category");
 
   const roleId = await tx(async (c) => {
-    const existing = await one<{ id: string }>("SELECT id FROM companies WHERE normalized_name = $1 LIMIT 1", [canonicalKey(name)], c);
-    const companyId =
-      existing?.id ??
-      (await one<{ id: string }>("INSERT INTO companies (name, normalized_name) VALUES ($1,$2) RETURNING id", [name.slice(0, 160), canonicalKey(name)], c))!.id;
+    // companies 는 전역 테이블이고 normalized_name 에 UNIQUE 인덱스가 있다. 기존 upsertCompany 를
+    // 그대로 쓴다 — 직접 INSERT 하면 정규화 규칙이 갈라지고 동시 삽입에서 unique 위반이 난다.
+    const companyId = await upsertCompany(c, name.slice(0, 160));
+    if (!companyId) throw badRequest("company_required", "회사 이름을 입력하세요.");
     // 새 현재 소속이 들어오면 기존 현재 소속을 닫는다 — is_current 가 여러 개면 역할 카테고리가 흔들린다
     if (body.isCurrent !== false) {
       await c.query("UPDATE contact_company_roles SET is_current = false, ended_on = COALESCE(ended_on, current_date) WHERE contact_id = $1 AND is_current", [body.contactId]);

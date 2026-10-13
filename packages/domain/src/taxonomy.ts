@@ -161,6 +161,44 @@ export const findIndustries = (text: string): string[] => findInText(text, INDUS
 export const findRegions = (text: string): string[] => findInText(text, REGIONS);
 export const findRoles = (text: string): string[] => findInText(text, ROLE_CATEGORIES);
 
+/**
+ * 직급보다 직무를 먼저 본다. "구매팀 과장" 은 '중간관리자'보다 '구매/조달'이 쓸모 있는 정보다 —
+ * 네트워크 검색이 찾는 것은 직급이 아니라 "무엇을 담당하는 사람인가"이기 때문이다.
+ * 의사결정 권한은 직급으로 추측하지 않고 `contact_company_roles.decides_for` 로 따로 기록한다.
+ * 다만 소유자급(대표/창업자)은 직무보다 먼저다 — 그 자체가 결정권을 뜻한다.
+ */
+const ROLE_PRIORITY: string[] = [
+  "대표/창업자",
+  "구매/조달",
+  "투자/심사",
+  "법무",
+  "재무/회계",
+  "인사/채용",
+  "영업/사업개발",
+  "마케팅/홍보",
+  "디자인",
+  "엔지니어/연구",
+  "임원/본부장",
+  "중간관리자",
+];
+
+/**
+ * 직책 텍스트에서 역할 카테고리를 추론한다. `ROLE_CATEGORIES` 의 별칭을 그대로 쓰므로
+ * 분류 사전과 masked 라벨이 어긋나지 않는다(두 군데에 역할 목록을 두면 한쪽만 바뀐다).
+ * 직책이 없으면 null, 사전에 걸리지 않으면 `실무자` 다.
+ */
+export function roleCategory(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const hay = norm(title);
+  for (const name of ROLE_PRIORITY) {
+    const e = ROLE_CATEGORIES.find((c) => c.name === name);
+    if (!e) continue;
+    const needles = [e.name, e.en, ...e.aliases].map(norm).filter((x) => x.length >= 2);
+    if (needles.some((x) => hay.includes(x))) return name;
+  }
+  return "실무자";
+}
+
 /** 상위 분류를 포함한 산업 집합(의료기기 → 의료기기 + 헬스케어). 산업 적합도 계산에 쓴다. */
 export function industryWithParents(name: string): string[] {
   const e = INDUSTRIES.find((x) => x.name === name);

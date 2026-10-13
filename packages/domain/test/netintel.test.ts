@@ -12,6 +12,7 @@ import {
   INFERRED_ONLY_CAP,
   INDUSTRIES,
   InMemoryGraphRepository,
+  ROLE_CATEGORIES,
   LexicalVectorIndex,
   MAX_3D_NODES,
   NETWORK_EVENT_NAMES,
@@ -179,10 +180,25 @@ describe("N-022 masked payload 에 PII 가 없다 (인수 게이트)", () => {
     expect(out.maskedLabel).toBeNull();
   });
 
-  it("직책은 카테고리로 뭉개진다", () => {
+  it("직책은 카테고리로 뭉개지고, 직급보다 직무가 우선한다", () => {
     expect(roleCategory("대표이사")).toBe("대표/창업자");
-    expect(roleCategory("구매팀 과장")).toBe("중간관리자");
+    // "구매팀 과장" 은 직급(중간관리자)보다 직무(구매/조달)가 쓸모 있는 정보다 —
+    // 네트워크 검색이 찾는 것은 "무엇을 담당하는 사람인가"이기 때문이다.
+    expect(roleCategory("구매팀 과장")).toBe("구매/조달");
+    expect(roleCategory("유통팀 팀장")).toBe("중간관리자");
+    expect(roleCategory("심사역")).toBe("투자/심사");
+    expect(roleCategory("CTO")).toBe("임원/본부장");
+    expect(roleCategory("연구원")).toBe("엔지니어/연구");
+    // 사전에 걸리지 않으면 실무자, 직책이 없으면 null
+    expect(roleCategory("법인장")).toBe("실무자");
     expect(roleCategory(null)).toBeNull();
+  });
+
+  it("역할 카테고리는 분류 사전(ROLE_CATEGORIES) 안의 값만 돌려준다", () => {
+    const allowed = new Set([...ROLE_CATEGORIES.map((c) => c.name), "실무자"]);
+    for (const title of ["대표이사", "구매팀 과장", "CTO", "영업이사", "디자이너", "세무 담당", "알 수 없는 직책"]) {
+      expect(allowed.has(roleCategory(title)!)).toBe(true);
+    }
   });
 
   it("masked 라벨은 경로 유무를 밝힌다", () => {

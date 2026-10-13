@@ -4,6 +4,10 @@
 //
 // 이 파일은 I/O 가 없는 순수 판정이다. 응답을 만드는 모든 경로는 반드시 applyDisclosure() 를 통과해야 한다 —
 // 거기서 allowlist 로 새 객체를 만들기 때문에, 호출자가 실수로 PII 를 들고 있어도 응답에 새지 않는다.
+//
+// 직책을 카테고리로 뭉개는 `roleCategory()` 는 `taxonomy.ts` 에 있다 — 역할 목록을 두 군데 두면
+// 한쪽만 바뀌어 masked 라벨과 분류 사전이 어긋난다.
+import { roleCategory } from "./taxonomy";
 
 export const DISCLOSURE_GATES = ["can_process", "can_discover", "can_request_intro", "can_reveal_identity", "can_reveal_contact"] as const;
 export type DisclosureGate = (typeof DISCLOSURE_GATES)[number];
@@ -96,20 +100,6 @@ export interface MaskedFacets {
   /** 직책 카테고리 — "김철수 대표" 가 아니라 "대표/경영진" */
   roleCategory?: string | null;
   hasPath: boolean;
-}
-
-/** 직책 원문을 카테고리로 뭉갠다. 원문을 그대로 쓰면 특정 개인이 식별될 수 있다. */
-export function roleCategory(title: string | null | undefined): string | null {
-  if (!title) return null;
-  const t = title.toLowerCase();
-  if (/(대표|ceo|founder|사장|회장|대표이사|owner)/.test(t)) return "대표/창업자";
-  if (/(cto|cfo|coo|ciso|cmo|임원|이사|본부장|부사장|vp|chief|head of)/.test(t)) return "임원/본부장";
-  if (/(팀장|부장|과장|차장|manager|lead|매니저)/.test(t)) return "중간관리자";
-  if (/(개발|엔지니어|engineer|developer|researcher|연구)/.test(t)) return "엔지니어/연구";
-  if (/(영업|sales|세일즈|bd|business development)/.test(t)) return "영업/사업개발";
-  if (/(마케팅|marketing|홍보|pr)/.test(t)) return "마케팅/홍보";
-  if (/(디자이너|design)/.test(t)) return "디자인";
-  return "실무자";
 }
 
 /**

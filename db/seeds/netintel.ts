@@ -14,6 +14,7 @@
 // `db/seeds` 는 패키지 밖이라 `@linkos/domain` 이 해석되지 않는다(workspace 링크는 services/api/node_modules 에만 있다).
 // 기존 seed.ts 가 lib/db 를 상대경로로 가져오는 것과 같은 방식으로 도메인 사전을 직접 참조한다 —
 // 산업 이름을 여기에 복사하면 taxonomy.ts 와 조용히 어긋날 수 있다.
+import { normalizeCompanyName } from "../../packages/domain/src/normalize";
 import { INDUSTRIES } from "../../packages/domain/src/taxonomy";
 import type pg from "pg";
 
@@ -139,26 +140,52 @@ export async function seedNetworkIntel(db: pg.Pool, run: Run, userA: string, use
   await run("users", `UPDATE users SET active_org_id = $1 WHERE id = ANY($2::uuid[]) AND active_org_id IS NULL`, [N.org, [userA, N.userC]]);
 
   // ---------------------------------------------------------------- 회사
+  // companies 는 전역 테이블이고 normalized_name 에 UNIQUE 인덱스가 있다(0002). 그래서
+  // 고정 id 로 ON CONFLICT 를 걸 수 없다 — 다른 테스트나 앱이 같은 회사를 먼저 만들어 두면
+  // id 는 다르고 normalized_name 은 같아 삽입이 실패한다. 이름으로 충돌을 흡수한 뒤 실제 id 를 되읽는다.
+  const COMPANIES: [key: keyof typeof N.co, name: string, domain: string, industry: string][] = [
+    ["alpha", "알파메디칼", "alpha.example.test", "의료기기"],
+    ["beta", "베타유통", "beta.example.test", "유통·도소매"],
+    ["hanoi", "하노이메디", "hanoimedi.example.test", "의료기기"],
+    ["hospital", "서울성심병원", "sshospital.example.test", "병원·의료서비스"],
+    ["gamma", "감마반도체", "gamma.example.test", "반도체"],
+    ["delta", "델타물류", "delta.example.test", "물류·운송"],
+    ["eco", "에코소재", "eco.example.test", "화학·소재"],
+    ["capital", "캐피탈원", "capitalone.example.test", "벤처투자·PE"],
+  ];
+  const norm = (name: string) => normalizeCompanyName(name) || name.toLowerCase();
   await run(
     "companies",
     `INSERT INTO companies (id, name, normalized_name, domain, industry)
      SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[]) AS t(id, name, normalized_name, domain, industry)
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (normalized_name) DO NOTHING`,
     [
-      [N.co.alpha, N.co.beta, N.co.hanoi, N.co.hospital, N.co.gamma, N.co.delta, N.co.eco, N.co.capital],
-      ["알파메디칼", "베타유통", "하노이메디", "서울성심병원", "감마반도체", "델타물류", "에코소재", "캐피탈원"],
-      ["알파메디칼", "베타유통", "하노이메디", "서울성심병원", "감마반도체", "델타물류", "에코소재", "캐피탈원"],
-      ["alpha.example.test", "beta.example.test", "hanoimedi.example.test", "sshospital.example.test", "gamma.example.test", "delta.example.test", "eco.example.test", "capitalone.example.test"],
-      ["의료기기", "유통·도소매", "의료기기", "병원·의료서비스", "반도체", "물류·운송", "화학·소재", "벤처투자·PE"],
+      COMPANIES.map((c) => N.co[c[0]]),
+      COMPANIES.map((c) => c[1]),
+      COMPANIES.map((c) => norm(c[1])),
+      COMPANIES.map((c) => c[2]),
+      COMPANIES.map((c) => c[3]),
     ],
   );
+  const coRows = await db.query<{ id: string; normalized_name: string }>(
+    "SELECT id, normalized_name FROM companies WHERE normalized_name = ANY($1::text[])",
+    [COMPANIES.map((c) => norm(c[1]))],
+  );
+  const coByNorm = new Map(coRows.rows.map((r) => [r.normalized_name, r.id]));
+  /** 논리 키 → 실제 회사 id. 빈 DB 면 위 고정 id 와 같고, 이미 있으면 기존 id 를 쓴다. */
+  const CO = (key: keyof typeof N.co): string => {
+    const spec = COMPANIES.find((c) => c[0] === key);
+    const id = spec ? coByNorm.get(norm(spec[1])) : undefined;
+    if (!id) throw new Error(`seed: company '${key}' 를 찾지 못했습니다`);
+    return id;
+  };
   await run(
     "company_industries",
     `INSERT INTO company_industries (company_id, industry_id, weight)
      SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::numeric[]) AS t(company_id, industry_id, weight)
      ON CONFLICT (company_id, industry_id) DO NOTHING`,
     [
-      [N.co.alpha, N.co.beta, N.co.hanoi, N.co.hanoi, N.co.hospital, N.co.gamma, N.co.delta, N.co.eco, N.co.capital],
+      [CO("alpha"), CO("beta"), CO("hanoi"), CO("hanoi"), CO("hospital"), CO("gamma"), CO("delta"), CO("eco"), CO("capital")],
       [I("의료기기"), I("유통·도소매"), I("의료기기"), I("유통·도소매"), I("병원·의료서비스"), I("반도체"), I("물류·운송"), I("화학·소재"), I("벤처투자·PE")],
       [1, 1, 0.7, 0.9, 1, 1, 1, 1, 1],
     ],
@@ -168,23 +195,23 @@ export async function seedNetworkIntel(db: pg.Pool, run: Run, userA: string, use
   // address 가 지역 추론의 입력이다(loadNetwork → findRegions). 그래서 지역명을 분명히 적는다.
   type C = [id: string, owner: string, name: string, title: string, companyId: string, email: string, phone: string, address: string, source: string, scope: string];
   const contacts: C[] = [
-    [N.c.minseo, userA, "최민서", "구매팀 과장", N.co.hospital, "minseo@sshospital.example.test", "010-0000-1001", "서울특별시 중구", "scan", "personal"],
-    [N.c.woojin, userA, "정우진", "대표이사", N.co.beta, "woojin@beta.example.test", "010-0000-1002", "경기 성남시", "exchange", "personal"],
-    [N.c.seoyeon, userA, "한서연", "영업이사", N.co.delta, "seoyeon@delta.example.test", "010-0000-1003", "인천 중구", "scan", "personal"],
-    [N.c.jiho, userA, "오지호", "심사역", N.co.capital, "jiho@capitalone.example.test", "010-0000-1004", "서울특별시 강남구", "exchange", "personal"],
-    [N.c.gaon, userA, "윤가온", "대표", N.co.eco, "gaon@eco.example.test", "010-0000-1005", "충청 천안시", "scan", "personal"],
-    [N.c.taehyun, userA, "강태현", "CTO", N.co.alpha, "taehyun@alpha.example.test", "010-0000-1006", "서울특별시 금천구", "exchange", "personal"],
-    [N.c.aram, userA, "서아람", "구매 담당", N.co.hospital, "aram@sshospital.example.test", "010-0000-1007", "서울특별시 중구", "import", "personal"],
+    [N.c.minseo, userA, "최민서", "구매팀 과장", CO("hospital"), "minseo@sshospital.example.test", "010-0000-1001", "서울특별시 중구", "scan", "personal"],
+    [N.c.woojin, userA, "정우진", "대표이사", CO("beta"), "woojin@beta.example.test", "010-0000-1002", "경기 성남시", "exchange", "personal"],
+    [N.c.seoyeon, userA, "한서연", "영업이사", CO("delta"), "seoyeon@delta.example.test", "010-0000-1003", "인천 중구", "scan", "personal"],
+    [N.c.jiho, userA, "오지호", "심사역", CO("capital"), "jiho@capitalone.example.test", "010-0000-1004", "서울특별시 강남구", "exchange", "personal"],
+    [N.c.gaon, userA, "윤가온", "대표", CO("eco"), "gaon@eco.example.test", "010-0000-1005", "충청 천안시", "scan", "personal"],
+    [N.c.taehyun, userA, "강태현", "CTO", CO("alpha"), "taehyun@alpha.example.test", "010-0000-1006", "서울특별시 금천구", "exchange", "personal"],
+    [N.c.aram, userA, "서아람", "구매 담당", CO("hospital"), "aram@sshospital.example.test", "010-0000-1007", "서울특별시 중구", "import", "personal"],
 
-    [N.c.sejin, userA, "임세진", "유통팀 팀장", N.co.beta, "sejin@beta.example.test", "010-0000-1009", "경기 성남시", "scan", "personal"],
-    [N.c.eunbyul, userA, "조은별", "연구원", N.co.gamma, "eunbyul@gamma.example.test", "010-0000-1010", "경기 용인시", "scan", "personal"],
+    [N.c.sejin, userA, "임세진", "유통팀 팀장", CO("beta"), "sejin@beta.example.test", "010-0000-1009", "경기 성남시", "scan", "personal"],
+    [N.c.eunbyul, userA, "조은별", "연구원", CO("gamma"), "eunbyul@gamma.example.test", "010-0000-1010", "경기 용인시", "scan", "personal"],
     // 중복: 최민서와 같은 이메일. N-024 데이터 품질 큐와 N-006 병합 검토를 시연한다.
-    [N.c.minseoDup, userA, "최 민서", "구매 과장", N.co.hospital, "minseo@sshospital.example.test", "010-0000-1011", "서울특별시 중구", "import", "personal"],
+    [N.c.minseoDup, userA, "최 민서", "구매 과장", CO("hospital"), "minseo@sshospital.example.test", "010-0000-1011", "서울특별시 중구", "import", "personal"],
     // 동료(userC)의 연락처 → userA 에게는 2·3촌이다.
     // 노현우는 조직 공유도 하지 않는다 — 내가 관찰한 who-knows-whom 엣지로만 닿으므로 끝까지 masked 다.
-    [N.c.hyunwoo, N.userC, "노현우", "법인장", N.co.hanoi, "hyunwoo@hanoimedi.example.test", "010-0000-2003", "베트남 하노이", "scan", "personal"],
-    [N.cc.dohyun, N.userC, "백도현", "대표이사", N.co.hanoi, "dohyun@hanoimedi.example.test", "010-0000-2001", "베트남 하노이", "exchange", "org"],
-    [N.cc.chaewon, N.userC, "문채원", "유통총괄 이사", N.co.hanoi, "chaewon@hanoimedi.example.test", "010-0000-2002", "베트남 호치민", "scan", "personal"],
+    [N.c.hyunwoo, N.userC, "노현우", "법인장", CO("hanoi"), "hyunwoo@hanoimedi.example.test", "010-0000-2003", "베트남 하노이", "scan", "personal"],
+    [N.cc.dohyun, N.userC, "백도현", "대표이사", CO("hanoi"), "dohyun@hanoimedi.example.test", "010-0000-2001", "베트남 하노이", "exchange", "org"],
+    [N.cc.chaewon, N.userC, "문채원", "유통총괄 이사", CO("hanoi"), "chaewon@hanoimedi.example.test", "010-0000-2002", "베트남 호치민", "scan", "personal"],
   ];
   await run(
     "contacts",
@@ -262,21 +289,21 @@ export async function seedNetworkIntel(db: pg.Pool, run: Run, userA: string, use
   // 소속 이력. 끝난 소속을 is_current 로 하나 남겨 데이터 품질 큐(stale_role)가 잡아내게 한다.
   type R = [contact: string, company: string, title: string, category: string, started: string, ended: string | null, current: boolean, decides: boolean];
   const roles: R[] = [
-    [N.c.minseo, N.co.hospital, "구매팀 과장", "구매/조달", "2021-03-01", null, true, true],
-    [N.c.woojin, N.co.beta, "대표이사", "대표/창업자", "2018-01-01", null, true, true],
-    [N.c.seoyeon, N.co.delta, "영업이사", "임원/본부장", "2020-06-01", null, true, false],
-    [N.c.jiho, N.co.capital, "심사역", "투자/심사", "2022-02-01", null, true, false],
-    [N.c.gaon, N.co.eco, "대표", "대표/창업자", "2019-05-01", null, true, true],
-    [N.c.taehyun, N.co.alpha, "CTO", "임원/본부장", "2020-01-01", null, true, false],
-    [N.c.aram, N.co.hospital, "구매 담당", "구매/조달", "2023-01-01", null, true, false],
-    [N.c.hyunwoo, N.co.hanoi, "법인장", "임원/본부장", "2022-09-01", null, true, true],
-    [N.c.sejin, N.co.beta, "유통팀 팀장", "중간관리자", "2021-07-01", null, true, false],
-    [N.cc.dohyun, N.co.hanoi, "대표이사", "대표/창업자", "2017-04-01", null, true, true],
-    [N.cc.chaewon, N.co.hanoi, "유통총괄 이사", "임원/본부장", "2021-11-01", null, true, false],
+    [N.c.minseo, CO("hospital"), "구매팀 과장", "구매/조달", "2021-03-01", null, true, true],
+    [N.c.woojin, CO("beta"), "대표이사", "대표/창업자", "2018-01-01", null, true, true],
+    [N.c.seoyeon, CO("delta"), "영업이사", "임원/본부장", "2020-06-01", null, true, false],
+    [N.c.jiho, CO("capital"), "심사역", "투자/심사", "2022-02-01", null, true, false],
+    [N.c.gaon, CO("eco"), "대표", "대표/창업자", "2019-05-01", null, true, true],
+    [N.c.taehyun, CO("alpha"), "CTO", "임원/본부장", "2020-01-01", null, true, false],
+    [N.c.aram, CO("hospital"), "구매 담당", "구매/조달", "2023-01-01", null, true, false],
+    [N.c.hyunwoo, CO("hanoi"), "법인장", "임원/본부장", "2022-09-01", null, true, true],
+    [N.c.sejin, CO("beta"), "유통팀 팀장", "중간관리자", "2021-07-01", null, true, false],
+    [N.cc.dohyun, CO("hanoi"), "대표이사", "대표/창업자", "2017-04-01", null, true, true],
+    [N.cc.chaewon, CO("hanoi"), "유통총괄 이사", "임원/본부장", "2021-11-01", null, true, false],
     // 과거 소속(정상 종료) — Person 360 의 이력 표시용
-    [N.c.taehyun, N.co.gamma, "선임 연구원", "엔지니어/연구", "2015-03-01", "2019-12-31", false, false],
+    [N.c.taehyun, CO("gamma"), "선임 연구원", "엔지니어/연구", "2015-03-01", "2019-12-31", false, false],
     // 끝났는데 현재로 남아 있음 → stale_role 품질 항목이 만들어진다
-    [N.c.eunbyul, N.co.gamma, "연구원", "엔지니어/연구", "2019-01-01", "2026-06-30", true, false],
+    [N.c.eunbyul, CO("gamma"), "연구원", "엔지니어/연구", "2019-01-01", "2026-06-30", true, false],
   ];
   await run(
     "contact_company_roles",

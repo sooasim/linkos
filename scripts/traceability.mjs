@@ -267,5 +267,52 @@ const EXTRAS = [
 lines.push("## 추가 기능 (원장 외 · X-ID)", "", "| ID | 기능 | 상태 | UI | API | 테스트 |", "|---|---|---|---|---|---|");
 for (const [id, t, ui, api, tests] of EXTRAS) lines.push(`| ${id} | ${t} | ${LABEL.T} | ${ui} | ${api} | ${tests} |`);
 lines.push("");
+
+// 인적네트워크 인텔리전스 (docs/NETWORK_INTELLIGENCE.md). 출처는 dd/ 밖의 별개 번들이고 그 번들의 F-001~F-305 는
+// 위 197-ID 원장과 번호가 겹치면서 의미가 다르다 → N-ID 네임스페이스로 분리해 원장 카운트를 그대로 유지한다.
+const NI_UT = "packages/domain/test/netintel.test.ts";
+const NI_IT = "services/api/test/netintel.integration.test.ts";
+const NI_JT = "services/api/test/netintel-jobs.integration.test.ts";
+const NETWORK_INTEL = [
+  // [ID, P, 기능, 상태, UI, API, 모듈, 테스트, 비고]
+  ["N-008", "P0", "Person↔Company 역할/이력", "T", "/app/people/[id] (소속 이력)", "/network-intel/roles, /network-intel/roles/{roleId}", "modules/netintel.ts (listRoles/addRole/endRole)", NI_JT, "현재 소속의 역할 카테고리가 masked 라벨의 입력이다. 새 현재 소속이 들어오면 기존 소속을 닫고 대표 회사를 맞춘다. DECIDES_FOR 포함"],
+  ["N-011", "P0", "Industry/Capability/Need 분류", "T", "/app/network (chip), /app/network (ICP)", "/network-intel/taxonomy, /network-intel/capabilities, /network-intel/capabilities/link", "packages/domain/src/taxonomy.ts", `${NI_UT}, ${NI_IT}`, "산업 32 · 지역 35 · 역할 12 + 별칭. 사전에 없으면 null(지어내지 않음)"],
+  ["N-012", "P0", "멀티벡터 임베딩 파이프라인", "P", "", "", "packages/domain/src/graphAdapter.ts (VectorIndex), modules/netintelJobs.ts (적체 보고)", NI_UT, "어댑터 인터페이스 + 어휘 유사도 기본 구현. pgvector/Qdrant 는 미도입(사용자 결정 2026-10-13) — 적체는 데이터 품질 큐가 보고한다"],
+  ["N-013", "P0", "그래프 projection + outbox 동기화", "T", "", "/network-intel/graph", "packages/domain/src/graphAdapter.ts, networkEvents.ts, modules/netintelJobs.ts (consumeNetworkEvent), worker.ts", `${NI_UT}, ${NI_IT}, ${NI_JT}`, "GraphRepository 인터페이스 + 순수 SQL 기본 구현. AGE/Neo4j 는 미도입. network.* 이벤트는 별도 네임스페이스이고 worker dispatch 가 소비한다"],
+  ["N-014", "P0", "1~3촌 후보 탐색", "T", "/app/network (맵·목록)", "/network-intel/neighbors", "packages/domain/src/pathRank.ts (discoverNeighbors)", `${NI_UT}, ${NI_IT}`, "consent_gate=0 엣지는 그래프에 올리지 않는다"],
+  ["N-015", "P0", "자연어 Intent Parser + 하이브리드 검색", "T", "/app/network", "/network-intel/search", "packages/domain/src/searchIntent.ts", `${NI_UT}, ${NI_IT}`, "규칙 기반(결정적) + LLM 출력 schema 검증/폴백. LLM 은 privacyMode 를 완화할 수 없다"],
+  ["N-016", "P0", "설명 가능한 추천 랭킹", "T", "/app/network (점수 구성)", "/network-intel/search, /network-intel/feedback", "packages/domain/src/recommend.ts", `${NI_UT}, ${NI_IT}`, "10요소 가중 + hard gate 우선 + MMR λ=0.82. 학습 라벨은 funnel 결과만"],
+  ["N-017", "P0", "2D/3D privacy-filtered 네트워크 slice", "T", "/app/network (목록·2D·3D)", "/network-intel/graph?dim=3", "modules/netintel.ts (graphSlice), domain/graphAdapter.ts (forceLayout3D)", `${NI_UT}, ${NI_IT}, ${NI_JT}`, "서버가 2D/3D 좌표를 결정적으로 계산하고 brower 는 그릴 것만 받는다. 3D 는 canvas 2D 원근투영(의존성 0) · 500 노드 상한 · auto-rotate 기본 꺼짐 + prefers-reduced-motion 시 비활성"],
+  ["N-018", "P0", "프로젝트 생성 + Role/Need 분해", "T", "/app/projects", "/network-intel/projects, /projects/{id}/analyze, /requirements/confirm", "packages/domain/src/coverage.ts", `${NI_UT}, ${NI_IT}`, "분해는 초안이며 확정 전까지 요구사항이 아니다. 출처 문장 보존"],
+  ["N-019", "P0", "프로젝트 커버리지 / Network Gap", "T", "/app/projects", "/network-intel/projects/{id}/coverage", "packages/domain/src/coverage.ts", `${NI_UT}, ${NI_IT}`, "covered/partial/gap + 우선순위 가중 커버리지율. 외부 provider 제안은 승인 필요"],
+  ["N-021", "P0", "Opportunity 파이프라인", "T", "/app/opportunities", "/network-intel/opportunities, /opportunities/{id}", "packages/domain/src/opportunityPipeline.ts", `${NI_UT}, ${NI_IT}`, "상태머신 + 단계 SLA + 전이→학습 라벨. 자동 발송 없음"],
+  ["N-022", "P0", "공개 판정 5단계 + masked discovery", "T", "/app/people/[id] (공유 범위), /app/network", "/network-intel/share-permissions/{contactId}", "packages/domain/src/disclosure.ts", `${NI_UT}, ${NI_IT}`, "can_process→…→can_reveal_contact. applyDisclosure 는 allowlist 로 payload 를 재구성한다"],
+  ["N-024", "P0", "Admin 데이터 품질 큐", "T", "", "/network-intel/data-quality", "modules/netintelJobs.ts (scanDataQuality), modules/netintel.ts (dataQuality)", `${NI_IT}, ${NI_JT}`, "중복 연락처·끝난 소속·회사 미지정·공유범위 미설정·projection 지연·실패 outbox·임베딩 적체를 큐에 담고, 고쳐지면 자동으로 닫는다. 전용 관리자 화면은 아직 없다(API 로 조회)"],
+  ["N-103", "P1", "관계강도 9신호 자동 계산", "T", "/app/people/[id]", "/network-intel/relationships/{contactId}", "packages/domain/src/relStrength.ts, modules/netintelJobs.ts (recomputeContactEdges)", `${NI_UT}, ${NI_IT}, ${NI_JT}`, "frequency/recency/reciprocity/meeting/deal/tenure/shared-context/trust/referral. inferred 전용은 상한 0.6. 워커가 연락처끼리의 엣지 강도와 EdgeQuality factor 를 하루 주기로 재계산한다(점수가 움직일 때만 샘플 기록)"],
+  ["N-104", "P1", "관계 감쇠 + 휴면 경고", "T", "/app/people/[id]", "/network-intel/relationships/{contactId}", "packages/domain/src/relStrength.ts", `${NI_UT}, ${NI_IT}`, "관계 유형별 tau. 휴면이면 설명에 stale 신호 표시"],
+  ["N-105", "P1", "Top-K 소개 경로 + 비즈니스 경로 재순위화", "T", "/app/network/paths/[contactId]", "/network-intel/paths", "packages/domain/src/pathRank.ts", `${NI_UT}, ${NI_IT}`, "PathCost + 소개자/회사/엣지 중복 다양성. 최소 3개 대안 경로"],
+  ["N-106", "P1", "저장된 검색 / 알림", "T", "/app/network (검색 저장), /app/inbox", "/network-intel/saved-searches, /saved-searches/{id}/run", "modules/netintel.ts, modules/netintelJobs.ts (processSavedSearchAlerts)", `${NI_IT}, ${NI_JT}`, "daily/weekly/monthly 주기로 워커가 실행하고 **새로 생긴 후보가 있을 때만** 알린다. 알림 본문에 후보 이름을 넣지 않는다(masked 가 섞일 수 있다)"],
+  ["N-107", "P1", "다국어 분류/별칭", "T", "/app/network/taxonomy", "/network-intel/aliases, /network-intel/aliases/{id}", "packages/domain/src/taxonomy.ts (findWithAliases/validateAlias), modules/netintel.ts", `${NI_UT}, ${NI_JT}`, "ko/en 사전 + 개인·조직 별칭. 등록한 별칭이 검색 의도 파싱에 바로 반영되고, 사전 밖 canonical 값은 거부한다. 검색에서 해석되지 않은 표현에서 바로 등록으로 이어진다"],
+  ["N-108", "P1", "Evidence 객체 + 추천 근거 추적", "T", "/app/network (Evidence Drawer)", "/network-intel/evidence", "packages/domain/src/recommend.ts (groundedReasons)", `${NI_UT}, ${NI_IT}`, "evidenceId 없는 사실 주장은 응답에서 제거된다"],
+  ["N-109", "P1", "1:1/소개/추천사/그룹 활동 기록", "T", "/app/people/[id]", "/network-intel/activities", "packages/domain/src/networkActivity.ts", `${NI_UT}, ${NI_IT}`, "활동은 evidence 로도 남아 관계강도의 근거가 된다"],
+  ["N-110", "P1", "Referral Partner / Ideal Customer", "T", "/app/network (파트너·ICP)", "/network-intel/referral-partners, /network-intel/icp", "packages/domain/src/networkActivity.ts", `${NI_UT}, ${NI_IT}`, "업종 일치가 아니라 양방향 교차 소개 가능성(inbound×outbound)"],
+];
+const niCount = (s) => NETWORK_INTEL.filter((r) => r[3] === s).length;
+lines.push(
+  "## 인적 네트워크 인텔리전스 (N-ID)",
+  "",
+  "> 출처: `AI_명함_인적네트워크_상용화_개발패키지_v3.0` (저장소 밖 번들). 지침은 `docs/NETWORK_INTELLIGENCE.md`.",
+  "> 그 번들의 `F-001~F-305` 는 위 197-ID 원장과 번호가 겹치면서 의미가 다르므로 `N-ID` 로 분리했다 — 원장 카운트는 그대로다.",
+  "",
+  `범위: 패키지 P0+P1. ✅ T ${niCount("T")} · 🟢 I ${niCount("I")} · 🟡 P ${niCount("P")} / 전체 ${NETWORK_INTEL.length}`,
+  "",
+  "| ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |",
+  "|---|---|---|---|---|---|---|---|---|",
+);
+for (const [id, p, t, s, ui, api, m, tests, note] of NETWORK_INTEL) {
+  const esc = (x) => String(x ?? "").replace(/\|/g, "\\|");
+  lines.push(`| ${id} | ${p} | ${esc(t)} | ${LABEL[s]} | ${esc(ui)} | ${esc(api)} | ${esc(m)} | ${esc(tests)} | ${esc(note)} |`);
+}
+lines.push("");
 writeFileSync(resolve(root, "docs/TRACEABILITY.md"), lines.join("\n"));
 console.log(`docs/TRACEABILITY.md written (${features.length} features)`);

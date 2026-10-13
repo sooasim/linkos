@@ -9,6 +9,9 @@
 - DB: `05_DATABASE_SCHEMA.sql` → 실제 마이그레이션은 `db/migrations/*.sql` (원본 테이블을 유지하고 추가만 한다).
 - 이벤트: `06_EVENT_CATALOG.yaml` → `packages/domain/src/events.ts` 의 이름/페이로드와 일치해야 한다.
 - 추적성: `docs/TRACEABILITY.md` 는 `pnpm traceability` 로 재생성한다. 테스트가 없는 기능은 "완료"로 표시하지 않는다.
+- 관계 인텔리전스(검색·관계강도·소개경로·공개판정·프로젝트 매칭): **`docs/NETWORK_INTELLIGENCE.md`** 가 상시 지침이다.
+  출처는 `dd/` 밖의 별개 번들(`AI_명함_인적네트워크_상용화_개발패키지_v3.0`)이며 Feature ID 는 `N-xxx` 네임스페이스를 쓴다 —
+  그 번들의 `F-001~F-305` 는 위 197개 원장과 번호가 겹치면서 의미가 다르므로 그대로 쓰면 안 된다.
 
 ## 2. 비타협 제품 원칙 (Non-negotiable)
 1. **교환이 가입보다 먼저.** 수신자(비회원)에게 로그인/앱설치 화면을 먼저 보여주지 않는다. `/x/[token]` 게스트 랜딩은 인증 없이 동작해야 한다.
@@ -19,6 +22,12 @@
 6. **AI는 사실 필드를 지어내지 않는다.** OCR 원문에 없는 값 생성 금지. 모든 필드는 `provenance`(ocr|user|sync|ai_inferred)와 `confidence` 를 가진다. AI 추론(Offer/Need/Match)은 화면에 "AI 추론" 라벨 + 확인 가능.
 7. **녹음/전사는 동의 기록(consent_records) 없이는 시작 불가.**
 8. **고위험 자동행동(메일 발송, 일정 확정, CRM 덮어쓰기)은 사용자 승인 필수.** 기본값은 초안(draft).
+9. **탐색·신원·연락처는 서로 다른 권한.** `can_process → can_discover → can_request_intro → can_reveal_identity → can_reveal_contact`.
+   2·3촌 후보는 기본 masked(`2촌 · 의료기기 유통 · 서울 · 소개경로 있음`)이며, 신원 공개가 금지되면 점수를 깎는 게 아니라
+   payload 를 masked 후보로 변환한다. 전체 그래프를 브라우저에 내려보내고 숨기는 방식 금지. (→ `docs/NETWORK_INTELLIGENCE.md` §2)
+10. **최단 경로를 "최적 소개 경로"라고 부르지 않는다.** 소개 경로는 관계강도·동의·휴면도를 반영해 재순위화하고 **대안 경로를 최소 3개** 제시한다. (§4)
+11. **추천 이유는 실재하는 `evidenceId` 에 연결된다.** 재현 불가능한 근거는 표시하지 않는다. Hard gate(소유권·동의·필수조건)는 항상 점수보다 먼저 적용한다. (§5)
+12. **LLM 은 권한·사실·경로·점수의 최종 결정권자가 아니다.** intent/추출/분해/설명/초안까지만 담당하고 canonical commit 은 deterministic 서비스가 한다. (§7)
 
 ## 3. 보안·개인정보 규칙
 - 교환 토큰: ≥128bit 랜덤(base64url), **DB에는 SHA-256 해시만 저장**, TTL·1회성/재사용 제한·revoke·rate limit. 토큰에 PII 금지.

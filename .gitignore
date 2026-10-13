@@ -1,8 +1,17 @@
 node_modules/
 .next/
-out/
-dist/
-coverage/
+# 아래 세 패턴은 **깊이를 제한해야 한다**. 깊이 없는 `coverage/` 가 소스 경로
+# apps/web/src/app/.../coverage/route.ts 를 조용히 제외해, 화면이 404 를 받는 상태로 배포될 뻔했다.
+/out/
+apps/*/out/
+/dist/
+apps/*/dist/
+packages/*/dist/
+services/*/dist/
+/coverage/
+apps/*/coverage/
+packages/*/coverage/
+services/*/coverage/
 playwright-report/
 test-results/
 .env

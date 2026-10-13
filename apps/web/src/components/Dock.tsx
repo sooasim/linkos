@@ -141,6 +141,10 @@ const SIDE: { href: string; label: NavKey; icon: IconName }[] = [
   { href: "/app/messages", label: "messages", icon: "message" },
   { href: "/app/calendar", label: "calendar", icon: "calendar" },
   { href: "/app/intros", label: "intros", icon: "room" },
+  // 인적네트워크 인텔리전스 (N-ID · docs/NETWORK_INTELLIGENCE.md)
+  { href: "/app/network", label: "network", icon: "layers" },
+  { href: "/app/projects", label: "projects", icon: "flag" },
+  { href: "/app/opportunities", label: "opportunities", icon: "bolt" },
   { href: "/app/events", label: "events", icon: "flag" },
   { href: "/app/team", label: "team", icon: "people" },
   { href: "/app/org", label: "org", icon: "building" },

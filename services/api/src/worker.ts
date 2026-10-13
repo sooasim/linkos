@@ -19,6 +19,7 @@ import { purgeOldVitals } from "./modules/analytics";
 import { sealAuditChain } from "./modules/auditChain";
 import { consumeCatalogEvent } from "./modules/consumers";
 import { enqueueRequiredCrmSync } from "./modules/policy";
+import { consumeNetworkEvent, processNetworkIntel } from "./modules/netintelJobs";
 
 /** Publish outbox events (at-least-once). Consumers must be idempotent. */
 export async function relayOutbox(batch = 100): Promise<number> {
@@ -104,6 +105,11 @@ async function dispatch(c: import("pg").PoolClient, type: string, payload: any) 
       }
       break;
     default:
+      // N-013: 인적네트워크 이벤트(network.*)는 기능 원장 카탈로그와 별도 네임스페이스다
+      if (type.startsWith("network.")) {
+        await consumeNetworkEvent(c, type, payload);
+        break;
+      }
       // remaining catalog consumers (guest.claimed, meeting.actions.extracted, privacy.deletion.requested, …)
       await consumeCatalogEvent(c, type, payload);
       break;
@@ -159,8 +165,10 @@ export async function tick() {
   await q("DELETE FROM card_view_daily WHERE day < current_date - 400"); // X-003 retention: ~13 months of daily counts
   // §20 audit durability: link rows written while the chain lock was busy (never blocks; next tick retries)
   const auditSealed = await sealAuditChain().catch((e) => (log("warn", "worker.audit_seal_failed", { error: (e as Error).message }), 0));
+  // N-103 엣지 강도 · N-106 저장된 검색 알림 · N-024 데이터 품질 스캔
+  const netintel = await processNetworkIntel();
   if (Math.random() < 0.01) await purgeOldVitals().catch(() => 0); // §20 RUM sample retention (90 days)
-  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed, exportsBuilt };
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed, exportsBuilt, netEdges: netintel.edges, netAlerts: netintel.alerts, netQuality: netintel.quality };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -172,7 +180,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     while (!stopping) {
       try {
         const r = await tick();
-        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged || r.pushed || r.webhooks || r.exportsBuilt) log("info", "worker.tick", r);
+        if (r.relayed || r.synced || r.deleted || r.transcribed || r.purged || r.pushed || r.webhooks || r.exportsBuilt || r.netEdges || r.netAlerts || r.netQuality) log("info", "worker.tick", r);
       } catch (e) {
         log("error", "worker.tick_failed", { error: (e as Error).message });
       }

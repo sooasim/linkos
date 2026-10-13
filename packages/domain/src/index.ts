@@ -45,3 +45,15 @@ export * from "./auditChain";
 export * from "./webVitals";
 export * from "./brief";
 export * from "./codeGuard";
+// 인적네트워크 인텔리전스 (N-ID · docs/NETWORK_INTELLIGENCE.md)
+export * from "./taxonomy";
+export * from "./disclosure";
+export * from "./relStrength";
+export * from "./pathRank";
+export * from "./searchIntent";
+export * from "./recommend";
+export * from "./coverage";
+export * from "./networkActivity";
+export * from "./opportunityPipeline";
+export * from "./graphAdapter";
+export * from "./networkEvents";

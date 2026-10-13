@@ -557,7 +557,12 @@ export async function seedNetworkIntel(db: pg.Pool, run: Run, userA: string, use
                     ('region', '동남아', '베트남', true),
                     ('role', '핵심고객', '구매/조달', false)) AS v(kind, alias, canonical, org)
       WHERE NOT EXISTS (
-        SELECT 1 FROM taxonomy_aliases a WHERE a.normalized_alias = lower(v.alias) AND a.kind = v.kind)`,
+        -- 소유자/조직 범위로 좁힌다. 전역으로 검사하면 다른 사용자가 같은 표현을 먼저 등록해 둔 DB 에서
+        -- 이 시드가 조용히 건너뛴다(별칭은 사용자·조직별이므로 같은 표현이 공존할 수 있다).
+        SELECT 1 FROM taxonomy_aliases a
+         WHERE a.normalized_alias = lower(v.alias) AND a.kind = v.kind
+           AND a.owner_user_id IS NOT DISTINCT FROM (CASE WHEN v.org THEN NULL ELSE $1::uuid END)
+           AND a.organization_id IS NOT DISTINCT FROM (CASE WHEN v.org THEN $2::uuid ELSE NULL END))`,
     [userA, N.org],
   );
 

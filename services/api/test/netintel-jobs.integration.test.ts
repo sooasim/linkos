@@ -378,11 +378,25 @@ describe("시드 더미 데이터", () => {
     expect(masked!.disclosure).toBe("masked");
     expect(masked!.maskedLabel).toContain("베트남");
 
-    // 이름·회사·연락처가 응답 어디에도 없다 (인수 게이트)
+    // 인수 게이트: masked 후보의 신원 필드가 비어 있다
+    expect(masked!.displayName).toBeNull();
+    expect(masked!.companyName).toBeNull();
+    expect(masked!.jobTitle).toBeNull();
+    expect(masked!.email).toBeNull();
+    expect(masked!.phone).toBeNull();
+
+    // 그 사람을 특정하는 문자열이 응답 어디에도 없다
     const json = JSON.stringify(res);
-    for (const pii of ["노현우", "하노이메디", "hyunwoo@hanoimedi.example.test", "010-0000-2003"]) expect(json).not.toContain(pii);
+    for (const pii of ["노현우", "hyunwoo@hanoimedi.example.test", "010-0000-2003"]) expect(json).not.toContain(pii);
     // 탐색을 거부한 연락처는 아예 나타나지 않는다
     expect(json).not.toContain("조은별");
+
+    // 회사명(하노이메디)은 전역 금지 목록에 넣지 않는다 — 같은 회사의 **다른** 연락처(백도현,
+    // 조직 공유 + contact 범위)가 정당하게 공개되기 때문이다. masked 후보 자신의 companyName 이
+    // null 인지를 위에서 검사하는 것이 올바른 게이트다. 산업·지역 facet 으로 소속을 추론할
+    // 여지는 masked discovery 설계가 수용하는 수준이다(§2: 신원 **필드**를 내보내지 않는다).
+    const disclosedSameCompany = res.results.find((r) => r.resultId === S.cc.dohyun);
+    if (disclosedSameCompany) expect(disclosedSameCompany.companyName).toBe("하노이메디");
 
     const paths = await netintel.introPaths(sctx, { targetContactId: S.c.hyunwoo, k: 3, maxHops: 3 });
     expect(paths.paths.length).toBeGreaterThanOrEqual(3);

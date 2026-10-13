@@ -231,9 +231,13 @@ describe("F-064 referral attribution for Google and Apple sign-ups", () => {
     const r = await apple.appleCallback(ctx(null), form);
     expect(r.isNew).toBe(true);
     expect(await one("SELECT 1 FROM referral_attributions WHERE referrer_user_id=$1 AND referred_user_id=$2 AND source='link'", [ref.id, r.userId])).toBeTruthy();
-    // the code is never stored for malformed input
+    // the code is never stored for malformed input.
+    // NOTE: this used to assert `referral_code LIKE '%OR%'`, which also matches a *legitimate* code —
+    // codes are random /^[A-Z0-9]{8}$/, so roughly 1 run in 100 generated one containing "OR" and the
+    // suite failed for no reason (seen in CI). Assert the real invariant instead: every stored code has
+    // the valid shape, so nothing malformed got through.
     await apple.appleAuthStart(ctx(null), { referralCode: "x' OR 1=1" });
-    expect(await one("SELECT 1 FROM apple_login_states WHERE referral_code LIKE '%OR%'")).toBeNull();
+    expect(await one("SELECT 1 FROM apple_login_states WHERE referral_code IS NOT NULL AND referral_code !~ '^[A-Z0-9]{8}$'")).toBeNull();
   });
 });
 

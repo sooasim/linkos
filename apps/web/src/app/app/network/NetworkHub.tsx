@@ -188,17 +188,31 @@ function SearchTab({ initialQuery }: { initialQuery: string }) {
     if (initialQuery) void run(initialQuery);
   }, [initialQuery, run]);
 
-  // 조건 chip 을 지우면 그 조건 없이 다시 검색한다(지침 §13: 파싱된 intent 는 읽기전용이 아니다)
+  // 조건 chip 을 지우면 그 조건 없이 다시 검색한다(지침 §13: 파싱된 intent 는 읽기전용이 아니다).
+  // 수정은 **누적**해야 한다 — 한 축만 보내면 서버가 나머지를 원문에서 다시 파싱해
+  // 먼저 지운 조건이 되살아난다.
+  const editable = (i: Intent): Partial<Intent> => ({
+    industries: i.industries,
+    geographies: i.geographies,
+    roles: i.roles,
+    capabilities: i.capabilities,
+    mustHave: i.mustHave,
+    niceToHave: i.niceToHave,
+    networkHopsMax: i.networkHopsMax,
+    recencyDays: i.recencyDays,
+    targetTypes: i.targetTypes,
+  });
   const removeChip = (key: ChipKey, value: string) => {
     if (!intent) return;
     const next = { ...intent, [key]: intent[key].filter((v) => v !== value) };
     setIntent(next);
-    void run(query, { [key]: next[key] } as Partial<Intent>);
+    void run(query, editable(next));
   };
   const setHops = (hops: number) => {
     if (!intent) return;
-    setIntent({ ...intent, networkHopsMax: hops });
-    void run(query, { networkHopsMax: hops });
+    const next = { ...intent, networkHopsMax: hops };
+    setIntent(next);
+    void run(query, editable(next));
   };
 
   return (

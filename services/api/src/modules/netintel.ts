@@ -121,6 +121,8 @@ interface NodeRow {
   sharePermission: SharePermission;
   discoveryOptOut: boolean;
   orgShareOptIn: boolean | null;
+  /** DB 원값. 조직 경유 엣지를 만들 때만 orgShareOptIn 으로 승격한다 */
+  orgShareOptInRaw: boolean | null;
   strength: number;
   lastContactAt: Date | null;
   introApproved: boolean;
@@ -198,11 +200,23 @@ function toNode(r: ContactRow): NodeRow {
     roleCategory: r.role_category_name ?? roleCategory(r.job_title),
     sharePermission: isSharePermission(r.share_permission) ? r.share_permission : DEFAULT_SHARE,
     discoveryOptOut: r.discovery_opt_out === true,
-    orgShareOptIn: r.org_share_opt_in,
+    // 조직 경유로 도달한 노드에만 의미가 있다(disclosure.ts 의 계약). 내 연락처에 실으면
+    // "조직에 공유 안 함" 설정이 내 주소록에서 그 사람을 지운다 → 조직 경유에서만 승격한다.
+    orgShareOptIn: null,
+    orgShareOptInRaw: r.org_share_opt_in,
     strength: Number(r.strength ?? 0.3),
     lastContactAt: r.last_contact_at,
     introApproved: r.intro_accepted,
   };
+}
+
+/**
+ * node-pg 는 `date` 컬럼을 **로컬 자정** Date 로 파싱한다. toISOString() 은 UTC 로 바꾸므로
+ * KST(+09:00)에서 하루 앞으로 밀린다(2021-03-01 → "2021-02-28"). 로컬 필드로 직접 만든다.
+ */
+function localDay(d: Date | null): string | null {
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function isSharePermission(v: unknown): v is SharePermission {
@@ -316,6 +330,7 @@ export async function loadNetwork(ctx: Ctx, db: Db = pool()): Promise<LoadedNetw
           sharePermission: "profile",
           discoveryOptOut: false,
           orgShareOptIn: true,
+          orgShareOptInRaw: true,
           strength: COLLEAGUE_STRENGTH,
           lastContactAt: null,
           introApproved: false,
@@ -334,6 +349,8 @@ export async function loadNetwork(ctx: Ctx, db: Db = pool()): Promise<LoadedNetw
         );
         for (const r of shared) {
           const n = nodes.get(r.id) ?? toNode(r);
+          // 조직 경유로 도달하는 노드이므로 이제 org 공유 동의가 판정에 들어간다
+          n.orgShareOptIn = n.orgShareOptInRaw;
           nodes.set(n.id, n);
           edges.push(makeEdge(r.owner_user_id, n, "KNOWS", n.strength, { confirmed: true, inferred: false, hops: 2, ownedByViewer: r.owner_user_id === meId }));
         }
@@ -357,6 +374,7 @@ export async function loadNetwork(ctx: Ctx, db: Db = pool()): Promise<LoadedNetw
     sharePermission: "introduction",
     discoveryOptOut: false,
     orgShareOptIn: null,
+    orgShareOptInRaw: null,
     strength: 1,
     lastContactAt: null,
     introApproved: true,
@@ -449,7 +467,8 @@ export async function graphSlice(ctx: Ctx, opts: { hops?: number; maxNodes?: num
   // 레이아웃도 서버에서 계산한다(F-133 과 같은 결정적 force layout). 브라우저는 그릴 것만 받는다.
   const width = 900;
   const height = 640;
-  const pos2 = forceLayout(layoutNodes, layoutEdges, { width, height, seed: 17 });
+  // 3D 뷰는 2D 좌표를 쓰지 않는다. 둘 다 계산하면 요청 한 건이 동기 CPU 로 이벤트 루프를 두 배로 막는다.
+  const pos2: Record<string, { x: number; y: number } | undefined> = opts.dim === 3 ? {} : forceLayout(layoutNodes, layoutEdges, { width, height, seed: 17 });
   // 3D 는 요청할 때만 계산한다 — 2D 화면에서 쓰지 않는 좌표를 매번 계산할 이유가 없다.
   const pos3 = opts.dim === 3 ? forceLayout3D(layoutNodes, layoutEdges, { size: 600, seed: 29 }) : null;
 
@@ -635,6 +654,11 @@ export async function listEvidence(ctx: Ctx, entityType: string, entityId: strin
 export async function recordEvidence(ctx: Ctx, body: { entityType: string; entityId: string; evidenceType: Evidence["type"]; summary: string; occurredAt?: string | null; confidence?: number; inferred?: boolean; payload?: Record<string, unknown> }, db: Db = pool()) {
   const userId = requireUser(ctx);
   if (!body.summary?.trim()) throw badRequest("summary_required");
+  // 내 연락처에 대한 근거만 기록한다 — 아니면 임의 uuid 에 텍스트를 붙여 두고 나중에 읽어낼 수 있다
+  if (body.entityType === "contact") {
+    const ownEntity = await one<{ id: string }>("SELECT id FROM contacts WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL", [body.entityId, userId], db);
+    if (!ownEntity) throw notFound("contact");
+  }
   const row = await one<{ id: string }>(
     `INSERT INTO evidence_records (owner_user_id, entity_type, entity_id, evidence_type, summary, occurred_at, confidence, inferred, payload)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
@@ -661,7 +685,7 @@ export interface SearchOptions {
   preloaded?: LoadedNetwork;
 }
 
-function factsFor(node: NodeRow, strength: number, capabilities: string[], needs: string[]): CandidateFacts {
+function factsFor(node: NodeRow, strength: number, capabilities: string[], needs: string[], reachabilityQuality = 0): CandidateFacts {
   return {
     industries: node.industry ? [node.industry] : [],
     regions: node.region ? [node.region] : [],
@@ -674,6 +698,7 @@ function factsFor(node: NodeRow, strength: number, capabilities: string[], needs
     dealsWon: 0,
     userPreference: 0,
     confidence: 1,
+    reachabilityQuality,
   };
 }
 
@@ -696,6 +721,7 @@ export async function search(ctx: Ctx, opts: SearchOptions) {
   const repo = new InMemoryGraphRepository(net.edges);
   const found = await repo.neighbors(net.meId, intent.networkHopsMax, 1500);
   const hopsOf = new Map(found.map((n) => [n.nodeId, n.hops]));
+  const qualityOf = new Map(found.map((n) => [n.nodeId, n.bestQuality]));
 
   const candidateIds = found.map((n) => n.nodeId).filter((id) => net.nodes.get(id)?.kind === "contact");
   const [caps, evidenceMap] = await Promise.all([capabilitiesFor(candidateIds), evidenceFor(userId, "contact", candidateIds)]);
@@ -708,7 +734,7 @@ export async function search(ctx: Ctx, opts: SearchOptions) {
     if (decision.level === "hidden") continue;
 
     const cap = caps.get(id) ?? { provides: [], needs: [] };
-    const facts = factsFor(node, node.strength, cap.provides, cap.needs);
+    const facts = factsFor(node, node.strength, cap.provides, cap.needs, qualityOf.get(id) ?? 0);
     const evidence = evidenceMap.get(id) ?? [];
 
     // 경로는 상위 후보에만 계산한다(3 hop 열거는 비싸다). 1촌은 경로가 자명하다.
@@ -728,7 +754,10 @@ export async function search(ctx: Ctx, opts: SearchOptions) {
       },
       facts,
       disclosure: decision,
-      facets: { hops, industry: node.industry, region: node.region, hasPath: hops <= 1 || paths.length > 0 },
+      // BFS 로 발견된 후보는 **정의상 경로가 존재한다**(아직 열거만 안 했다).
+      // paths.length 로 판단하면 2·3촌 라벨이 늘 "소개경로 없음" 이 되는데, 같은 응답 뒤쪽에서
+      // 경로를 채워 넣으므로 라벨과 내용이 모순된다.
+      facets: { hops, industry: node.industry, region: node.region, hasPath: true },
       evidence,
       paths,
       gate: { isSelf: false, blocked: false, deleted: false },
@@ -839,7 +868,15 @@ export async function setSharePermission(ctx: Ctx, contactId: string, body: { sh
      RETURNING share_permission, discovery_opt_out, org_share_opt_in`,
     [contactId, body.sharePermission ?? null, body.discoveryOptOut ?? null, body.orgShareOptIn ?? null, body.purposeScope ?? null, userId, Object.hasOwn(body, "orgShareOptIn")],
   );
-  await audit(pool(), ctx, "netintel.share_permission_changed", "contact", contactId, { sharePermission: row?.share_permission, discoveryOptOut: row?.discovery_opt_out });
+  // outbox 에 남겨 소비자가 열린 기회를 보류하게 한다. 이게 없으면 netintelJobs 의
+  // network.disclosure.changed 분기가 영원히 호출되지 않는 죽은 경로다.
+  await tx(async (c) => {
+    await c.query(
+      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload) VALUES ('contact',$1,'network.disclosure.changed',$2)`,
+      [contactId, JSON.stringify({ contact_id: contactId, share_permission: row?.discovery_opt_out ? "none" : (row?.share_permission ?? DEFAULT_SHARE) })],
+    );
+    await audit(c, ctx, "netintel.share_permission_changed", "contact", contactId, { sharePermission: row?.share_permission, discoveryOptOut: row?.discovery_opt_out });
+  });
   return { contactId, ...row };
 }
 
@@ -922,7 +959,7 @@ export async function listProjects(ctx: Ctx) {
       status: r.status,
       targetRegions: r.target_regions,
       targetIndustries: r.target_industries,
-      deadline: r.deadline ? r.deadline.toISOString().slice(0, 10) : null,
+      deadline: localDay(r.deadline),
       requirementsConfirmed: r.requirements_confirmed_at != null,
       requirementCount: r.requirement_count,
       gapCount: r.gap_count,
@@ -1015,7 +1052,7 @@ export async function projectCoverage(ctx: Ctx, projectId: string) {
   );
   if (!p) throw notFound("project");
   const reqs = await q<{ id: string; kind: string; name: string; description: string | null; priority: number; industry: string | null; region: string | null; min_confidence: string; source_sentence: string | null; provenance: string; accepted_at: Date | null }>(
-    "SELECT id, kind, name, description, priority, industry, region, min_confidence::text, source_sentence, provenance, accepted_at FROM project_requirements WHERE project_id=$1 ORDER BY priority, created_at",
+    "SELECT id, kind, name, description, priority, industry, region, min_confidence::text, source_sentence, provenance, accepted_at FROM project_requirements WHERE project_id=$1 ORDER BY priority, created_at LIMIT 30",
     [projectId],
   );
 
@@ -1112,6 +1149,25 @@ export async function listOpportunities(ctx: Ctx, opts: { projectId?: string | n
 export async function createOpportunity(ctx: Ctx, body: { projectId?: string | null; requirementId?: string | null; targetContactId: string; score?: number; explanation?: Record<string, unknown>; recommendedPath?: unknown[] }) {
   const userId = requireUser(ctx);
   if (!body.targetContactId) throw badRequest("target_required");
+  // 대상이 내 네트워크에서 탐색 가능한 사람인지 확인한다. 이 게이트가 없으면 임의의 contact uuid 를
+  // 파이프라인에 넣을 수 있고, 201 과 FK 실패의 응답 차이가 "그 uuid 가 존재하는가" 를 알려준다.
+  const oppNet = await loadNetwork(ctx);
+  const targetNode = oppNet.nodes.get(body.targetContactId);
+  if (!targetNode || targetNode.kind === "me") throw notFound("contact");
+  const oppHops = (await new InMemoryGraphRepository(oppNet.edges).neighbors(oppNet.meId, 3, 3000)).find((x) => x.nodeId === body.targetContactId)?.hops ?? 3;
+  if (decisionFor(targetNode, oppHops, oppNet.meId).level === "hidden") throw forbidden("이 연락처는 네트워크 탐색에서 제외되었습니다.");
+  // 프로젝트·요구사항도 내 것이어야 한다 — 아니면 응답에 남의 프로젝트 이름이 실린다
+  if (body.projectId) {
+    const ownProject = await one<{ id: string }>("SELECT id FROM projects WHERE id=$1 AND owner_user_id=$2", [body.projectId, userId]);
+    if (!ownProject) throw notFound("project");
+  }
+  if (body.requirementId) {
+    const ownReq = await one<{ id: string }>(
+      "SELECT r.id FROM project_requirements r JOIN projects p ON p.id = r.project_id WHERE r.id=$1 AND p.owner_user_id=$2",
+      [body.requirementId, userId],
+    );
+    if (!ownReq) throw notFound("requirement");
+  }
   const existing = await one<{ id: string }>(
     "SELECT id FROM opportunities WHERE owner_user_id=$1 AND target_contact_id=$2 AND COALESCE(project_id::text,'') = COALESCE($3::text,'') AND stage NOT IN ('won','lost','dismissed')",
     [userId, body.targetContactId, body.projectId ?? null],
@@ -1350,7 +1406,7 @@ export async function listRoles(ctx: Ctx, contactId: string) {
       ORDER BY r.is_current DESC, r.started_on DESC NULLS LAST, r.ended_on DESC NULLS LAST LIMIT 100`,
     [contactId],
   );
-  const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  const day = localDay;
   return {
     contactId,
     roles: rows.map((r) => ({
@@ -1504,6 +1560,16 @@ export async function linkCapability(ctx: Ctx, body: { contactId: string; capabi
   const userId = requireUser(ctx);
   const owned = await one<{ id: string }>("SELECT id FROM contacts WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL", [body.contactId, userId]);
   if (!owned) throw notFound("contact");
+  // capability 는 소유자별 어휘다. 남의 id 를 연결하면 그 이름이 내 추천 이유에 실린다.
+  const linkable = await one<{ id: string }>(
+    `SELECT c.id FROM capabilities c
+      WHERE c.id=$1 AND (c.owner_user_id=$2
+        OR (c.organization_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM organization_members m
+           WHERE m.organization_id=c.organization_id AND m.user_id=$2 AND m.status='active')))`,
+    [body.capabilityId, userId],
+  );
+  if (!linkable) throw notFound("capability");
   await pool().query(
     `INSERT INTO contact_capabilities (contact_id, capability_id, kind, confidence, provenance)
      VALUES ($1,$2,COALESCE($3::text,'provides'),COALESCE($4::numeric,0.7),COALESCE($5::text,'user'))
@@ -1533,7 +1599,17 @@ export async function dataQuality(ctx: Ctx) {
       "SELECT kind, severity, count(*)::int AS n FROM data_quality_items WHERE owner_user_id=$1 AND status='open' GROUP BY kind, severity ORDER BY n DESC",
       [userId],
     ),
-    one<{ pending: number; oldest: Date | null }>("SELECT count(*)::int AS pending, min(created_at) AS oldest FROM outbox_events WHERE published_at IS NULL"),
+    // 이 사용자가 만든 이벤트만 본다. 플랫폼 전체 적체를 사용자 응답에 넣으면 다른 테넌트의 쓰기량이 드러난다.
+    one<{ pending: number; oldest: Date | null }>(
+      `SELECT count(*)::int AS pending, min(e.created_at) AS oldest
+         FROM outbox_events e
+        WHERE e.published_at IS NULL AND e.event_type LIKE 'network.%'
+          AND (e.aggregate_id IN (SELECT id FROM projects WHERE owner_user_id=$1)
+            OR e.aggregate_id IN (SELECT id FROM opportunities WHERE owner_user_id=$1)
+            OR e.aggregate_id IN (SELECT id FROM contacts WHERE owner_user_id=$1)
+            OR e.aggregate_id IN (SELECT cr.id FROM contact_relationships cr WHERE cr.owner_user_id=$1))`,
+      [userId],
+    ),
     one<{ n: number }>(
       `SELECT count(*)::int AS n FROM contacts c LEFT JOIN contact_share_permissions sp ON sp.contact_id=c.id
         WHERE c.owner_user_id=$1 AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND sp.contact_id IS NULL`,

@@ -95,13 +95,44 @@ describe("N-008 소속 이력", () => {
   });
 
   it("현재 소속의 역할 카테고리가 masked 라벨에 쓰인다", async () => {
+    // 내 연락처는 신원이 보이므로 masked 라벨을 직접 확인할 수 없다. 그래서 소속 이력이
+    // 실제로 역할 카테고리를 덮어쓰는지를 listRoles 로 확인하고(직책 텍스트는 "사원"),
+    // 그 값이 maskedLabel 생성에 쓰이는 것은 도메인 단위테스트가 보장한다.
     const u = await user("rolelabel");
     const c = await addContact(u.id, contact({ fullName: "라벨대표", jobTitle: "사원" }));
     await netintel.addRole(ctx(u.id), { contactId: c.id, companyName: "라벨회사", title: "구매팀 과장" });
-    // 직책 텍스트는 "사원"이지만 소속 이력의 카테고리(구매/조달)가 우선한다
+    expect((await netintel.listRoles(ctx(u.id), c.id)).roles[0]!.roleCategory).toBe("구매/조달");
+
     const nb = await netintel.neighbors(ctx(u.id), { hops: 1 });
     const hit = nb.neighbors.find((x) => x.contactId === c.id);
     expect(hit).toBeTruthy();
+    // 내 연락처이므로 신원이 공개되고 masked 라벨은 null 이어야 한다(공유 설정과 무관)
+    expect(hit!.displayName).toBe("라벨대표");
+    expect(hit!.maskedLabel).toBeNull();
+  });
+
+  it("공유 범위를 none 으로 둬도 내 연락처는 내 네트워크에서 사라지지 않는다", async () => {
+    // 리뷰에서 드러난 결함: share_permission / org_share_opt_in 이 소유자 본인에게도 적용돼
+    // "조직에 공유 안 함" 설정이 내 주소록에서 그 사람을 지웠다.
+    const u = await user("ownview");
+    const c = await addContact(u.id, contact({ fullName: "비공유대표" }));
+    await netintel.setSharePermission(ctx(u.id), c.id, { sharePermission: "none", orgShareOptIn: false });
+    const nb = await netintel.neighbors(ctx(u.id), { hops: 2 });
+    const hit = nb.neighbors.find((x) => x.contactId === c.id);
+    expect(hit).toBeTruthy();
+    expect(hit!.displayName).toBe("비공유대표");
+    // 경로 조회도 막히지 않는다
+    const paths = await netintel.introPaths(ctx(u.id), { targetContactId: c.id });
+    expect(paths.paths.length).toBeGreaterThan(0);
+  });
+
+  it("공개 범위 변경이 network.disclosure.changed 를 발행한다", async () => {
+    // 이벤트를 발행하는 코드가 없어 소비자가 죽은 경로였다
+    const u = await user("discevent");
+    const c = await addContact(u.id, contact({ fullName: "이벤트대표" }));
+    await netintel.setSharePermission(ctx(u.id), c.id, { sharePermission: "profile" });
+    const events = await q<{ event_type: string }>("SELECT event_type FROM outbox_events WHERE aggregate_id=$1", [c.id]);
+    expect(events.map((e) => e.event_type)).toContain("network.disclosure.changed");
   });
 
   it("새 현재 소속이 들어오면 기존 현재 소속이 닫힌다", async () => {
@@ -288,13 +319,13 @@ describe("N-024 워커: 데이터 품질 스캔", () => {
     const r = await netintel.addRole(ctx(u.id), { contactId: c.id, companyName: "옛회사", title: "팀장" });
     await q("UPDATE contact_company_roles SET is_current = true, ended_on = current_date - 30 WHERE id = $1", [r.roleId]);
 
-    await jobs.scanDataQuality();
+    await jobs.scanDataQuality(true);
     const kinds = (await q<{ kind: string }>("SELECT DISTINCT kind FROM data_quality_items WHERE owner_user_id=$1 AND status='open'", [u.id])).map((k) => k.kind);
     expect(kinds).toContain("duplicate_contact");
     expect(kinds).toContain("stale_role");
 
     const before = await one<{ n: string }>("SELECT count(*)::text AS n FROM data_quality_items WHERE owner_user_id=$1", [u.id]);
-    await jobs.scanDataQuality();
+    await jobs.scanDataQuality(true);
     expect((await one<{ n: string }>("SELECT count(*)::text AS n FROM data_quality_items WHERE owner_user_id=$1", [u.id]))!.n).toBe(before!.n);
 
     const summary = await netintel.dataQuality(ctx(u.id));
@@ -306,11 +337,11 @@ describe("N-024 워커: 데이터 품질 스캔", () => {
     const c = await addContact(u.id, contact({ fullName: "고칠소속" }));
     const r = await netintel.addRole(ctx(u.id), { contactId: c.id, companyName: "닫을회사", title: "대표" });
     await q("UPDATE contact_company_roles SET is_current = true, ended_on = current_date - 10 WHERE id = $1", [r.roleId]);
-    await jobs.scanDataQuality();
+    await jobs.scanDataQuality(true);
     expect((await q("SELECT 1 FROM data_quality_items WHERE owner_user_id=$1 AND kind='stale_role' AND status='open'", [u.id])).length).toBeGreaterThan(0);
 
     await netintel.endRole(ctx(u.id), r.roleId, {});
-    await jobs.scanDataQuality();
+    await jobs.scanDataQuality(true);
     expect((await q("SELECT 1 FROM data_quality_items WHERE owner_user_id=$1 AND kind='stale_role' AND status='open'", [u.id])).length).toBe(0);
   });
 });
@@ -329,6 +360,36 @@ describe("N-013 network.* 이벤트 소비", () => {
       client.release();
     }
     expect((await one<{ stage: string }>("SELECT stage FROM opportunities WHERE id=$1", [o.opportunityId]))!.stage).toBe("dismissed");
+  });
+
+  it("다른 소유자의 연락처·프로젝트로는 기회를 만들 수 없다", async () => {
+    const a = await user("oppa");
+    const b = await user("oppb");
+    const c = await addContact(a.id, contact({ fullName: "남의연락처" }));
+    const p = await netintel.createProject(ctx(a.id), { name: "남의 프로젝트", description: "파트너가 필요합니다." });
+    const mine = await addContact(b.id, contact({ fullName: "내연락처" }));
+    // 대상이 내 네트워크에 없으면 404 — 201/FK실패 차이가 uuid 존재 여부를 알려주면 안 된다
+    await expect(netintel.createOpportunity(ctx(b.id), { targetContactId: c.id })).rejects.toMatchObject({ status: 404 });
+    await expect(netintel.createOpportunity(ctx(b.id), { targetContactId: mine.id, projectId: p.projectId })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("탐색을 거부한 연락처는 기회로 만들 수 없다", async () => {
+    const u = await user("oppoptout");
+    const c = await addContact(u.id, contact({ fullName: "거부대표" }));
+    await netintel.setSharePermission(ctx(u.id), c.id, { discoveryOptOut: true, sharePermission: "none" });
+    await expect(netintel.createOpportunity(ctx(u.id), { targetContactId: c.id })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("남의 capability 나 연락처에는 연결·근거 기록을 할 수 없다", async () => {
+    const a = await user("capa");
+    const b = await user("capb");
+    const theirCap = await netintel.upsertCapability(ctx(a.id), { name: "남의 역량" });
+    const theirContact = await addContact(a.id, contact({ fullName: "남의연락처2" }));
+    const myContact = await addContact(b.id, contact({ fullName: "내연락처2" }));
+    await expect(netintel.linkCapability(ctx(b.id), { contactId: myContact.id, capabilityId: theirCap.capabilityId })).rejects.toMatchObject({ status: 404 });
+    await expect(
+      netintel.recordEvidence(ctx(b.id), { entityType: "contact", entityId: theirContact.id, evidenceType: "note", summary: "침입" }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("모르는 타입은 false 를 돌려줘 다음 소비자로 넘어간다", async () => {
@@ -478,7 +539,7 @@ describe("시드 더미 데이터", () => {
     );
     expect(computed.length).toBeGreaterThan(0);
 
-    await jobs.scanDataQuality();
+    await jobs.scanDataQuality(true);
     const kinds = (await q<{ kind: string }>("SELECT DISTINCT kind FROM data_quality_items WHERE owner_user_id=$1 AND status='open'", [SEED_USER_A])).map((k) => k.kind);
     // 시드가 일부러 남긴 중복 연락처와 끝난 소속을 잡아낸다
     expect(kinds).toContain("duplicate_contact");

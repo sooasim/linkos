@@ -34,7 +34,6 @@ export interface Link3D {
   confirmed: boolean;
 }
 
-const COLOR: Record<string, string> = { me: "--accent", member: "--color-signal", person: "--fg" };
 
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
@@ -79,14 +78,25 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
   const [spin, setSpin] = useState(false);
   const [hover, setHover] = useState<Node3D | null>(null);
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
-  const reduceMotion = useRef(false);
+  // ref 로 두면 첫 렌더에서 값이 false 라 버튼의 disabled 가 올바르게 그려지지 않고,
+  // 변경되어도 리렌더가 일어나지 않는다. state + 미디어쿼리 변경 구독으로 바꾼다.
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
-    reduceMotion.current = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion.current) setSpin(false);
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => {
+      setReduceMotion(mq.matches);
+      if (mq.matches) setSpin(false);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  /** 자동 회전 중인가 — 이 값이 false 면 렌더 루프가 한 번만 그리고 멈춘다. */
+  const animating = spin && !reduceMotion;
 
   /** 노드를 화면 좌표로 투영한다. 깊이 순으로 정렬해 뒤쪽을 먼저 그린다. */
   const project = useCallback(
@@ -122,7 +132,9 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
     [nodes, yaw, pitch],
   );
 
-  // 렌더 루프. spin 이 꺼져 있으면 상태 변화가 있을 때만 그린다(배터리·멀미 고려).
+  // 렌더 루프. 주석은 "상태 변화가 있을 때만 그린다" 였지만 실제로는 조건 없이 매 프레임
+  // requestAnimationFrame 을 다시 걸어 60fps 로 영구 실행됐다(노트북 팬이 계속 돈다).
+  // spin 이 꺼져 있으면 **한 번만** 그리고 멈춘다.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -140,8 +152,15 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
       if (!g) return;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, w, h);
+      // 토큰은 프레임마다 읽지 않는다 — getComputedStyle 은 레이아웃을 강제하고,
+      // 노드마다 호출하면 프레임당 수백 번이 된다. 타입별로 한 번만 읽어 둔다.
       const fg = cssVar("--fg", "#1B1B24");
       const bg = cssVar("--bg-elev", "#ffffff");
+      const palette: Record<string, string> = {
+        me: cssVar("--accent", fg),
+        member: cssVar("--color-signal", fg),
+        person: fg,
+      };
       const placed = project(w, h);
       const pos = new Map(placed.map((p) => [p.n.id, p]));
 
@@ -162,7 +181,7 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
       }
 
       for (const p of placed) {
-        const color = cssVar(COLOR[p.n.type] ?? "--fg", fg);
+        const color = palette[p.n.type] ?? fg;
         drawShape(g, p.n.type, p.sx, p.sy, p.r, p.n.masked, color, bg);
         const showLabel = p.n.type !== "person" || hover?.id === p.n.id || placed.length < 40;
         if (showLabel && p.n.label) {
@@ -175,15 +194,17 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
         }
       }
 
-      if (spin && !reduceMotion.current && !drag.current) setYaw((v) => v + 0.0025);
-      if (!stopped) raf = requestAnimationFrame(draw);
+      if (animating && !drag.current) setYaw((v) => v + 0.0025);
+      // 자동 회전 중일 때만 다음 프레임을 예약한다. 그 외에는 yaw/pitch/hover 가 바뀔 때
+      // 이 effect 가 다시 돌면서 한 번 그린다.
+      if (animating && !stopped) raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => {
       stopped = true;
       cancelAnimationFrame(raf);
     };
-  }, [project, links, spin, hover]);
+  }, [project, links, spin, hover, reduceMotion, animating]);
 
   const pick = (ev: React.PointerEvent<HTMLCanvasElement>): Node3D | null => {
     const canvas = canvasRef.current;
@@ -207,9 +228,9 @@ export function Network3D({ nodes, links, truncated }: { nodes: Node3D[]; links:
           type="button"
           className="chip"
           aria-pressed={spin}
-          disabled={reduceMotion.current}
+          disabled={reduceMotion}
           onClick={() => setSpin(!spin)}
-          title={reduceMotion.current ? "동작 줄이기 설정이 켜져 있어 회전을 사용할 수 없습니다" : undefined}
+          title={reduceMotion ? "동작 줄이기 설정이 켜져 있어 회전을 사용할 수 없습니다" : undefined}
         >
           <Icon name="bolt" size={13} aria-hidden />
           {spin ? "회전 멈춤" : "자동 회전"}

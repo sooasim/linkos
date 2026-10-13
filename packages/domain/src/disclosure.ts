@@ -60,25 +60,39 @@ const DENY = (reasons: string[]): DisclosureDecision => ({
  */
 export function evaluateDisclosure(s: DisclosureSubject): DisclosureDecision {
   if (s.deleted) return DENY(["삭제된 레코드"]);
+  // 당사자가 탐색을 거부한 것은 소유자에게도 적용된다 — 네트워크 기능에서 빼 달라는 명시적 의사다.
   if (s.optOut) return DENY(["당사자가 네트워크 탐색을 거부했습니다"]);
+
+  // share_permission 과 org_share_opt_in 은 **다른 뷰어**에게 무엇을 보여줄지 정하는 값이다.
+  // 소유자가 자기 연락처를 볼 때 이것으로 막으면, "조직에 공유하지 않겠다" 는 설정이
+  // 내 주소록에서 그 사람을 지워 버린다. 그래서 소유자는 여기서 바로 통과시킨다.
+  if (s.ownedByViewer) {
+    return {
+      level: "full",
+      gates: { can_process: true, can_discover: true, can_request_intro: true, can_reveal_identity: true, can_reveal_contact: true },
+      reasons: [],
+      consentGate: 1,
+    };
+  }
+
   if (s.orgShareOptIn === false) return DENY(["조직 네트워크 공유에 동의하지 않은 멤버의 연락처입니다"]);
 
   const reasons: string[] = [];
   const canProcess = true;
 
-  // 탐색: 내 데이터는 당연히 탐색된다. 남의 연락처는 최소 path_only 공유가 있어야 후보로 등장한다.
-  const canDiscover = s.ownedByViewer || s.sharePermission !== "none";
+  // 탐색: 남의 연락처는 최소 path_only 공유가 있어야 후보로 등장한다.
+  const canDiscover = s.sharePermission !== "none";
   if (!canDiscover) return DENY(["공유 범위가 '없음'으로 설정된 연락처입니다"]);
 
   // 소개 요청: 1촌은 내가 직접 연락하면 되고, 간접(2·3촌)은 소개 요청의 대상이다.
   const canRequestIntro = s.sharePermission === "path_only" || s.sharePermission === "profile" || s.sharePermission === "contact" || s.sharePermission === "introduction";
 
   // 신원 공개: 내가 보유한 연락처거나, profile 이상 공유거나, 소개가 승인된 경우.
-  const canRevealIdentity = s.ownedByViewer || s.introApproved || s.sharePermission === "profile" || s.sharePermission === "contact" || s.sharePermission === "introduction";
+  const canRevealIdentity = s.introApproved || s.sharePermission === "profile" || s.sharePermission === "contact" || s.sharePermission === "introduction";
   if (!canRevealIdentity) reasons.push(s.hops >= 2 ? `${s.hops}촌 연락처는 소개 승인 전까지 신원을 공개하지 않습니다` : "신원 공개 권한이 없습니다");
 
   // 연락처 공개: 신원 공개 + (내 데이터이거나 contact 이상 공유 + 소개 승인).
-  const canRevealContact = canRevealIdentity && (s.ownedByViewer || (s.introApproved && (s.sharePermission === "contact" || s.sharePermission === "introduction")));
+  const canRevealContact = canRevealIdentity && s.introApproved && (s.sharePermission === "contact" || s.sharePermission === "introduction");
   if (canRevealIdentity && !canRevealContact) reasons.push(s.introApproved ? "연락처 공유 범위가 아닙니다" : "연락처는 소개 승인 이후에 공개됩니다");
 
   const level: DisclosureLevel = canRevealContact ? "full" : canRevealIdentity ? "intro_only" : canRequestIntro ? "masked" : "hidden";

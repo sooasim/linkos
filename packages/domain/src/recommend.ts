@@ -59,6 +59,8 @@ export interface Evidence {
   occurredAt: string | null;
   /** AI 추론인가 — 화면에서 확정 사실과 구분 표시해야 한다 */
   inferred: boolean;
+  /** masked 후보의 근거라서 요약을 종류 라벨로 대체했다(§2). 화면은 "소개 승인 후 공개"로 안내한다. */
+  redacted?: boolean;
 }
 
 /** 원천 신뢰도. user_confirmed 가 가장 높고 ai_inferred 가 가장 낮다. */
@@ -73,6 +75,30 @@ const EVIDENCE_SOURCE_WEIGHT: Record<EvidenceType, number> = {
   note: 0.65,
   ai_inferred: 0.4,
 };
+
+const EVIDENCE_TYPE_LABEL: Record<EvidenceType, string> = {
+  business_card: "명함 기록",
+  user_confirmed: "사용자가 확인한 기록",
+  meeting: "미팅 기록",
+  interaction: "접촉 기록",
+  referral: "소개 이력",
+  note: "메모",
+  company_data: "회사 정보",
+  org_membership: "조직 소속 기록",
+  ai_inferred: "AI 추론",
+};
+
+/**
+ * masked 후보의 근거 요약을 종류 라벨로 바꾼다.
+ *
+ * 왜 필요한가: 요약 텍스트는 자유 서술이라 회사명·직책이 섞여 들어온다(예: "하노이메디 베트남
+ * 의료기기 유통 라이선스 보유"). applyDisclosure 는 신원 **필드**만 깎으므로 evidence 배열이
+ * 그 allowlist 를 우회했다. 근거가 **있다는 사실**과 종류·날짜·신뢰도는 그대로 보여주고
+ * 서술만 가린다 — 그래야 "왜 추천됐는지"는 설명되면서 신원이 새지 않는다(§2, §5).
+ */
+export function redactEvidence(evidence: Evidence[]): Evidence[] {
+  return evidence.map((e) => ({ ...e, summary: EVIDENCE_TYPE_LABEL[e.type] ?? "기록", redacted: true }));
+}
 
 /**
  * evidenceQuality: 근거의 양·신뢰도·최근성·추론비중을 하나로 모은다.
@@ -106,6 +132,12 @@ export interface CandidateFacts {
   relationshipStrength: number;
   /** 마지막 접촉 이후 일수. 없으면 null */
   daysSinceLastContact: number | null;
+  /**
+   * BFS 로 이미 구한 "그 후보까지 가는 최선 경로의 엣지 품질 곱"(discoverNeighbors().bestQuality).
+   * Top-K 경로를 아직 열거하지 않은 후보의 pathQuality 를 여기서 채운다 — 이것이 없으면
+   * 2·3촌 후보는 pathQuality(가중치 .16)가 항상 0 이 되어 랭킹이 경로 품질을 무시한다.
+   */
+  reachabilityQuality?: number;
   dealsWon: number;
   /** 사용자가 이 후보/회사를 과거에 저장·소개요청했는가 */
   userPreference: number;
@@ -157,7 +189,8 @@ export function deriveFeatures(intent: SearchIntent, c: CandidateFacts, paths: R
   return {
     intentFit: scoreIntentFit(intent, c),
     capabilityFit: scoreCapabilityFit(intent.capabilities, c),
-    pathQuality: pathQualityFeature(paths),
+    // 경로를 열거한 후보는 그 비용으로, 아직 안 한 후보는 BFS 가 구한 도달 품질로 계산한다
+    pathQuality: paths.length ? pathQualityFeature(paths) : clamp(c.reachabilityQuality ?? 0),
     relationshipStrength: clamp(c.relationshipStrength),
     industryFit: scoreIndustryFit(intent, c),
     evidenceQuality: evidenceQuality(evidence, now),
@@ -331,17 +364,19 @@ export function buildRecommendation(input: BuildRecommendationInput): Recommenda
   const disclosed = applyDisclosure(input.identity, input.disclosure, input.facets);
   if (!disclosed) return null;
 
+  // 신원을 공개할 수 없는 후보의 근거 요약은 자유 서술이라 회사명이 섞인다 → 종류 라벨로 가린다.
+  // 점수(evidenceQuality)는 가리기 **전**의 값으로 계산한다 — 근거의 질은 실제 기록 기준이어야 한다.
+  const evidence = input.disclosure.gates.can_reveal_identity ? input.evidence : redactEvidence(input.evidence);
   const features = deriveFeatures(input.intent, input.facts, input.paths, input.evidence, input.now);
   const scored = scoreRecommendation(features);
-  const reasons = groundedReasons(buildReasons(input.intent, input.facts, features, input.evidence, input.paths), input.evidence);
+  const reasons = groundedReasons(buildReasons(input.intent, input.facts, features, evidence, input.paths), evidence);
 
   return {
     ...disclosed,
     score: scored.score,
     scoreComponents: scored.scoreComponents,
     reasons: reasons.slice(0, 5),
-    // masked 후보에게도 근거는 보여주되 당사자를 식별하는 요약은 담지 않는다(요약 생성 책임은 호출자에게 있다)
-    evidence: input.evidence,
+    evidence,
     paths: input.paths,
     nextActions: nextActions(input.disclosure),
   };

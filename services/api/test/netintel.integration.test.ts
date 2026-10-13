@@ -105,6 +105,10 @@ describe("N-022 masked 응답에 PII 가 없다 (인수 게이트)", () => {
     const theirs = await netintel.search(ctx(stranger.id), { query: "의료기기 대표" });
     const json = JSON.stringify(theirs);
     for (const pii of ["비공개대표", "시크릿메디칼", "secret@x.example.com"]) expect(json).not.toContain(pii);
+    // 이 단정이 "후보가 0건이라 통과" 하는 공허한 테스트가 아니라는 것을 못박는다:
+    // stranger 는 자기 연락처가 없으므로 후보 자체가 없어야 하고, 그 사실을 명시적으로 검사한다.
+    expect(theirs.results).toHaveLength(0);
+    expect(theirs.total).toBe(0);
   });
 
   it("discovery_opt_out 연락처는 어떤 응답에도 등장하지 않는다", async () => {

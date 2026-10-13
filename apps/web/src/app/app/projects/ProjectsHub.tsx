@@ -73,6 +73,7 @@ function NewProject({ onCreated }: { onCreated: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: "", description: "" });
   const [busy, setBusy] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
   if (!open)
     return (
       <button className="btn btn-ink !min-h-11" onClick={() => setOpen(true)}>
@@ -86,11 +87,14 @@ function NewProject({ onCreated }: { onCreated: (id: string) => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
+        setFormErr(null);
         try {
           const r = await api<{ projectId: string }>("/network-intel/projects", { body: { name: f.name, description: f.description } });
           onCreated(r.projectId);
           setOpen(false);
           setF({ name: "", description: "" });
+        } catch (e) {
+          setFormErr(e instanceof Error ? e.message : "만들지 못했습니다.");
         } finally {
           setBusy(false);
         }
@@ -111,6 +115,11 @@ function NewProject({ onCreated }: { onCreated: (id: string) => void }) {
         placeholder="예: 현지 유통 파트너가 필요합니다. 병원 구매 담당자를 소개받고 싶습니다. 반드시 인허가 컨설팅이 필요해요."
       />
       <p className="text-[12px] text-[var(--fg-mute)]">적어주신 문장에서 필요한 역할·조건을 뽑아 초안을 만듭니다. 문장에 없는 조건은 만들지 않습니다.</p>
+      {formErr && (
+        <p role="alert" className="text-[12.5px] text-[var(--color-ember)]">
+          {formErr}
+        </p>
+      )}
       <div className="flex gap-2">
         <button className="btn btn-signal !min-h-10" disabled={busy || !f.name.trim()}>
           {busy ? "만드는 중…" : "만들기"}
@@ -217,6 +226,8 @@ function CoverageView({ projectId }: { projectId: string }) {
                     try {
                       await api(`/network-intel/projects/${projectId}/requirements/confirm`, { body: { requirementIds: [...picked] } });
                       await load();
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : "확정하지 못했습니다.");
                     } finally {
                       setBusy(false);
                     }
@@ -331,16 +342,37 @@ export function ProjectsHub({ initialId }: { initialId: string | null }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [selected, setSelected] = useState<string | null>(initialId);
 
+  const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const r = await api<{ projects: Project[] }>("/network-intel/projects");
-    setProjects(r.projects);
-    setSelected((s) => s ?? r.projects[0]?.id ?? null);
+    setErr(null);
+    try {
+      const r = await api<{ projects: Project[] }>("/network-intel/projects");
+      setProjects(r.projects);
+      setSelected((s) => s ?? r.projects[0]?.id ?? null);
+    } catch (e) {
+      // 오류 상태가 없으면 API 실패 시 로딩 스켈레톤에서 영구히 멈춘다(DoD: empty/error/loading)
+      setErr(e instanceof Error ? e.message : "프로젝트를 불러오지 못했습니다.");
+      setProjects([]);
+    }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  if (err) {
+    return (
+      <Empty
+        title="프로젝트를 불러오지 못했습니다"
+        body={err}
+        action={
+          <button className="btn btn-ink" onClick={() => void load()}>
+            다시 시도
+          </button>
+        }
+      />
+    );
+  }
   if (!projects) return <div className="h-40 animate-pulse rounded-3xl border border-[var(--line)]" />;
 
   return (

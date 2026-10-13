@@ -22,6 +22,7 @@ import {
   activityStats,
   applyDisclosure,
   availabilityFrom,
+  buildRecommendation,
   canOpportunityTransition,
   canonicalKey,
   coverageFor,
@@ -61,6 +62,7 @@ import {
   reachableSet,
   normalizeAlias,
   recencyDecay,
+  redactEvidence,
   relationshipStrength,
   roleCategory,
   scoreRecommendation,
@@ -953,6 +955,112 @@ describe("N-013 이벤트 네임스페이스", () => {
     expect(NETWORK_EVENT_NAMES.every((n) => n.startsWith("network."))).toBe(true);
     expect(isNetworkEventName("network.edge.upserted")).toBe(true);
     expect(isNetworkEventName("contact.updated")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- 리뷰에서 드러난 경로 (회귀 방지)
+
+describe("N-022 공유 설정은 소유자 본인의 시야를 막지 않는다", () => {
+  // 이 경로가 테스트에 없어서 결함이 들어갔다: share_permission / org_share_opt_in 은
+  // **다른 뷰어**에게 무엇을 보여줄지 정하는 값인데, 소유자 자신에게도 적용되어
+  // "조직에 공유 안 함" 설정이 내 주소록에서 그 사람을 지웠다.
+  it("share_permission=none 이어도 내 연락처는 내게 full 로 보인다", () => {
+    const d = evaluateDisclosure(subject({ ownedByViewer: true, hops: 1, sharePermission: "none" }));
+    expect(d.level).toBe("full");
+    expect(d.gates.can_discover).toBe(true);
+    expect(d.consentGate).toBe(1);
+  });
+
+  it("org_share_opt_in=false 여도 내 연락처는 내게 full 로 보인다", () => {
+    const d = evaluateDisclosure(subject({ ownedByViewer: true, hops: 1, sharePermission: "path_only", orgShareOptIn: false }));
+    expect(d.level).toBe("full");
+  });
+
+  it("같은 설정을 **다른** 뷰어에게는 그대로 적용한다", () => {
+    expect(evaluateDisclosure(subject({ ownedByViewer: false, sharePermission: "none" })).level).toBe("hidden");
+    expect(evaluateDisclosure(subject({ ownedByViewer: false, orgShareOptIn: false })).level).toBe("hidden");
+  });
+
+  it("당사자의 탐색 거부와 삭제는 소유자에게도 적용된다 — 명시적 의사·삭제이기 때문이다", () => {
+    expect(evaluateDisclosure(subject({ ownedByViewer: true, optOut: true })).level).toBe("hidden");
+    expect(evaluateDisclosure(subject({ ownedByViewer: true, deleted: true })).level).toBe("hidden");
+  });
+});
+
+describe("N-108 masked 후보의 근거 요약은 종류 라벨로 가린다", () => {
+  const withCompany: Evidence[] = [
+    { id: "ev-a", type: "company_data", summary: "하노이메디 베트남 의료기기 유통 라이선스 보유", confidence: 0.7, occurredAt: null, inferred: false },
+    { id: "ev-b", type: "meeting", summary: "김철수 대표와 3회 미팅", confidence: 0.9, occurredAt: null, inferred: false },
+  ];
+
+  it("요약 텍스트를 종류 라벨로 바꾸고 redacted 로 표시한다", () => {
+    const out = redactEvidence(withCompany);
+    expect(JSON.stringify(out)).not.toContain("하노이메디");
+    expect(JSON.stringify(out)).not.toContain("김철수");
+    expect(out.every((e) => e.redacted === true)).toBe(true);
+    // 근거가 **있다는 사실**과 종류·신뢰도·id 는 유지된다 — 그래야 설명이 비지 않는다
+    expect(out.map((e) => e.id)).toEqual(["ev-a", "ev-b"]);
+    expect(out[0]!.type).toBe("company_data");
+    expect(out[0]!.confidence).toBe(0.7);
+    expect(out[0]!.summary.length).toBeGreaterThan(0);
+  });
+
+  it("buildRecommendation 이 masked 후보의 응답에 원문 요약을 담지 않는다", () => {
+    const intent = parseSearchIntent("베트남 의료기기 유통");
+    const reco = buildRecommendation({
+      identity: { id: "c9", type: "person", displayName: "노현우", companyName: "하노이메디", jobTitle: "법인장", email: "x@y.test", phone: "+8210", industry: "의료기기", region: "베트남" },
+      facts: facts({ industries: ["의료기기"], regions: ["베트남"] }),
+      disclosure: evaluateDisclosure(subject({ hops: 2, sharePermission: "path_only" })),
+      facets: { hops: 2, industry: "의료기기", region: "베트남", hasPath: true },
+      evidence: withCompany,
+      paths: [],
+      gate: { isSelf: false, blocked: false, deleted: false },
+      intent,
+    });
+    expect(reco).not.toBeNull();
+    expect(reco!.disclosure).toBe("masked");
+    const json = JSON.stringify(reco);
+    for (const leak of ["하노이메디", "노현우", "김철수", "x@y.test"]) expect(json).not.toContain(leak);
+    expect(reco!.evidence.every((e) => e.redacted)).toBe(true);
+  });
+
+  it("신원을 공개할 수 있는 후보는 요약을 그대로 보여준다", () => {
+    const reco = buildRecommendation({
+      identity: { id: "c1", type: "person", displayName: "김대표", companyName: "알파", jobTitle: "대표", email: null, phone: null, industry: "의료기기", region: "서울" },
+      facts: facts(),
+      disclosure: evaluateDisclosure(subject({ ownedByViewer: true, hops: 1, sharePermission: "contact" })),
+      facets: { hops: 1, hasPath: true },
+      evidence: withCompany,
+      paths: [],
+      gate: { isSelf: false, blocked: false, deleted: false },
+      intent: parseSearchIntent("의료기기"),
+    });
+    expect(reco!.evidence.some((e) => e.redacted)).toBe(false);
+    expect(JSON.stringify(reco)).toContain("하노이메디");
+  });
+});
+
+describe("N-016 pathQuality 는 경로를 아직 열거하지 않은 후보도 반영한다", () => {
+  // 결함: 2·3촌 후보는 search() 가 경로를 나중에 채우므로 점수 계산 시점에 paths 가 비어
+  // pathQuality(가중치 .16)가 항상 0 이었다 → 랭킹이 경로 품질을 전혀 반영하지 않았다.
+  it("paths 가 비어 있으면 BFS 가 구한 도달 품질을 쓴다", () => {
+    const intent = parseSearchIntent("의료기기");
+    const near = deriveFeatures(intent, facts({ reachabilityQuality: 0.8 }), [], []);
+    const far = deriveFeatures(intent, facts({ reachabilityQuality: 0.1 }), [], []);
+    expect(near.pathQuality).toBeCloseTo(0.8, 6);
+    expect(far.pathQuality).toBeCloseTo(0.1, 6);
+    expect(scoreRecommendation(near).score).toBeGreaterThan(scoreRecommendation(far).score);
+  });
+
+  it("도달 품질을 모르면 0 이다 — 추측하지 않는다", () => {
+    expect(deriveFeatures(parseSearchIntent("의료기기"), facts(), [], []).pathQuality).toBe(0);
+  });
+
+  it("경로를 열거한 후보는 경로 비용으로 계산한다(도달 품질을 덮어쓴다)", () => {
+    const ranked = rankBusinessPaths(enumeratePaths(fixtureEdges(), "me", "target", 3), { k: 1 });
+    const f = deriveFeatures(parseSearchIntent("의료기기"), facts({ reachabilityQuality: 0.01 }), ranked, []);
+    expect(f.pathQuality).toBeCloseTo(pathQualityFeature(ranked), 6);
+    expect(f.pathQuality).toBeGreaterThan(0.01);
   });
 });
 

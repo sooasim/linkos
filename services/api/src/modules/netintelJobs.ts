@@ -160,8 +160,8 @@ export async function recomputeContactEdges(limit = 500): Promise<number> {
  * 알림 본문에 이름을 넣지 않는다 — masked 후보가 섞일 수 있고, 잠금화면에 신원이 뜨면 안 된다(지침 §2).
  */
 export async function processSavedSearchAlerts(limit = 20): Promise<number> {
-  const due = await q<{ id: string; owner_user_id: string; name: string; query: string; alert_frequency: string; last_result_ids: string[] }>(
-    `SELECT s.id, s.owner_user_id, s.name, s.query, s.alert_frequency, s.last_result_ids
+  const due = await q<{ id: string; owner_user_id: string; name: string; query: string; intent: Record<string, unknown>; alert_frequency: string; last_result_ids: string[] }>(
+    `SELECT s.id, s.owner_user_id, s.name, s.query, s.intent, s.alert_frequency, s.last_result_ids
        FROM saved_searches s JOIN users u ON u.id = s.owner_user_id
       WHERE s.alert_enabled AND u.status='active' AND u.deleted_at IS NULL
         AND (s.last_run_at IS NULL OR s.last_run_at < now() - (CASE s.alert_frequency
@@ -176,10 +176,16 @@ export async function processSavedSearchAlerts(limit = 20): Promise<number> {
     await q("UPDATE saved_searches SET last_run_at = now() WHERE id = $1", [s.id]);
     try {
       const ctx = { userId: s.owner_user_id, ip: "worker", userAgent: "worker", requestId: `saved-search:${s.id}` };
-      const res = await search(ctx, { query: s.query, limit: 20 });
+      // 사용자가 chip 으로 고친 조건을 그대로 쓴다. 원문만 재파싱하면 저장할 때와 다른 조건으로
+      // 알림이 가고, 사용자가 지운 조건이 되살아난다(runSavedSearch 와 동작이 갈라져 있었다).
+      const edits = s.intent && Object.keys(s.intent).length ? s.intent : undefined;
+      const res = await search(ctx, { query: s.query, limit: 50, intentEdits: edits });
       const previous = new Set(s.last_result_ids ?? []);
       const fresh = res.results.filter((r) => !previous.has(r.resultId));
-      await q("UPDATE saved_searches SET last_result_ids = $2 WHERE id = $1", [s.id, res.results.map((r) => r.resultId)]);
+      // 이미 본 후보를 지우지 않고 **합집합**으로 누적한다. 상위 N 개로 덮어쓰면 순위 밖으로
+      // 밀려난 후보가 다음 주기에 "새 후보" 로 다시 알림된다.
+      const merged = [...new Set([...(s.last_result_ids ?? []), ...res.results.map((r) => r.resultId)])].slice(-500);
+      await q("UPDATE saved_searches SET last_result_ids = $2 WHERE id = $1", [s.id, merged]);
       if (!fresh.length) continue;
       await tx(async (c) => {
         await notify(c, s.owner_user_id, {
@@ -222,7 +228,32 @@ async function addItem(c: pg.PoolClient, ownerUserId: string | null, kind: Quali
  * 데이터 품질을 운영 1급 기능으로 다룬다(지침 §15 DoD). 고칠 수 있는 것만 큐에 넣는다 —
  * 사용자가 아무것도 할 수 없는 항목을 쌓으면 큐가 소음이 된다.
  */
-export async function scanDataQuality(): Promise<number> {
+/**
+ * 스캔 주기. worker tick 은 2초마다 돌고 이 함수는 contacts·contact_company_roles·outbox_events 를
+ * 전수 스캔한다 — 스로틀이 없으면 DB 가 이 스캔만 돌게 된다. rate_limits 테이블을 분산 잠금으로
+ * 써서 여러 워커 인스턴스가 떠 있어도 주기를 지킨다.
+ */
+const QUALITY_SCAN_WINDOW_SECONDS = 1800; // 30분
+const QUALITY_SCAN_BUCKET = "netintel:quality-scan";
+
+/**
+ * 30분 시간 버킷을 rate_limits((bucket, window_start) PK)에 선점한다. 한 버킷에서 처음 들어온
+ * 워커만 행을 삽입해 RETURNING 을 받으므로 인스턴스가 여러 개여도 주기가 지켜진다.
+ * 오래된 행은 platform.ts 가 하루 뒤 지운다.
+ */
+async function claimQualityScan(): Promise<boolean> {
+  const r = await one<{ ok: boolean }>(
+    `INSERT INTO rate_limits (bucket, window_start, count)
+     SELECT $1, to_timestamp(floor(extract(epoch FROM now()) / $2::int) * $2::int), 1
+     ON CONFLICT (bucket, window_start) DO NOTHING
+     RETURNING true AS ok`,
+    [QUALITY_SCAN_BUCKET, QUALITY_SCAN_WINDOW_SECONDS],
+  );
+  return r?.ok === true;
+}
+
+export async function scanDataQuality(force = false): Promise<number> {
+  if (!force && !(await claimQualityScan())) return 0;
   return tx(async (c) => {
     let created = 0;
 
@@ -303,6 +334,38 @@ export async function scanDataQuality(): Promise<number> {
       `UPDATE data_quality_items d SET status='resolved', resolved_at=now()
         WHERE d.status='open' AND d.kind IN ('projection_lag','failed_outbox','embedding_backlog')
           AND NOT EXISTS (SELECT 1 FROM outbox_events e WHERE e.published_at IS NULL)`,
+    );
+    // 사용자가 고친 뒤에도 열린 채 남으면 큐가 소음이 된다. 중복이 병합·삭제됐거나
+    // 공유 범위를 채웠거나 회사를 연결했으면 닫는다.
+    await c.query(
+      `UPDATE data_quality_items d SET status='resolved', resolved_at=now()
+        WHERE d.status='open' AND d.kind='duplicate_contact'
+          AND NOT EXISTS (
+            SELECT 1 FROM contacts a JOIN contacts b
+              ON b.owner_user_id = a.owner_user_id AND b.id <> a.id
+             AND (
+               (NULLIF(btrim(COALESCE(a.email,'')),'') IS NOT NULL AND lower(btrim(a.email)) = lower(btrim(b.email)))
+               OR (length(regexp_replace(COALESCE(a.phone,''), '\\D', '', 'g')) >= 9
+                   AND regexp_replace(COALESCE(a.phone,''), '\\D', '', 'g') = regexp_replace(COALESCE(b.phone,''), '\\D', '', 'g'))
+             )
+             WHERE a.id = d.entity_id AND a.deleted_at IS NULL AND a.merged_into_id IS NULL
+               AND b.deleted_at IS NULL AND b.merged_into_id IS NULL)`,
+    );
+    await c.query(
+      `UPDATE data_quality_items d SET status='resolved', resolved_at=now()
+        WHERE d.status='open' AND d.kind='missing_share_permission'
+          AND NOT EXISTS (
+            SELECT 1 FROM contacts c2 LEFT JOIN contact_share_permissions sp ON sp.contact_id = c2.id
+             WHERE c2.owner_user_id = d.owner_user_id AND c2.deleted_at IS NULL
+               AND c2.merged_into_id IS NULL AND sp.contact_id IS NULL)`,
+    );
+    await c.query(
+      `UPDATE data_quality_items d SET status='resolved', resolved_at=now()
+        WHERE d.status='open' AND d.kind='unresolved_company'
+          AND NOT EXISTS (
+            SELECT 1 FROM contacts c3
+             WHERE c3.owner_user_id = d.owner_user_id AND c3.deleted_at IS NULL
+               AND c3.merged_into_id IS NULL AND c3.company_id IS NULL)`,
     );
     return created;
   });

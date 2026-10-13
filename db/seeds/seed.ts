@@ -8,6 +8,7 @@
 // Idempotent: fixed ids + ON CONFLICT, so running it twice changes nothing.
 import { createHash, randomUUID } from "node:crypto";
 import { closePool, pool } from "../../services/api/src/lib/db";
+import { seedNetworkIntel } from "./netintel";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -149,6 +150,10 @@ export async function seed(): Promise<Record<string, number>> {
      WHERE NOT EXISTS (SELECT 1 FROM outbox_events WHERE event_type='exchange.session.created' AND aggregate_id=$1::uuid)`,
     [ID.session, ID.userA],
   );
+
+  // 인적네트워크 인텔리전스 (N-ID): 조직·회사·2·3촌 경로·분류·근거·프로젝트·기회·ICP.
+  // 위 핵심 시드 뒤에 붙는다 — userA/userB 가 먼저 있어야 참조할 수 있다.
+  await seedNetworkIntel(db, run, ID.userA, ID.userB);
 
   return counts;
 }

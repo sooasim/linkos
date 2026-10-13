@@ -18,6 +18,7 @@ export * as analytics from "./modules/analytics";
 export * as assist from "./modules/assist";
 export * as org from "./modules/org";
 export * as network from "./modules/network";
+export * as netintel from "./modules/netintel";
 export * as enterprise from "./modules/enterprise";
 export * as saml from "./modules/saml";
 export * as intro from "./modules/intro";

@@ -1,0 +1,76 @@
+# Continuous deploy to https://linkos.ckp.kr (docs/DEPLOY_CKP.md).
+# Runs only after CI succeeded on main, and deploys exactly the commit CI tested. scripts/deploy-ckp.sh is
+# idempotent and restarts only after a successful build, so a failed run leaves the previous build serving.
+# Then it checks that the public /api/v1/health reports that commit.
+#
+# Needs repository secrets (Settings → Secrets and variables → Actions). Without them the job is skipped:
+#   CKP_SSH_KEY          private key (deploy-only key recommended) allowed to run the deploy script on the server
+#   CKP_SSH_HOST         server address (e.g. 1.234.5.14)
+#   CKP_SSH_KNOWN_HOSTS  output of `ssh-keyscan -t ed25519 <host>` checked against the server's real host key
+#   CKP_SSH_USER         optional, default root (the script restarts systemd units)
+name: Deploy (linkos.ckp.kr)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "git ref or commit to deploy (default: main)"
+        required: false
+        default: main
+concurrency:
+  group: deploy-ckp
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_KEY: ${{ secrets.CKP_SSH_KEY }}
+      SSH_HOST: ${{ secrets.CKP_SSH_HOST }}
+      SSH_KNOWN_HOSTS: ${{ secrets.CKP_SSH_KNOWN_HOSTS }}
+      SSH_USER: ${{ secrets.CKP_SSH_USER }}
+      TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.workflow_run.head_sha }}
+      HEALTH_URL: https://linkos.ckp.kr/api/v1/health
+    steps:
+      - name: Check deploy secrets
+        id: cfg
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$SSH_HOST" ] || [ -z "$SSH_KNOWN_HOSTS" ]; then
+            echo "::notice::Deploy skipped — set CKP_SSH_KEY, CKP_SSH_HOST and CKP_SSH_KNOWN_HOSTS to enable (docs/DEPLOY_CKP.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Configure SSH
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Deploy
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          case "$TARGET" in (*[!A-Za-z0-9._/-]*|"") echo "invalid ref: $TARGET" >&2; exit 1;; esac
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${SSH_USER:-root}@$SSH_HOST" "bash /var/www/linkos/scripts/deploy-ckp.sh '$TARGET'"
+      - name: Verify the public site serves this commit
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          want=""
+          if printf '%s' "$TARGET" | grep -Eq '^[0-9a-f]{40}$'; then want="${TARGET:0:7}"; fi
+          for i in $(seq 1 30); do
+            body="$(curl -fsS -m 10 "$HEALTH_URL" || true)"
+            rev="$(printf '%s' "$body" | sed -n 's/.*"revision":"\([0-9a-f]*\)".*/\1/p')"
+            if printf '%s' "$body" | grep -q '"status":"ok"' && { [ -z "$want" ] || [ "$rev" = "$want" ]; }; then
+              echo "live: $body"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$HEALTH_URL did not report status ok${want:+ with revision $want} (last: ${body:-no response})"
+          exit 1

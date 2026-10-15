@@ -32,6 +32,34 @@ curl -s https://linkos.ckp.kr/api/v1/health
 #  "ai":{"enabled":true,"models":{"cheap":"claude-haiku-5-5","standard":"claude-sonnet-5-5","deep":"claude-opus-5-5"}}}
 ```
 
+## 자동 배포 (GitHub Actions)
+
+`.github/workflows/deploy-ckp.yml` 이 **main 의 CI 가 통과한 커밋**을 그대로 배포하고, 공개 주소의
+`/api/v1/health` 가 그 커밋의 `revision` 을 보고하는지까지 확인한다. 아래 시크릿이 없으면 건너뛴다(실패 아님).
+수동 실행: Actions → *Deploy (linkos.ckp.kr)* → Run workflow (ref 지정 가능).
+
+최초 1회 설정 (서버에서):
+
+```bash
+# 1) 배포 전용 키 — 이 키로는 배포 스크립트 실행 외에 아무것도 할 수 없다
+ssh-keygen -t ed25519 -N '' -C github-actions-linkos -f /root/linkos_deploy_key
+install -m 755 /var/www/linkos/infra/ckp/linkos-deploy-ssh.sh /usr/local/bin/linkos-deploy-ssh
+echo "restrict,command=\"/usr/local/bin/linkos-deploy-ssh\" $(cat /root/linkos_deploy_key.pub)" >> /root/.ssh/authorized_keys
+cat /root/linkos_deploy_key          # → GitHub 시크릿 CKP_SSH_KEY 에 붙여 넣은 뒤 서버에서 삭제
+rm /root/linkos_deploy_key /root/linkos_deploy_key.pub
+```
+
+GitHub → 저장소 Settings → Secrets and variables → Actions → New repository secret:
+
+| 이름 | 값 |
+|---|---|
+| `CKP_SSH_KEY` | 위 개인키 전체 |
+| `CKP_SSH_HOST` | `1.234.5.14` |
+| `CKP_SSH_KNOWN_HOSTS` | 서버에서 `ssh-keyscan -t ed25519 localhost \| sed 's/^localhost/1.234.5.14/'` 출력 (서버 자신의 호스트 키) |
+| `CKP_SSH_USER` | (선택) 기본 `root` |
+
+설정 후 main 에 머지될 때마다 자동 배포된다. 실패하면 Actions 로그와 서버의 `journalctl -t linkos-deploy` 를 본다.
+
 ## AI (Anthropic)
 
 `/etc/linkos/linkos.env` 에 `ANTHROPIC_API_KEY` 와 `ANTHROPIC_WORKSPACE_ID` 가 들어 있다.

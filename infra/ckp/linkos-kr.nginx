@@ -1,0 +1,102 @@
+# linkos.ckp.kr — LINKOS web/API (behind Cloudflare, Full strict, origin cert *.ckp.kr)
+#
+#   앱은 Next.js standalone 서버 하나로 화면과 /api/v1/* 를 모두 제공한다.
+#   systemd: linkos-web.service -> 127.0.0.1:4300 (루프백만 바인딩), linkos-worker.service (outbox)
+#
+#   ⚠️ 공통 snippets/ckp-server.conf · ckp-security.conf 를 include 하지 않는다.
+#      LINKOS 는 apps/web/next.config.ts 의 headers() 에서 자기 CSP·Permissions-Policy 를
+#      직접 내려보낸다. 공통 스니펫을 include 하면 CSP 헤더가 둘이 되고 브라우저는
+#      "둘의 교집합" 을 적용하므로, 공통 CSP 에 없는 다음 기능이 전부 깨진다:
+#        - camera=() / microphone=()  -> 명함 촬영(/app/scan)·미팅 녹음이 차단된다
+#        - 'wasm-unsafe-eval', worker-src blob:, cdn.jsdelivr.net
+#                                     -> 기기 내 OCR(tesseract.js) 이 로드되지 못한다
+#      대신 아래 server 블록에서 dotfile 차단만 따로 적용한다.
+#
+#   SSE: /api/v1/exchange/sessions/{token}/events, /api/v1/exchange/manage/{id}/events
+#        라우트가 `x-accel-buffering: no` 와 `cache-control: no-cache, no-transform` 을
+#        직접 내려보내므로 nginx 는 버퍼링·gzip 을 자동으로 건너뛴다. 그래도 의도를
+#        드러내고 프록시 읽기 타임아웃(기본 60s < 스트림 10분)을 늘리려고 전용 location 을 둔다.
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name linkos.ckp.kr;
+
+    ssl_certificate     /etc/ssl/ckp/pt.pem;
+    ssl_certificate_key /etc/ssl/ckp/pt.key;
+
+    charset utf-8;
+
+    # 업로드 상한은 앱의 UPLOAD_POLICY 최대치(room_file 25MB)보다 약간 크게 둔다.
+    # nginx 가 먼저 413 을 내면 앱의 한글 오류 메시지(file_too_large)를 쓸 수 없다.
+    client_max_body_size 32m;
+
+    # 숨김 파일 차단. /.well-known/ 은 앱이 직접 서비스한다
+    # (apple-app-site-association, assetlinks.json — 네이티브 앱 링크 F-042).
+    location ~ /\.(?!well-known) { deny all; }
+
+    # ── 실시간 교환 상태(SSE) ────────────────────────────────────────────────
+    # 토큰 보유자용 게스트 스트림과 발신자용 관리 스트림. 최대 10분 열려 있다.
+    location ~ ^/api/v1/exchange/(sessions/[^/]+|manage/[^/]+)/events$ {
+        proxy_pass http://127.0.0.1:4300;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 15m;
+        proxy_send_timeout 15m;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
+    }
+
+    # ── REST API ────────────────────────────────────────────────────────────
+    # 앱 안에도 행위별 레이트리밋(packages/domain)이 있다. 여기서는 그보다 훨씬 느슨한
+    # 거친 DoS 방어만 한다 — 화면 한 장이 API 를 여러 번 호출하므로 공통 ckp_api(10r/s)
+    # 를 그대로 쓰면 정상 사용이 429 가 된다. 전용 존은 conf.d/linkos.conf 에 있다.
+    location ^~ /api/ {
+        limit_req zone=linkos_api burst=90 nodelay;
+        proxy_pass http://127.0.0.1:4300;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
+        proxy_read_timeout 120s;
+    }
+
+    # 운영 지표는 외부로 내보내지 않는다(앱 내부·워커 전용).
+    location = /api/v1/metrics { return 404; }
+
+    # ── 화면 ────────────────────────────────────────────────────────────────
+    # Next.js 가 /_next/static 에 immutable 캐시 헤더를 직접 붙이고 Cloudflare 가
+    # 엣지에서 캐시하므로 정적 파일도 그대로 프록시한다(경로가 재배포마다 바뀌지 않음).
+    location / {
+        proxy_pass http://127.0.0.1:4300;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
+        proxy_read_timeout 120s;
+    }
+
+    # SSE 는 Cache-Control: no-transform 이라 gzip 대상에서 자동 제외된다.
+    gzip on;
+    gzip_proxied any;
+    gzip_types text/css text/plain application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name linkos.ckp.kr;
+    return 301 https://$host$request_uri;
+}

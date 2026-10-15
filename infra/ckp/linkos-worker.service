@@ -1,0 +1,38 @@
+[Unit]
+# outbox_events 소비 + Google 연락처 동기화 + 예약 삭제/리마인더 (CLAUDE.md §3 외부 연동 규칙).
+# 이 유닛이 멈추면 화면은 살아 있지만 메일 발송·연동 반영·삭제 집행이 지연된다.
+Description=LINKOS outbox/integration worker for linkos.ckp.kr
+Documentation=https://github.com/sooasim/linkos
+After=network-online.target postgresql.service linkos-web.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=linkos
+Group=linkos
+WorkingDirectory=/var/www/linkos
+EnvironmentFile=/etc/linkos/linkos.env
+EnvironmentFile=-/etc/linkos/revision.env
+# node_modules/.bin/tsx 는 /bin/sh 래퍼라 node 에 직접 넘기면 SyntaxError 가 난다.
+# 실제 ESM 엔트리를 가리켜 래퍼(와 PATH 의 시스템 node v20)를 건너뛴다.
+ExecStart=/opt/node24/bin/node node_modules/tsx/dist/cli.mjs services/api/src/worker.ts
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=linkos-worker
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/var/lib/linkos
+
+[Install]
+WantedBy=multi-user.target

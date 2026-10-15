@@ -136,7 +136,7 @@
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| F-091 | P0 | AI 프로필 요약 | ✅ 구현+자동테스트 | /app/people/[id] 요약 | /profiles/{id}/summary | assist | services/api/test/assist.integration.test.ts | Claude 또는 규칙 요약, 확인 라벨 |
+| F-091 | P0 | AI 프로필 요약 | ✅ 구현+자동테스트 | /app/people/[id] 요약 | /profiles/{id}/summary | assist | services/api/test/assist.integration.test.ts, packages/domain/test/llmRouting.test.ts | Claude 또는 규칙 요약, 확인 라벨. 모델은 작업 티어별 최저가 자동 선택(llmRouting) |
 | F-092 | P1 | Need↔Offer 매칭 | ✅ 구현+자동테스트 | /app/ai | /matches | domain/match | packages/domain/test/domain.test.ts, services/api/test/api.integration.test.ts, packages/domain/test/match-privacy.test.ts, services/api/test/backend-gaps.integration.test.ts |  |
 | F-093 | P1 | Match Explanation | ✅ 구현+자동테스트 | /app/ai | /matches | domain/match (reasons) | packages/domain/test/domain.test.ts |  |
 | F-094 | P1 | 관계 기억 질의 | ✅ 구현+자동테스트 | /app/ai | /ai/search | ai | services/api/test/api.integration.test.ts |  |
@@ -260,7 +260,7 @@
 | F-184 | P0 | 백업/복구 | ✅ 구현+자동테스트 |  |  | scripts/backup.sh, scripts/restore-drill.sh, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 pg_dump → 별도 DB pg_restore → 12개 핵심 테이블 행 수 비교(시드 데이터 기준). 운영은 관리형 PITR 병행 |
 | F-185 | P0 | 성능예산 | ✅ 구현+자동테스트 |  |  | scripts/loadtest.mjs |  | 5,000 연락처·동시 20, 8개 시나리오 p95 SLO 통과(통계 낡은 최악 조건 포함) |
 | F-186 | P1 | 재해복구 | ✅ 구현+자동테스트 |  |  | scripts/dr/*, RUNBOOK.md, db/seeds/seed.ts | .github/workflows/ci.yml job dr | 매 PR 에서 2개 위치 복제 → 보조 위치만으로 복원 검증(체크섬·매니페스트·schema_migrations·행 수·스모크·RPO/RTO). 디렉터리 경로로 리허설하며 S3/GCS 전송 경로는 미검증 |
-| F-187 | P1 | 비용계측 | ✅ 구현+자동테스트 | /app/admin |  | lib/metering.ts recordCost | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts | 추정 단가(COST_RATES_JSON 재정의) |
+| F-187 | P1 | 비용계측 | ✅ 구현+자동테스트 | /app/admin |  | lib/metering.ts recordCost | services/api/test/track-d.integration.test.ts, packages/domain/test/trackD.test.ts, packages/domain/test/llmRouting.test.ts | 추정 단가(COST_RATES_JSON 재정의), LLM은 계열별 단가로 분리 계량 |
 ## BIZ · Analytics, Billing & Growth
 
 | ID | P | 기능 | 상태 | UI | API | 모듈 | 테스트 | 비고 |

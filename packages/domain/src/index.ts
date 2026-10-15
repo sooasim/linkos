@@ -45,6 +45,8 @@ export * from "./auditChain";
 export * from "./webVitals";
 export * from "./brief";
 export * from "./codeGuard";
+// LLM 모델 선택 정책 (작업 티어 → 최저가 계열)
+export * from "./llmRouting";
 // 인적네트워크 인텔리전스 (N-ID · docs/NETWORK_INTELLIGENCE.md)
 export * from "./taxonomy";
 export * from "./disclosure";

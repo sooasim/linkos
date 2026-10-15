@@ -126,6 +126,25 @@ export async function startFakeAnthropic(): Promise<FakeAnthropic> {
   const server: Server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
+    // 모델 라우터가 "지금 쓸 수 있는 가장 싼 모델"을 찾으려고 Models API 를 먼저 부른다.
+    // 여기서 400 을 주면 라우터는 pinned 모델로 조용히 되돌아가므로 테스트는 통과하지만,
+    // 로그가 llm.catalog_failed 로 더러워지고 실제 동작과도 달라진다.
+    if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
+      const models = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"].map((id, i) => ({
+        id,
+        type: "model",
+        display_name: id,
+        created_at: `2026-0${i + 1}-01T00:00:00Z`,
+        max_input_tokens: 1_000_000,
+        max_tokens: 128_000,
+        capabilities: {
+          structured_outputs: { supported: true },
+          effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: true }, xhigh: { supported: true }, max: { supported: true } },
+        },
+      }));
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ data: models, has_more: false, first_id: models[0]!.id, last_id: models.at(-1)!.id }));
+    }
     const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
     requests.push(body);
     const content = String(body.messages?.[0]?.content ?? "");

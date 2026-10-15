@@ -1,5 +1,6 @@
 // F-190 개인 플랜 · F-191 기업 플랜 · F-192 사용량 계량 · F-194 구독 상태(dunning) · F-195 매출지표 · F-187 비용계측
 // Pure plan catalog + entitlement / revenue / cost math. No I/O.
+import { LLM_FAMILIES } from "./llmRouting";
 
 export const PLAN_IDS = ["free", "pro", "business", "enterprise"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
@@ -205,6 +206,16 @@ export function revenueMetrics(subs: RevenueSub[], now: Date = new Date(), windo
 // ---------- F-187 cost metering (estimates; override with COST_RATES_JSON) ----------
 /** micro-USD per unit. These are configurable estimates, not invoices. */
 export const DEFAULT_COST_RATES: Record<string, number> = {
+  // 계열별 단가. $X / 1M 토큰 = X micro-USD / 토큰 이라 LLM_FAMILIES 의 값이 그대로 요율이다.
+  // 라우터가 싼 모델을 골랐을 때 그 효과가 비용 보고서에 드러나야 하므로 계열별로 나눈다
+  // (haiku 와 opus 는 40배 차이 난다). llmRateKey() 가 이 키를 만든다.
+  ...Object.fromEntries(
+    LLM_FAMILIES.flatMap((f) => [
+      [`llm.input_token.${f.name}`, f.inputUsdPerMTok],
+      [`llm.output_token.${f.name}`, f.outputUsdPerMTok],
+    ]),
+  ),
+  // 계열을 못 알아본 모델용 보수적 기본값(opus 급으로 친다).
   "llm.input_token": 5, // ≈ $5 / 1M input tokens
   "llm.output_token": 25, // ≈ $25 / 1M output tokens
   "ocr.page.on_device": 0, // tesseract.js runs on the user's device

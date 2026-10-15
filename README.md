@@ -87,6 +87,8 @@ Codespace는 켜져 있는 동안만 접속되고 30분 동안 쓰지 않으면 
 
 ## 배포
 
+- **운영(ckp 서버)**: <https://linkos.ckp.kr> — nginx 역프록시 + systemd(`linkos-web`/`linkos-worker`) + 기존 PostgreSQL 14.
+  재배포는 `ssh ckp 'bash /var/www/linkos/scripts/deploy-ckp.sh'`. 설정·제약·복구 절차는 [`docs/DEPLOY_CKP.md`](docs/DEPLOY_CKP.md).
 - **Docker**: `docker build -t linkos .` → `docker run linkos release`(마이그레이션 후 웹) / `worker`
 - **Render**: `render.yaml` 블루프린트 — 아래 "테스트 서버" 참고 (무료 플랜, 비밀값 자동 생성)
 - 상세 절차·롤백·백업: [`docs/RUNBOOK.md`](docs/RUNBOOK.md)

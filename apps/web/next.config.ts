@@ -5,11 +5,22 @@ const isDev = process.env.NODE_ENV !== "production";
 // tesseract.js loads its worker/wasm/language data from jsDelivr on demand (on-device OCR).
 // Google Identity Services (F-060 One Tap, only rendered on /login and /claim when GOOGLE_CLIENT_ID is set).
 const gsi = "https://accounts.google.com/gsi/";
+
+// 배포처가 HTML 에 스크립트를 주입하는 경우를 위한 탈출구(기본값 없음 — 기본 CSP 는 그대로 엄격하다).
+// 예) linkos.ckp.kr 은 Cloudflare 프록시 뒤에 있고 zone 전역 Web Analytics 가
+//     static.cloudflareinsights.com/beacon.min.js 를 모든 HTML 에 주입한다. 허용하지 않으면
+//     화면은 정상 동작하지만 콘솔이 CSP 위반으로 계속 더럽혀진다.
+//     공백으로 구분한 출처 목록을 빌드 시점에 넣는다(헤더는 빌드 결과에 박힌다).
+const extra = (name: string) => {
+  const v = process.env[name]?.trim();
+  return v ? ` ${v}` : "";
+};
+
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net ${gsi}client${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net ${gsi}client${isDev ? " 'unsafe-eval'" : ""}${extra("CSP_EXTRA_SCRIPT_SRC")}`,
   "worker-src 'self' blob: https://cdn.jsdelivr.net",
-  `connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com ${gsi} data: blob:`,
+  `connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com ${gsi} data: blob:${extra("CSP_EXTRA_CONNECT_SRC")}`,
   `frame-src ${gsi}`,
   "img-src 'self' data: blob:",
   `style-src 'self' 'unsafe-inline' ${gsi}style`,

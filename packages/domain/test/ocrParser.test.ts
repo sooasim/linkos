@@ -140,6 +140,39 @@ describe("이름", () => {
   });
 });
 
+describe("OCR 이 읽었는데 분류가 놓치던 것들", () => {
+  it("이름 줄이 두 번 나오고 한 번은 앞 글자를 흘렸을 때", () => {
+    // "남기훈" 과 "기훈 부장" 이 함께 나온다 — '기훈' 도 성씨로 시작해 이름 판정을 통과한다
+    const d = draft("한결테크놀로지", "구매부", "남기훈", "기훈 부장", "M. 010-8080-1212");
+    expect(d.fullName).toBe("남기훈");
+    expect(d.jobTitle).toBe("부장");
+  });
+
+  it("부서가 깨져 꼬리말을 잃으면 직책에 붙이지 않는다", () => {
+    // "영업3팀" 이 "영업36" 으로 읽힌 경우
+    const d = draft("세일무역", "기 태랑 영업36 팀장", "휴대폰 010-8181-2929");
+    expect(d.fullName).toBe("기 태랑");
+    expect(d.jobTitle).toBe("팀장");
+  });
+
+  it("꼬리말 없는 영문 부서도 되찾는다", () => {
+    const d = draft("Northgate Beauty Ltd", "Oliver Hartley", "Category Manager", "Global Sourcing",
+      "Mobile +44 7700 900123");
+    expect(d.company).toBe("Northgate Beauty Ltd");
+    expect(d.fullName).toBe("Oliver Hartley");
+    expect(d.jobTitle).toBe("Category Manager");
+    expect(d.department).toBe("Global Sourcing");
+  });
+
+  it("한자 이름 뒤 한 글자 찌꺼기는 버린다", () => {
+    expect(draft("广州华美化妆品有限公司", "采购部", "李建国 此", "H.P 139 8765 4321").fullName).toBe("李建国");
+  });
+
+  it("한자 이름의 띄어쓰기는 지킨다", () => {
+    expect(tidyOcrText("佐藤 健一")).toBe("佐藤 健一");
+  });
+});
+
 describe("지어내지 않는다", () => {
   it("분류한 값은 모두 원문의 일부다", () => {
     const lines = [

@@ -114,7 +114,8 @@ export function tidyOcrText(text: string | null | undefined): string {
     s = s.split(" ").map((t) => (t.includes("@") ? t.replace(/,/g, ".") : t)).join(" ");
   }
   const hasGraph = (x: string) => /[\p{L}\p{N}]/u.test(x);
-  if (!/[가-힣]/.test(s)) return hasGraph(s) ? s : "";
+  // 한자·가나 줄도 아래 정리를 거치게 한다 — "李建国 此" 같은 찌꺼기가 붙는다
+  if (!/[가-힣一-鿿぀-ヿ]/.test(s)) return hasGraph(s) ? s : "";
   s = s.replace(/([([])\s+/g, "$1").replace(/\s+([)\]])/g, "$1");
   let toks = s.split(" ").filter(Boolean);
   // ③ 한글 줄에 섞인 한 글자짜리 찌꺼기 (두 토큰 이상일 때만)
@@ -124,6 +125,11 @@ export function tidyOcrText(text: string | null | undefined): string {
   }
   // ④ 이름 꼴 뒤에 붙은 짧은 찌꺼기 ("강태웅 33", "송예린 ze")
   if (toks.length === 2 && /^[가-힣]{2,4}$/.test(toks[0]!) && toks[1]!.length <= 2 && !/[가-힣]/.test(toks[1]!)) {
+    toks = [toks[0]!];
+  }
+  // 한자 이름 뒤에도 같은 찌꺼기가 붙는다("李建国 此"). 이름을 띄어 쓰는 나라가
+  // 있어("佐藤 健一") 두 글자 이상이면 두고, 한 글자만 떨어져 붙으면 버린다.
+  if (toks.length === 2 && /^[一-鿿぀-ヿ]{2,4}$/.test(toks[0]!) && /^[一-鿿぀-ヿ]$/.test(toks[1]!)) {
     toks = [toks[0]!];
   }
   // ⑤ 한 글자 한글 토큰이 2개 이상 이어지면 한 낱말로 ("구 매 팀 차장" → "구매팀 차장")
@@ -512,7 +518,16 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
           for (let n = Math.min(3, titleAt); n >= 1; n--) {
             const cand = toks.slice(0, n);
             const glued = cand.join("");
-            if (glued.length <= 4 && looksLikePersonNameStrict(glued)) { nameEnd = n; break; }
+            /*
+             * 앞머리가 '다른 줄에 있는 더 긴 이름의 조각' 이면 쓰지 않는다 —
+             * "남기훈" 과 "기훈 부장" 이 함께 나오면 '기훈' 이 성씨로 시작해
+             * 사람 이름 판정을 통과해 버린다. 긴 쪽을 쓰도록 여기서는 비운다.
+             */
+            const isFragment = /^[가-힣]{2,3}$/.test(glued) && candidates.some(
+              (y) => y.i !== i && !used.has(y.i) && y.l.text.length > glued.length &&
+                     y.l.text.includes(glued) && looksLikeKoreanName(y.l.text),
+            );
+            if (glued.length <= 4 && looksLikePersonNameStrict(glued) && !isFragment) { nameEnd = n; break; }
             if (n <= 2 && looksLikeLatinName(cand.join(" "))) { nameEnd = n; break; }
           }
         }
@@ -541,7 +556,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
          * 다만 앞머리가 다른 줄에 있는 이름의 조각이면("남기훈" 과 "기훈 부장")
          * 직책에 붙이지 않는다 — OCR 이 이름 줄을 두 번 뱉을 때 나온다.
          */
-        let titleFrom = deptAt >= 0 ? deptAt + 1 : nameEnd;
+        let titleFrom: number = deptAt >= 0 ? deptAt + 1 : nameEnd;
         if (deptAt < 0 && nameEnd === 0 && toks.length >= 2 && /^[가-힣]{2,3}$/.test(toks[0]!)) {
           const frag = toks[0]!;
           const isFragment = candidates.some(
@@ -549,6 +564,12 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
           );
           if (isFragment) titleFrom = 1;
         }
+        /*
+         * 직책 앞에 숫자가 섞인 토큰이 남으면 부서가 깨져 읽힌 것이다 —
+         * "영업3팀" 이 "영업36" 으로 읽혀 꼬리말을 잃으면 직책에 붙어
+         * "영업36 팀장" 이 된다. 직책 칸에는 넣지 않는다.
+         */
+        while (titleFrom < titleAt && /\d/.test(toks[titleFrom]!)) titleFrom++;
         const titleToks = toks.slice(titleFrom);
         if (titleToks.length) titleValue = sliceSpanning(l.text, titleToks) ?? titleValue;
       }
@@ -646,6 +667,33 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       if (!/[가-힣一-鿿぀-ヿ]/.test(ct) && !/^[A-Z0-9]/.test(ct)) continue;
       push({ key: "company", value: ct, normalized: null, confidence: lineConf(cl) * 0.6, provenance: "ocr", sourceLine: ci, bbox: cl.bbox });
       used.add(ci);
+      break;
+    }
+  }
+
+  /*
+   * 부서도 꼬리말이 없으면 못 잡는다 — "Global Sourcing"·"Einkauf"·
+   * "Merchandising" 처럼 영문 명함의 부서는 team·division 같은 말을 쓰지 않는
+   * 경우가 더 많다. 회사를 찾은 뒤에도 짧은 줄이 남아 있으면 부서로 본다.
+   */
+  if (!fields.some((f) => f.key === "department")) {
+    for (let di = 0; di < clean.length; di++) {
+      const dl = clean[di]!;
+      if (used.has(di) || !dl.text) continue;
+      const dt = dl.text;
+      if (dt.length < 3 || dt.length > 28) continue;
+      if ((dt.match(/[\p{L}]/gu) ?? []).length < 3) continue;
+      if (/\d/.test(dt)) continue;
+      if (hasTitleWord(dt)) continue;
+      // 이름을 이미 찾았으면 이름처럼 보이는 줄도 부서 후보다
+      // ("Global Sourcing" 은 두 단어 모두 대문자로 시작해 라틴 이름 꼴과 같다)
+      if (!fields.some((f) => f.key === "fullName") && looksLikeAnyName(dt)) continue;
+      if (ADDRESS_MARKERS.some((re) => re.test(dt))) continue;
+      if (COMPANY_MARKERS.some((re) => re.test(dt))) continue;
+      if (lineConf(dl) < 0.7 || /[|｜]/.test(dt)) continue;
+      if (!/[가-힣一-鿿぀-ヿ]/.test(dt) && !/^[A-Z]/.test(dt)) continue;
+      push({ key: "department", value: dt, normalized: null, confidence: lineConf(dl) * 0.6, provenance: "ocr", sourceLine: di, bbox: dl.bbox });
+      used.add(di);
       break;
     }
   }

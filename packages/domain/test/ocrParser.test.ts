@@ -9,8 +9,9 @@
 import { describe, expect, it } from "vitest";
 import { assertGrounded, parseBusinessCard, tidyOcrText, toDraft } from "../src/ocrParser";
 
+// 정리(tidyOcrText)는 파서가 스스로 한다 — 사진에서 나온 줄을 손대지 않고 그대로 넣는다
 const draft = (...texts: string[]) => {
-  const lines = texts.map((t) => ({ text: tidyOcrText(t) })).filter((l) => l.text);
+  const lines = texts.map((t) => ({ text: t }));
   const r = parseBusinessCard(lines);
   assertGrounded(r.fields, lines);
   return toDraft(r.fields);
@@ -40,6 +41,20 @@ describe("tidyOcrText — 사진에서 섞여 들어온 찌꺼기", () => {
     expect(tidyOcrText("M. 010-1234-5678")).toBe("M. 010-1234-5678");
     expect(tidyOcrText("Jane Doe, CEO")).toBe("Jane Doe, CEO");
     expect(tidyOcrText("이 사람은 담당자")).toBe("이 사람은 담당자");
+  });
+
+  it("가운데 막대는 칸을 나누는 구분자다 — 지우지 않는다", () => {
+    expect(tidyOcrText("Maria Smith | Engineering Dept. | Director")).toBe("Maria Smith | Engineering Dept. | Director");
+    expect(tidyOcrText("홍길동 | 마케팅팀 | 팀장")).toBe("홍길동 | 마케팅팀 | 팀장");
+    expect(tidyOcrText("| 杨强 · 총괄 |")).toBe("杨强 · 총괄");
+  });
+
+  it("파서가 정리를 스스로 한다 — 호출자가 미리 손댈 필요가 없다", () => {
+    const d = draft("( 주 ) 그 린 코 스 메 틱", "최 민 서", "| 영업지원팀", "|", "M. 010-1234-5678");
+    expect(d.fullName).toBe("최민서");
+    expect(d.company).toBe("(주) 그린코스메틱");
+    expect(d.department).toBe("영업지원팀");
+    expect(d.mobile).toBe("010-1234-5678");
   });
 });
 

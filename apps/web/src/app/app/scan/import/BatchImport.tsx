@@ -65,18 +65,18 @@ export function BatchImport() {
     const canvases = item.split ? pipe.splitCards(base).canvases : [pipe.autoCorrect(base).canvas];
     const cards: InboxCard[] = [];
     for (const [idx, c] of canvases.entries()) {
-      const lines = await ocrCanvas(pipe.enhanceForOcr(c), item.langs);
+      const { lines, engine } = await ocrCanvas(c, item.langs);
       if (!lines.length) continue;
       let job: any;
       try {
-        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine: "tesseract.js", lines }, offline: false });
+        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine, lines }, offline: false });
       } catch (e) {
         if (!(e instanceof ClientError) || e.status !== 0) throw e;
         const r = parseBusinessCard(lines);
         job = { id: null, fields: r.fields.map((f) => ({ ...f, needsReview: needsReview(f) })), duplicates: [], draft: {} };
       }
       if (item.keepOriginal && job.id) await upload(`/capture/cards/${job.id}/images/front`, await pipe.canvasToJpeg(c), { method: "PUT" }).catch(() => undefined);
-      cards.push({ idx, status: "review", thumb: pipe.thumbnail(c), lines, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
+      cards.push({ idx, status: "review", thumb: pipe.thumbnail(c), lines, engine, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
     }
     // the photo itself is no longer needed on the device once it has been read
     await off.updateInbox(item.id, { status: "done", cards, error: cards.length ? null : "글자를 찾지 못했어요." }, { dropBlob: true });
@@ -159,7 +159,7 @@ export function BatchImport() {
     try {
       const r = f.card.captureId
         ? await api<{ contactId: string }>("/contacts", { idempotencyKey: uid(), body: contact })
-        : await api<{ contactId: string }>("/capture/commit", { idempotencyKey: uid(), body: { capture: { side: "front", kind: f.item.kind, engine: "tesseract.js", lines: f.card.lines }, contact } });
+        : await api<{ contactId: string }>("/capture/commit", { idempotencyKey: uid(), body: { capture: { side: "front", kind: f.item.kind, engine: f.card.engine ?? "tesseract.js", lines: f.card.lines }, contact } });
       await setCard(f, { status: "saved", contactId: r.contactId });
       setOpen(null);
     } catch (e) {

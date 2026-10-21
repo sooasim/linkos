@@ -28,4 +28,8 @@ apps/web/.*.mjs
 
 # local encrypted object storage (OBJECT_STORAGE_LOCAL_DIR default)
 .data/
+
+# OCR 모델·런타임 (합쳐 30MB+). `node scripts/ocr/fetch-models.mjs` 로 받는다
+apps/web/public/models/
+apps/web/public/ort/
 .devcontainer/.secrets

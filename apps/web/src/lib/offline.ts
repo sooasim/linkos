@@ -231,6 +231,8 @@ export interface InboxCard {
   status: "review" | "saved" | "skipped" | "queued_save";
   thumb: string;
   lines: { text: string; confidence: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }[];
+  /** 이 줄들을 읽은 엔진 (예전에 넣어 둔 사진에는 없다 → tesseract.js 로 본다) */
+  engine?: string;
   captureId: string | null;
   fields: { key: string; value: string; confidence: number; needsReview?: boolean }[];
   duplicates: { contactId: string; fullName: string; company: string | null; score: number; autoMergeable: boolean }[];

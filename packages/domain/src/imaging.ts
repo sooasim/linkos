@@ -262,7 +262,8 @@ export function polygonArea(poly: Point[]): number {
   return Math.abs(a) / 2;
 }
 
-function componentHull(c: Component): Point[] {
+/** Convex hull of a component's pixels (per-row extremes are enough for a convex outline). */
+export function componentHull(c: Component): Point[] {
   const pts: Point[] = [];
   for (const [y, [x0, x1]] of c.rows) {
     // pixel corners so that a 1-px wide card edge still has area

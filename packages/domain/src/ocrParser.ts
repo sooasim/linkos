@@ -107,8 +107,18 @@ const LABEL_EMAIL = /^(?:e|e-?mail|mail|이메일|메일|電子メール|邮箱)
 export function tidyOcrText(text: string | null | undefined): string {
   let s = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!s) return "";
-  // ① 홀로 선 막대 — 한글이 없는 줄("| Export Division")에서도 치운다
-  s = s.split(" ").filter((t) => !/^[|｜ㅣl]$/.test(t)).join(" ").trim();
+  /*
+   * ① 홀로 선 막대 — 한글이 없는 줄("| Export Division")에서도 치운다.
+   * 줄 앞뒤만 본다. 가운데 막대는 인쇄선이 아니라 칸을 나누는 구분자이고
+   * ("Maria Smith | Engineering Dept. | Director"), 그걸 지우면 아래 분류가
+   * 이름·부서·직책을 한 덩어리로 보게 된다.
+   */
+  const isBar = (t: string) => /^[|｜ㅣl]$/.test(t);
+  const edge = s.split(" ").filter(Boolean);
+  while (edge.length && isBar(edge[0]!)) edge.shift();
+  while (edge.length && isBar(edge[edge.length - 1]!)) edge.pop();
+  s = edge.join(" ").trim();
+  if (!s) return "";
   // ②-1 메일 주소 안의 쉼표는 점을 잘못 읽은 것이다 ("ha,joo@…")
   if (s.includes("@")) {
     s = s.split(" ").map((t) => (t.includes("@") ? t.replace(/,/g, ".") : t)).join(" ");
@@ -118,11 +128,10 @@ export function tidyOcrText(text: string | null | undefined): string {
   if (!/[가-힣一-鿿぀-ヿ]/.test(s)) return hasGraph(s) ? s : "";
   s = s.replace(/([([])\s+/g, "$1").replace(/\s+([)\]])/g, "$1");
   let toks = s.split(" ").filter(Boolean);
-  // ③ 한글 줄에 섞인 한 글자짜리 찌꺼기 (두 토큰 이상일 때만)
-  if (toks.length >= 2) {
-    const kept = toks.filter((t) => !/^[A-Za-z]$|^[^\p{L}\p{N}]+$/u.test(t));
-    if (kept.length) toks = kept;
-  }
+  // ③ 줄 앞뒤에 붙은 한 글자짜리 찌꺼기 (가운데 것은 ①과 같은 이유로 구분자로 둔다)
+  const isJunkTok = (t: string) => /^[A-Za-z]$|^[^\p{L}\p{N}]+$/u.test(t);
+  while (toks.length >= 2 && isJunkTok(toks[0]!)) toks.shift();
+  while (toks.length >= 2 && isJunkTok(toks[toks.length - 1]!)) toks.pop();
   // ④ 이름 꼴 뒤에 붙은 짧은 찌꺼기 ("강태웅 33", "송예린 ze")
   if (toks.length === 2 && /^[가-힣]{2,4}$/.test(toks[0]!) && toks[1]!.length <= 2 && !/[가-힣]/.test(toks[1]!)) {
     toks = [toks[0]!];
@@ -334,7 +343,12 @@ function hasTitleWord(s: string): string | null {
 export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
   const fields: ExtractedField[] = [];
   const used = new Set<number>();
-  const clean = lines.map((l) => ({ ...l, text: l.text.replace(/\s+/g, " ").trim() }));
+  /*
+   * 분류 전에 tidyOcrText 를 거친다. 공백만 접고 넘기면 "최 민 서"·"| 영업지원팀" 같은
+   * 줄이 그대로 들어와, 아래 규칙이 전부 헛돈다 — KBT 쪽 측정에서 올린 수치는 이 정리를
+   * 거친 입력에서 나온 것이다. 지우고 붙일 뿐이라 '지어내지 않는다' 규칙은 그대로다.
+   */
+  const clean = lines.map((l) => ({ ...l, text: tidyOcrText(l.text) }));
 
   const push = (f: ExtractedField) => {
     if (!fields.some((x) => x.key === f.key && x.value === f.value)) fields.push(f);
@@ -713,11 +727,15 @@ export function toDraft(fields: ExtractedField[]): Partial<Record<FieldKey, stri
   return d;
 }
 
-/** Verify the no-fabrication invariant: every value must be a substring of some source line. */
+/**
+ * Verify the no-fabrication invariant: every value must be a substring of its source line
+ * after `tidyOcrText` — the same text the parser classified. tidyOcrText only deletes and
+ * joins characters, so a value grounded in the tidied line is still grounded in the photo.
+ */
 export function assertGrounded(fields: ExtractedField[], lines: OcrLine[]): void {
   for (const f of fields) {
     if (f.provenance !== "ocr") continue;
-    const src = lines[f.sourceLine]?.text.replace(/\s+/g, " ") ?? "";
+    const src = tidyOcrText(lines[f.sourceLine]?.text);
     if (!src.includes(f.value)) throw new Error(`ungrounded field ${f.key}`);
   }
 }

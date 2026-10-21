@@ -1,6 +1,6 @@
 // F-014 배지 스캔 / F-144 배지 OCR: 행사 배지 레이아웃(이름이 가장 크게, 그 아래 회사, 직함) 매핑.
 // 모든 값은 OCR 원문의 부분 문자열이다(원문에 없는 값 생성 금지). 배지 유형(VISITOR/SPEAKER…)은 연락처 필드가 아니라 메타데이터.
-import { type ExtractedField, type ExtractionResult, type OcrLine, parseBusinessCard } from "./ocrParser";
+import { type ExtractedField, type ExtractionResult, type OcrLine, parseBusinessCard, tidyOcrText } from "./ocrParser";
 import { normalizePersonName } from "./normalize";
 
 const BADGE_TYPES = /^(?:visitor|attendee|delegate|speaker|exhibitor|sponsor|press|media|staff|crew|organizer|vip|guest|student|참관객|참가자|관람객|연사|발표자|전시자|전시업체|후원사|프레스|기자|스태프|운영진|주최|초청|학생)$/i;
@@ -37,7 +37,8 @@ export interface BadgeExtraction extends ExtractionResult {
  */
 export function parseBadge(lines: OcrLine[]): BadgeExtraction {
   const base = parseBusinessCard(lines);
-  const clean = lines.map((l, i) => ({ ...l, text: l.text.replace(/\s+/g, " ").trim(), i }));
+  // 명함 파서와 같은 정리를 거친다 — 두 파서가 같은 줄을 다르게 보면 안 된다
+  const clean = lines.map((l, i) => ({ ...l, text: tidyOcrText(l.text), i }));
   const channelLines = new Set(base.fields.filter((f) => ["email", "mobile", "phone", "fax", "website", "sns"].includes(f.key)).map((f) => f.sourceLine));
   let badgeType: string | null = null;
   const typeLine = clean.find((l) => BADGE_TYPES.test(l.text));

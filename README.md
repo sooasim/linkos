@@ -38,6 +38,10 @@ dd/                 원본 기획 번들 (zip, 백서 docx, 압축 해제본)
 5. **검토·동의** — 보낼 항목을 직접 체크 → 양쪽 Contact/Encounter/Relationship 생성, 발신자 화면에 SSE로 실시간 표시
 6. **Claim(교환 후)** — 이메일 OTP 또는 Google로 가입 → 게스트 초안으로 Living Card 자동 생성, 상대 명함이 내 주소록에
 
+**문자명함 전송 (X-009)** `/app/card-sms` — 상대가 종이 명함만 건넸을 때: 그 명함을 촬영해 번호를 읽고(기기 내 OCR), 내 명함 이미지와
+기본정보, 그리고 **로그인 없이 구글 연락처·휴대폰 주소록에 저장하는 링크**(`/s/{token}`, .vcf)를 그 번호로 문자로 보냅니다. 발송은 사용자가
+직접 누를 때 한 건씩만 일어나고(자동 발송 없음), 발송 게이트웨이(Solapi·Twilio)가 설정돼 있지 않으면 본문이 채워진 사용자의 문자 앱이 열립니다.
+
 그 밖에: Living Card(3초/30초/딥, Offer/Need, 4단계 필드 ACL, 변형, Access Request), 인맥/타임라인/개인 메모, 중복 탐지·필드별 병합·되돌리기,
 관계 기억 자연어 검색, 설명 가능한 Need↔Offer 매칭, Meeting Card + 녹음 동의 게이트 + 30초 브리핑, 동의 기반 소개 + Connection Room,
 행사(opt-in 매칭), Google 연락처 동기화(idempotent, etag 매핑), XLSX/CSV/vCard/TXT/JSON 내보내기, 데이터 내보내기/계정 삭제, 감사로그, KPI.

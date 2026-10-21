@@ -36,6 +36,8 @@ export * from "./webhook";
 export * from "./sso";
 export * from "./crmDeals";
 export * from "./shareKit";
+// X-009 문자 명함 전송
+export * from "./cardSms";
 export * from "./assistant";
 export * from "./minimize";
 export * from "./origin";

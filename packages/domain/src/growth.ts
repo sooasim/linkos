@@ -126,6 +126,10 @@ export const PRODUCT_EVENTS = [
   "guest_claimed",
   "card_scanned",
   "contact_created",
+  // X-009 문자 명함 전송: 보냄 → 수신자가 링크를 열었음 → 연락처로 저장함
+  "card_sms_sent",
+  "card_sms_opened",
+  "card_sms_saved",
   "meeting_created",
   "followup_completed",
   "action_request_submitted",

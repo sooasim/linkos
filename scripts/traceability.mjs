@@ -263,6 +263,7 @@ const EXTRAS = [
   ["X-006", "관계 재연결 다이제스트(초안만)", "/app/reconnect", "/reconnect/digest, /reconnect/digest/{contactId}/draft", "services/api/test/extras.integration.test.ts, tests/e2e/audit-extras.spec.ts"],
   ["X-007", "행사용 명함 포스터·테이블 텐트 PDF", "/app/me/share, /app/events/[id]", "/exchange/manage/{id}/poster", "services/api/test/extras.integration.test.ts"],
   ["X-008", "명함 디자인 스튜디오 — 오리지널 템플릿 50종 · 아이콘 291 · 이모지 912", "/app/me/templates, /app/me/edit", "/profiles/{id}/template", "packages/domain/test/cardDesign.test.ts, services/api/test/card-templates.integration.test.ts, tests/e2e/card-templates.spec.ts"],
+  ["X-009", "문자명함 전송 — 상대 종이 명함 촬영 → 그 번호로 내 명함(이미지+기본정보+저장 링크) 문자 발송 → 수신자는 로그인 없이 구글 연락처·주소록에 저장", "/app/card-sms, /s/[token]", "/card-sms, /card-sms/{id}, /card-sms/{id}/send, /card-sms/image, /s/{token}/vcard", "packages/domain/test/cardSms.test.ts, services/api/test/sms.test.ts, services/api/test/card-sms.integration.test.ts"],
 ];
 lines.push("## 추가 기능 (원장 외 · X-ID)", "", "| ID | 기능 | 상태 | UI | API | 테스트 |", "|---|---|---|---|---|---|");
 for (const [id, t, ui, api, tests] of EXTRAS) lines.push(`| ${id} | ${t} | ${LABEL.T} | ${ui} | ${api} | ${tests} |`);

@@ -11,7 +11,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { recordCost } from "./metering";
 import { log } from "./platform";
 
-export type SmsProvider = "solapi" | "twilio";
+export type SmsProvider = "solapi" | "twilio" | "android_gateway";
 
 export interface SmsSendResult {
   sent: boolean;
@@ -20,6 +20,18 @@ export interface SmsSendResult {
   /** 실제로 이미지가 함께 갔는지 — MMS 를 요청했어도 업로드가 실패하면 본문만 보내고 false 가 된다 */
   withImage: boolean;
   reason?: "not_configured" | "no_sender" | "image_upload_failed";
+}
+
+/**
+ * 외부에 요청은 나갔지만 응답을 받지 못한 상태. **이미 상대 휴대폰에 도착했을 수 있으므로**
+ * 호출자는 자동 재시도하지 않고 'uncertain' 으로 남겨 사용자가 자기 문자함을 보고 판단하게 한다.
+ */
+export class SmsUncertainError extends Error {
+  readonly uncertain = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "SmsUncertainError";
+  }
 }
 
 export interface SmsImage {
@@ -110,6 +122,65 @@ async function twilioSend(to: string, text: string, image: SmsImage | null): Pro
   const body = (await res.json().catch(() => null)) as { sid?: string; message?: string } | null;
   if (!res.ok) throw new Error(`twilio_${res.status}: ${body?.message ?? "send failed"}`);
   return { sent: true, provider: "twilio", messageId: body?.sid ?? null, withImage: Boolean(image?.publicUrl), reason: image && !image.publicUrl ? "image_upload_failed" : undefined };
+}
+
+// ---------------------------------------------------------------- 사용자 본인 안드로이드 SIM (android-sms-gateway, Cloud)
+
+/**
+ * 공식 Cloud 엔드포인트 **고정**. 사용자가 URL 을 고를 수 없으므로 SSRF 경로가 생기지 않는다.
+ * (Local/Private 서버를 쓰려면 사내망 주소를 받아야 하는데, 그건 임의 URL 로 POST 하는 길을 여는 것이므로
+ *  별도 설계 — 허용 목록·사설망 차단 — 없이는 지원하지 않는다.)
+ */
+export const ANDROID_GATEWAY_ENDPOINT = "https://api.sms-gate.app/3rdparty/v1/message";
+
+export interface AndroidGatewayCredentials {
+  username: string;
+  password: string;
+}
+
+/**
+ * 사용자 폰의 공식 앱(capcom6/android-sms-gateway)이 자기 SIM 으로 보낸다. 서버는 1건 요청만 전달한다.
+ * 2xx 는 **접수**일 뿐 통신사 발송·도착이 아니다. 응답을 못 받으면 SmsUncertainError 로 올려
+ * 호출자가 재시도 대신 '불확실'로 남기게 한다(중복 발송 방지).
+ */
+export async function sendViaAndroidGateway(creds: AndroidGatewayCredentials, toE164: string, text: string): Promise<SmsSendResult> {
+  const body = JSON.stringify({ textMessage: { text }, phoneNumbers: [toE164] });
+  const auth = `Basic ${Buffer.from(`${creds.username}:${creds.password}`).toString("base64")}`;
+  let res: Response;
+  try {
+    res = await fetch(ANDROID_GATEWAY_ENDPOINT, {
+      method: "POST",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    throw new SmsUncertainError(`안드로이드 게이트웨이와 통신하지 못했습니다(${(e as Error).name}). 요청이 접수됐을 수도 있으니 다시 보내기 전에 휴대폰 문자함을 확인하세요.`);
+  }
+  if (res.status === 401 || res.status === 403) throw new Error(`gateway_${res.status}: 게이트웨이 사용자명·비밀번호가 맞지 않거나 권한이 없습니다.`);
+  if (res.status >= 500) throw new SmsUncertainError(`게이트웨이 서버 오류(HTTP ${res.status}). 접수 여부가 불확실하므로 휴대폰에서 확인한 뒤 판단하세요.`);
+  if (!res.ok) throw new Error(`gateway_${res.status}: 게이트웨이가 요청을 거절했습니다. 휴대폰의 앱 상태(서비스 실행·권한·배터리 최적화 제외)를 확인하세요.`);
+  const json = (await res.json().catch(() => null)) as { id?: string } | null;
+  await recordCost(null, { jobType: "sms", provider: "android_gateway", rateKey: "sms.gateway", units: 1 }).catch(() => undefined);
+  return { sent: true, provider: "android_gateway", messageId: json?.id ?? null, withImage: false };
+}
+
+/** 저장된 인증정보가 실제로 쓸 수 있는지 확인(발송 전 1회). 공식 API 의 상태 조회를 쓴다. */
+export async function checkAndroidGateway(creds: AndroidGatewayCredentials): Promise<{ ok: boolean; status: number }> {
+  const auth = `Basic ${Buffer.from(`${creds.username}:${creds.password}`).toString("base64")}`;
+  try {
+    // 메시지 전송 엔드포인트와 같은 호스트의 조회 경로. 없는 id 를 물어 404/401 로 인증 여부만 가린다.
+    const res = await fetch(`${ANDROID_GATEWAY_ENDPOINT}/00000000-0000-0000-0000-000000000000`, {
+      method: "GET",
+      headers: { authorization: auth },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return { ok: res.status !== 401 && res.status !== 403, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
 }
 
 /**

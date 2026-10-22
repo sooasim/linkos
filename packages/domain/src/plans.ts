@@ -225,6 +225,8 @@ export const DEFAULT_COST_RATES: Record<string, number> = {
   // X-009 문자 명함: 국내 단문/장문 ≈ 20원, 그림문자 ≈ 100원 (provider·계약마다 다르므로 COST_RATES_JSON 으로 덮어쓴다)
   "sms.message": 14000,
   "sms.mms": 70000,
+  // 사용자 본인 SIM 발송은 우리 쪽 과금이 없다(사용자 요금제에서 빠진다)
+  "sms.gateway": 0,
   "storage.gb_month": 23000,
 };
 

@@ -93,12 +93,95 @@ export function buildCardSmsText(me: CardSmsSender, link: string, opts: CardSmsT
   return lines.filter((l): l is string => Boolean(l)).join("\n");
 }
 
+export type SmsPlatform = "ios" | "android" | "unknown";
+
 /**
  * 사용자의 문자 앱을 본문이 채워진 상태로 여는 링크 — 발송 게이트웨이가 없을 때의 폴백.
- * `?&body=` 는 iOS(`&body=`)와 Android(`?body=`) 양쪽에서 동작하는 형태다.
+ * 구분자는 플랫폼마다 다르다: iOS 는 `&body=`, Android 는 `?body=`. 어느 쪽인지 모르면 양쪽에서
+ * 동작하는 `?&body=` 를 쓴다.
+ *
+ * **본문이 반드시 채워진다는 보장은 없다.** Apple 의 `sms:` 공식 문서는 본문 포함을 규정하지 않아
+ * iOS 버전·브라우저마다 동작이 갈린다 — 그래서 화면은 항상 "본문 복사"를 함께 제공하고,
+ * 문자 앱이 열린 것을 발송 성공으로 기록하지 않는다.
  */
-export function smsDeepLink(phone: string, body: string): string {
-  return `sms:${phone.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(body)}`;
+export function smsDeepLink(phone: string, body: string, platform: SmsPlatform = "unknown"): string {
+  const sep = platform === "ios" ? "&" : platform === "android" ? "?" : "?&";
+  return `sms:${phone.replace(/[^\d+]/g, "")}${sep}body=${encodeURIComponent(body)}`;
+}
+
+/** User-Agent → 문자 URI 구분자 판단에 쓰는 플랫폼. 문자 앱이 없는 데스크톱도 구분한다. */
+export function smsPlatform(userAgent: string | null | undefined): SmsPlatform {
+  const ua = userAgent ?? "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+  if (/Android/i.test(ua)) return "android";
+  return "unknown";
+}
+
+export function hasSmsApp(userAgent: string | null | undefined): boolean {
+  return /Android|iPhone|iPad|iPod/i.test(userAgent ?? "");
+}
+
+/** 기록·목록에 보여 줄 부분 마스킹(앞 3자리 + 뒤 4자리). 전체 번호는 재발송에 필요한 곳에서만 쓴다. */
+export function maskPhone(e164OrLocal: string): string {
+  const d = e164OrLocal.replace(/[^\d]/g, "");
+  const national = d.startsWith("82") ? `0${d.slice(2)}` : d;
+  if (national.length < 7) return "***";
+  return `${national.slice(0, 3)}-****-${national.slice(-4)}`;
+}
+
+/**
+ * 한국 번호인데 휴대폰(01x)이 아니면 알려 준다. **차단하지는 않는다** — 해외 번호도 보낼 수 있고,
+ * 명함의 대표번호로 문자를 보내려는 경우도 있다. 다만 유선번호는 문자가 도착하지 않는 일이 흔하다.
+ */
+export function phoneDeliveryWarning(e164: string): string | null {
+  if (!e164.startsWith("+82")) return null;
+  const national = e164.slice(3);
+  if (/^1[0-9]\d{7,8}$/.test(national)) return null; // 10/11 → 휴대폰
+  return "휴대폰 번호가 아닐 수 있어요(유선번호로는 문자가 도착하지 않는 경우가 많습니다). 번호를 다시 확인해 주세요.";
+}
+
+// ---------------------------------------------------------------- 발송 남용 방지 (순수 판정)
+
+/** 연속 발송 최소 간격 — 손이 미끄러져 두 번 누르거나 자동화로 쏟아붓는 것을 막는다. */
+export const SEND_MIN_INTERVAL_SEC = 30;
+/** 채널별 1일 상한. 명함 교환은 하루 수십 건이 현실적인 상한이다. */
+export const SEND_DAILY_LIMIT = 20;
+/** 같은 상대에게 다시 보내기 전 기다리는 시간. "보냈는지 모르겠다"는 상태도 중복으로 본다. */
+export const SEND_DEDUPE_HOURS = 24;
+
+export interface SendHistory {
+  /** 같은 채널의 최근 발송 시각 (없으면 null) */
+  lastSentAt?: Date | string | null;
+  /** 같은 채널의 최근 24시간 발송 건수 */
+  dailyCount: number;
+  /** 같은 상대(번호 해시)에게 최근 SEND_DEDUPE_HOURS 안에 보냈거나 결과를 모르는 건이 있는지 */
+  recentSameRecipient?: boolean;
+}
+
+export type SendBlock =
+  | { ok: true }
+  | { ok: false; code: "too_soon"; retryAfterSec: number; message: string }
+  | { ok: false; code: "daily_limit"; message: string }
+  | { ok: false; code: "duplicate_recipient"; message: string };
+
+/**
+ * 보내도 되는지 판정한다(DB 조회 결과를 받아 계산만 한다 — 그래서 단위테스트가 가능하다).
+ * 시간당 rate limit 과는 별개의 층이다: 이쪽은 "같은 사람에게 두 번" 같은 사람 기준 사고를 막는다.
+ */
+export function sendGuard(h: SendHistory, now: Date = new Date()): SendBlock {
+  if (h.recentSameRecipient) {
+    return { ok: false, code: "duplicate_recipient", message: `최근 ${SEND_DEDUPE_HOURS}시간 안에 같은 번호로 보낸(또는 결과를 확인하지 못한) 내역이 있어 중복 발송을 막았습니다.` };
+  }
+  if (h.dailyCount >= SEND_DAILY_LIMIT) {
+    return { ok: false, code: "daily_limit", message: `하루 ${SEND_DAILY_LIMIT}건 발송 제한을 넘었습니다. 내일 다시 보낼 수 있어요.` };
+  }
+  if (h.lastSentAt) {
+    const elapsed = (now.getTime() - new Date(h.lastSentAt).getTime()) / 1000;
+    if (elapsed < SEND_MIN_INTERVAL_SEC) {
+      return { ok: false, code: "too_soon", retryAfterSec: Math.max(1, Math.ceil(SEND_MIN_INTERVAL_SEC - elapsed)), message: `연속 발송을 막기 위해 ${Math.max(1, Math.ceil(SEND_MIN_INTERVAL_SEC - elapsed))}초 뒤에 다시 시도해 주세요.` };
+    }
+  }
+  return { ok: true };
 }
 
 /** 구글 연락처(웹) — .vcf 를 내려받은 뒤 "가져오기"로 넣을 때 쓰는 입구. 자동 등록 링크는 존재하지 않는다. */

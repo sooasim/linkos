@@ -21,6 +21,7 @@ export const SEALED_COLUMNS: SealedColumn[] = [
   { table: "sso_configs", column: "encrypted_client_secret", pk: ["organization_id"], encoding: "bytea" },
   { table: "booking_pages", column: "token_sealed", pk: ["id"], encoding: "bytea" },
   { table: "card_sms_deliveries", column: "token_sealed", pk: ["id"], encoding: "bytea" },
+  { table: "sms_gateway_accounts", column: "credentials_sealed", pk: ["user_id"], encoding: "bytea" },
   { table: "webhook_endpoints", column: "secret_sealed", pk: ["id"], encoding: "bytea" },
   { table: "apple_pending_profiles", column: "encrypted_profile", pk: ["subject_hash"], encoding: "bytea" },
   { table: "exchange_rendezvous", column: "token_enc", pk: ["id"], encoding: "base64" },

@@ -50,7 +50,7 @@ function overrides(): Record<string, number> {
 export interface CostEntry {
   userId?: string | null;
   organizationId?: string | null;
-  jobType: "llm" | "ocr" | "stt" | "email" | "storage";
+  jobType: "llm" | "ocr" | "stt" | "email" | "sms" | "storage";
   jobId?: string | null;
   provider: string;
   rateKey: string;

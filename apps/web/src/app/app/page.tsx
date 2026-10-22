@@ -230,6 +230,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {(
             [
               ["/app/scan", "scan", m.nav.scan],
+              ["/app/card-sms", "message", m.nav.cardSms],
               ["/app/meetings", "calendar", m.nav.meetings],
               ["/app/messages", "message", m.nav.messages],
               ["/app/calendar", "calendar", m.nav.calendar],

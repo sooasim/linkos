@@ -33,7 +33,7 @@ const M = {
   "F-012": ["T", "/app/scan/import", "/capture/cards", "BatchImport.tsx (암호화 온디바이스 큐)", "tests/e2e/batch-import.spec.ts", "200장 상한·암호화 큐 적재·새로고침 재개를 브라우저에서 검증. 기기 OCR 엔진은 CDN 언어 데이터가 필요해 e2e 에서 제외(파서는 S-051~S-062). 페이지가 열려 있을 때만 진행"],
   "F-013": ["T", "/app/scan", "", "packages/domain/src/imaging.ts", "packages/domain/test/imaging.test.ts", "한 장에 여러 명함 분할"],
   "F-014": ["T", "/app/events/[id]", "/events/{id}/leads", "packages/domain/src/badge.ts", "services/api/test/track-c.integration.test.ts, packages/domain/test/track-c.test.ts, tests/scenarios/k-capture-files.spec.ts", "배지 파서 → 행사 리드(단일 트랜잭션)"],
-  "F-015": ["I", "/app/scan (언어 선택)", "/capture/parse", "tesseract.js kor/jpn/chi_sim + parser", `${UT}, ${S("S-051~S-054")}`, "구조화 파서는 4개 언어 자동테스트; 기기 OCR 엔진 자체는 실기기 수동 검증"],
+  "F-015": ["I", "/app/scan (언어 선택), /app/card-sms (서버 재시도)", "/capture/parse, /capture/ocr", "tesseract.js kor/jpn/chi_sim + parser, lib/ocr.ts (Google Vision 폴백)", `${UT}, ${S("S-051~S-054")}, services/api/test/ocr.test.ts`, "구조화 파서는 4개 언어 자동테스트. 기기 OCR 이 글자를 못 읽으면 사용자 동의 후 호스팅 OCR(Vision)로 1회 재시도 — 키가 없으면 제안하지 않는다. 기기 OCR 엔진 자체는 실기기 수동 검증"],
   "F-016": ["T", "/app/scan", "/capture/cards, /capture/parse", "domain/ocrParser", `${UT}, ${IT}`, "규칙 기반 구조화(원문 외 값 생성 금지)"],
   "F-017": ["T", "ReviewFields", "/capture/cards", "domain/ocrParser", UT, "필드별 confidence + bbox"],
   "F-018": ["T", "ReviewFields", "", "domain.needsReview", UT, ""],
@@ -263,6 +263,7 @@ const EXTRAS = [
   ["X-006", "관계 재연결 다이제스트(초안만)", "/app/reconnect", "/reconnect/digest, /reconnect/digest/{contactId}/draft", "services/api/test/extras.integration.test.ts, tests/e2e/audit-extras.spec.ts"],
   ["X-007", "행사용 명함 포스터·테이블 텐트 PDF", "/app/me/share, /app/events/[id]", "/exchange/manage/{id}/poster", "services/api/test/extras.integration.test.ts"],
   ["X-008", "명함 디자인 스튜디오 — 오리지널 템플릿 50종 · 아이콘 291 · 이모지 912", "/app/me/templates, /app/me/edit", "/profiles/{id}/template", "packages/domain/test/cardDesign.test.ts, services/api/test/card-templates.integration.test.ts, tests/e2e/card-templates.spec.ts"],
+  ["X-009", "문자명함 전송 — 상대 종이 명함 촬영 → 그 번호로 내 명함(이미지+기본정보+저장 링크) 문자 발송(내 안드로이드 SIM·상용 API·내 문자 앱) → 수신자는 로그인 없이 구글 연락처·주소록에 저장. 설계·비교: docs/CARD_SMS.md", "/app/card-sms, /s/[token]", "/card-sms, /card-sms/{id}, /card-sms/{id}/send, /card-sms/image, /card-sms/gateway, /capture/ocr, /s/{token}/vcard", "packages/domain/test/cardSms.test.ts, services/api/test/sms.test.ts, services/api/test/ocr.test.ts, services/api/test/card-sms.integration.test.ts"],
 ];
 lines.push("## 추가 기능 (원장 외 · X-ID)", "", "| ID | 기능 | 상태 | UI | API | 테스트 |", "|---|---|---|---|---|---|");
 for (const [id, t, ui, api, tests] of EXTRAS) lines.push(`| ${id} | ${t} | ${LABEL.T} | ${ui} | ${api} | ${tests} |`);

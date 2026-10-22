@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -42,7 +43,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   output: "standalone",
-  outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
+  // fileURLToPath (not URL.pathname): on Windows `.pathname` yields "/E:/…" which Turbopack cannot canonicalize.
+  outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
   transpilePackages: ["@linkos/domain", "@linkos/api"],
   serverExternalPackages: ["pg", "exceljs", "nodemailer", "sharp", "@aws-sdk/client-s3", "pdfkit", "web-push"],
   // F-126: the PDF export embeds Pretendard from node_modules
@@ -54,6 +56,8 @@ const config: NextConfig = {
       // exchange links carry a bearer token in the path: never send it as a referrer
       { source: "/x/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/c/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
+      // X-009 문자로 보낸 명함 링크도 경로에 토큰이 있다
+      { source: "/s/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       // org invite links carry a bearer token too (F-004)
       { source: "/join/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/b/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },

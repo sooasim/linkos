@@ -135,6 +135,8 @@ const SIDE: { href: string; label: NavKey; icon: IconName }[] = [
   { href: "/app", label: "home", icon: "home" },
   { href: "/app/exchange", label: "exchange", icon: "exchange" },
   { href: "/app/scan", label: "scan", icon: "scan" },
+  // X-009 종이 명함을 받고 그 번호로 내 명함을 문자로 보내기
+  { href: "/app/card-sms", label: "cardSms", icon: "message" },
   { href: "/app/people", label: "people", icon: "people" },
   { href: "/app/meetings", label: "meetings", icon: "calendar" },
   { href: "/app/ai", label: "aiHub", icon: "spark" },

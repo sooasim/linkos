@@ -1,8 +1,9 @@
 "use client";
 // X-001 email signature · X-002 virtual background · X-004 wallet pass · X-007 event poster
-import { BG_HEIGHT, BG_WIDTH, type BackgroundStyle, type BgOp, type Signature, backgroundLayout, formatShortCode } from "@linkos/domain";
+import { BG_HEIGHT, BG_WIDTH, type BackgroundStyle, type Signature, backgroundLayout, formatShortCode } from "@linkos/domain";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { drawOps, ensureCardFonts } from "@/lib/bgOps";
 import { api } from "@/lib/client";
 
 const STYLE_LABEL: Record<Signature["style"], string> = { classic: "클래식", compact: "한 줄", pastel: "파스텔" };
@@ -67,32 +68,6 @@ export function SignatureTool() {
   );
 }
 
-function draw(ctx: CanvasRenderingContext2D, ops: BgOp[]) {
-  for (const op of ops) {
-    if (op.kind === "fill") {
-      ctx.fillStyle = op.color;
-      ctx.fillRect(0, 0, BG_WIDTH, BG_HEIGHT);
-    } else if (op.kind === "gradient") {
-      const g = ctx.createLinearGradient(op.x0, op.y0, op.x1, op.y1);
-      for (const [at, c] of op.stops) g.addColorStop(at, c);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, BG_WIDTH, BG_HEIGHT);
-    } else if (op.kind === "blob") {
-      const g = ctx.createRadialGradient(op.x, op.y, 0, op.x, op.y, op.r);
-      g.addColorStop(0, op.color);
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(op.x - op.r, op.y - op.r, op.r * 2, op.r * 2);
-    } else {
-      ctx.font = `${op.font === "serif" ? "italic " : ""}${op.weight} ${op.size}px ${op.font === "serif" ? '"Instrument Serif", Georgia, serif' : '"Inter Tight", Pretendard, system-ui, sans-serif'}`;
-      ctx.fillStyle = op.color;
-      ctx.textAlign = op.align;
-      ctx.textBaseline = "alphabetic";
-      ctx.fillText(op.text, op.x, op.y, 900);
-    }
-  }
-}
-
 export function BackgroundTool() {
   const [data, setData] = useState<{ card: { name: string; jobTitle: string | null; company: string | null; headline: string | null }; link: string } | null>(null);
   const [style, setStyle] = useState<BackgroundStyle>("pastel");
@@ -103,11 +78,7 @@ export function BackgroundTool() {
   }, []);
   const render = async (canvas: HTMLCanvasElement, scale: number) => {
     if (!data) return;
-    try {
-      await Promise.all([document.fonts?.load('italic 400 96px "Instrument Serif"'), document.fonts?.load('600 40px "Inter Tight"')]);
-    } catch {
-      /* fonts are optional */
-    }
+    await ensureCardFonts();
     canvas.width = BG_WIDTH * scale;
     canvas.height = BG_HEIGHT * scale;
     const ctx = canvas.getContext("2d");
@@ -117,7 +88,7 @@ export function BackgroundTool() {
       ctx.font = `600 ${s}px "Inter Tight", Pretendard, sans-serif`;
       return ctx.measureText(t).width;
     };
-    draw(ctx, backgroundLayout(data.card, data.link, style, measure));
+    drawOps(ctx, backgroundLayout(data.card, data.link, style, measure), { width: BG_WIDTH, height: BG_HEIGHT, maxTextWidth: 900 });
   };
   useEffect(() => {
     if (preview.current) void render(preview.current, 0.25);

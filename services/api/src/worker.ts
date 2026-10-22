@@ -10,6 +10,7 @@ import { processDeletions, processPrivacyExports } from "./modules/security";
 import { processRetention } from "./modules/enterprise";
 import { processReferralRewards } from "./modules/referral";
 import { processStrengths } from "./modules/network";
+import { purgeExpiredCardSms } from "./modules/cardSms";
 import { purgeExpiredObjects } from "./modules/files";
 import { processTranscriptions } from "./modules/recording";
 import { notify, processPushQueue } from "./modules/push";
@@ -154,6 +155,8 @@ export async function tick() {
   // F-082/F-083 transcription of uploaded recording parts, F-019 retention purge of stored originals
   const t = await processTranscriptions().catch((e) => (log("warn", "worker.stt_failed", { error: (e as Error).message }), 0));
   const purged = await purgeExpiredObjects().catch(() => 0);
+  // X-009 만료된 문자 명함 링크의 명함 이미지는 더 쓰이지 않으므로 끊고 지운다
+  const cardSmsPurged = await purgeExpiredCardSms().catch((e) => (log("warn", "worker.card_sms_purge_failed", { error: (e as Error).message }), 0));
   await expireSessions();
   const retained = await processRetention(); // F-136
   const strengths = await processStrengths(); // F-074
@@ -168,7 +171,7 @@ export async function tick() {
   // N-103 엣지 강도 · N-106 저장된 검색 알림 · N-024 데이터 품질 스캔
   const netintel = await processNetworkIntel();
   if (Math.random() < 0.01) await purgeOldVitals().catch(() => 0); // §20 RUM sample retention (90 days)
-  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed, exportsBuilt, netEdges: netintel.edges, netAlerts: netintel.alerts, netQuality: netintel.quality };
+  return { relayed: n, synced: s, deleted: d, transcribed: t, purged, cardSmsPurged, retained, strengths, rewards, pushed: p, webhooks: w, briefs, digests, auditSealed, exportsBuilt, netEdges: netintel.edges, netAlerts: netintel.alerts, netQuality: netintel.quality };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -1,0 +1,29 @@
+# 운영 오버레이 — infra/docker-compose.yml 위에 덮어 쓴다.
+#
+#   cd /opt/linkos && docker compose --env-file .env \
+#     -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -d --build
+#
+# docker-compose.yml 은 로컬 실행용이라 APP_ORIGIN·AUTH_SECRET 에 개발 기본값이 있고
+# OTP_DEV_ECHO 가 1 이다. 그대로 운영에 올리면 SMTP 가 없을 때 /api/v1/auth/otp 응답에
+# 로그인 코드가 그대로 담겨(services/api/src/modules/identity.ts:74) 누구나 남의 메일
+# 주소로 로그인할 수 있다. 그래서 여기서 세 값을 못 박는다.
+#
+# `:?` 는 값이 없으면 compose 가 아예 뜨지 않게 한다 — 조용히 개발 기본값으로 도는
+# 것보다 배포가 멈추는 쪽이 낫다. 그래서 --env-file 없이는 이 오버레이가 뜨지 않는다.
+x-prod-env: &prod-env
+  APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in .env}
+  AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+  OTP_DEV_ECHO: "0"
+
+services:
+  db:
+    # DB 는 루프백에도 내보내지 않는다 — 같은 호스트에 다른 사이트가 여럿 돌고 있다
+    ports: !reset []
+  migrate:
+    environment: *prod-env
+  web:
+    # nginx 가 앞에 있다. 컨테이너는 루프백만 듣는다
+    ports: !override ["127.0.0.1:4300:3000"]
+    environment: *prod-env
+  worker:
+    environment: *prod-env

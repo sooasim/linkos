@@ -144,7 +144,11 @@ export async function removeGateway(ctx: Ctx) {
 
 // ---------------------------------------------------------------- 명함 이미지 업로드(클라이언트 캔버스 렌더 결과)
 
-/** 화면에서 그린 PNG 를 암호화 저장하고 object id 를 돌려준다. 같은 프로필의 이전 이미지는 지운다(한 장만 유지). */
+/**
+ * 화면에서 그린 PNG 를 검사·재인코딩 후 암호화 저장하고 object id 를 돌려준다.
+ * 보낼 때마다 새 object 를 만든다 — 지난 발송이 참조하는 이미지를 덮어쓰면 그 링크의 명함이 바뀌기 때문이다.
+ * 만료된 발송의 이미지는 purgeExpiredCardSms 가 (다른 살아 있는 발송이 쓰지 않을 때만) 지운다.
+ */
 export async function putCardImage(ctx: Ctx, bytes: Buffer, profileId?: string | null) {
   if (!ctx.userId) throw unauthorized();
   await rateLimit(`cardsms:image:${ctx.userId}`, 60, 3600);

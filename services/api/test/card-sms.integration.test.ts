@@ -38,8 +38,9 @@ async function ageSendHistory(userId: string) {
 }
 const consents = ["terms", "privacy", "age_14"].map((type) => ({ type: type as "terms", granted: true }));
 const base = { company: null, jobTitle: null, headline: null, bioShort: null, bioLong: null, keywords: [], industries: [], regions: [], theme: "ink" as const, matchingOptIn: true, deep: {}, fields: [], offers: [], needs: [], variants: [] };
-// 1×1 PNG — sniffType 가 image/png 로 인식하는 최소 유효 파일
-const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
+// 8×8 PNG. 업로드 검사는 매직바이트만 보지 않고 **sharp 로 재인코딩**하므로(F-172) 실제로 디코딩되는
+// 파일이어야 한다 — 흔히 돌아다니는 1×1 base64 조각은 libpng 가 거부한다.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQI12N49vA/VsQwtCQAVJOxgXFYcHcAAAAASUVORK5CYII=", "base64");
 const realFetch = globalThis.fetch;
 
 const stamp = Date.now();
@@ -129,9 +130,12 @@ describe("초안 만들기", () => {
   });
 
   it("전화번호로 볼 수 없는 값은 400 으로 막는다 (OCR 오인식이 그대로 발송되지 않게)", async () => {
+    // 글자가 섞여 숫자가 2개뿐인 값 — 입력 길이 제한은 통과하지만 E.164 로 정규화되지 않는다
     await expect(
-      cardSms.prepareCardSms(ctx(owner.id), prep({ recipient: { fullName: "박서진", phone: "02-xx" }, consent: "card_handed" })),
+      cardSms.prepareCardSms(ctx(owner.id), prep({ recipient: { fullName: "박서진", phone: "02-abcd-efgh" }, consent: "card_handed" })),
     ).rejects.toMatchObject({ code: "invalid_phone" });
+    // 너무 짧은 값은 입력 검증(zod)에서 먼저 끊긴다
+    expect(() => prep({ recipient: { phone: "02-xx" }, consent: "card_handed" })).toThrow();
   });
 
   it("본문은 내 카드 값만 담고, business 밖 필드(trusted/private)는 들어가지 않는다", async () => {

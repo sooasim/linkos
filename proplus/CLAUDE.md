@@ -9,7 +9,9 @@
 
 - 기능 원장: `proplus/docs/01_FEATURE_REGISTRY.yaml` (`P-xxx`). ID 를 삭제·통합·이름변경·묵시적 보류 금지.
 - 제품 결정: `proplus/docs/00_DEV_STRATEGY.md` — 특히 **§2 비타협 원칙 N-1~N-15**.
-- 아키텍처 결정: `proplus/docs/02_ADR.md` (ADR-001~010). 결정을 바꾸려면 항목을 고치지 말고 새 ADR 을 추가한다.
+- 아키텍처 결정: `proplus/docs/02_ADR.md` (ADR-001~011). 결정을 바꾸려면 항목을 고치지 말고 새 ADR 을 추가한다.
+  (예외: 측정에 근거한 결정이 재측정으로 뒤집히면 해당 ADR 하단에 **날짜가 붙은 갱신 절**을 덧붙인다 — ADR-011 참조.
+  원래 항목은 지우지 않는다. 왜 그때 그렇게 판단했는지가 다음 사람에게 필요하다.)
 - 내부 계약: `proplus/docs/CONTRACTS.md` — 파일 목록·함수 시그니처·디자인 토큰. **이름을 임의로 바꾸지 않는다.**
 - DB: `proplus/db/migrations/*.sql` 가 실제 스키마다(컬럼명·제약·뷰). **추가만 한다.** 원본 테이블·트리거·뷰를 지우지 않는다.
 - 추적성: `proplus/docs/TRACEABILITY.md` 는 `pnpm proplus:traceability` 로 재생성한다.
@@ -28,7 +30,7 @@
 | N-7 | 감사로그는 append-only | `BEFORE UPDATE OR DELETE` 트리거가 예외 발생 |
 | N-8 | 측정 지표는 기간·분모·제외조건 없이 표시 불가 | `metric_claims` 4필드 `NOT NULL` + `public_metric_view` 가 걸러낸다 |
 | N-9 | 만료·취소 시 공개 배지를 즉시 갱신한다 | 만료는 **읽기 시점** 판정(뷰). 배치 지연에 의존하지 않는다 |
-| N-10 | 미니사이트에 사용자 JS 금지 | `domain/blockSchema.ts` allowlist + `sanitizeText()` + **`dangerouslySetInnerHTML`·`eval` 부재를 architecture.test.ts 가 강제**. 임의 HTML 저장 컬럼 없음. CSP 는 보조 겹이고 `'unsafe-inline'` 이다 — 이유는 ADR-011 |
+| N-10 | 미니사이트에 사용자 JS 금지 | `domain/blockSchema.ts` allowlist + `sanitizeText()` + **`dangerouslySetInnerHTML`·`eval` 부재를 architecture.test.ts 가 강제**. 임의 HTML 저장 컬럼 없음. CSP 는 보조 겹이고 `apps/web/src/proxy.ts` 가 요청별 nonce + `'strict-dynamic'` 으로 보낸다(`next.config.ts` 아님 — 두 곳에서 보내면 교집합이 적용된다). Next 업그레이드 때마다 `node proplus/scripts/check-csp-nonce.mjs` 로 **응답 HTML 의 `<script>`** 확인 — 이력과 함정은 ADR-011 |
 | N-11 | 상담처리 동의와 마케팅 동의는 분리 기록 | `consent_records.purpose` enum + 리드 생성 시 `service` 필수 / `marketing` 선택 |
 | N-12 | 조직은 개인 프로필을 소유하지 않는다 | `profiles.user_id` 개인 고정. 조직은 `memberships` 로만 관여. 퇴사 시 소속 배지만 만료 |
 | N-13 | 로그·이벤트에 PII 원문 금지 | `domain/redact.ts` 경유. 이벤트 payload 는 식별자만 |
@@ -91,6 +93,7 @@ pnpm proplus:dev                     # http://localhost:4400
 pnpm proplus:typecheck && pnpm proplus:test
 pnpm proplus:traceability --check    # status=done 인데 테스트 참조 없는 기능이 있으면 실패
 pnpm proplus:build && node proplus/scripts/check-no-prerender.mjs   # N-9: 정적 프리렌더 금지
+node proplus/scripts/check-csp-nonce.mjs http://127.0.0.1:4400/     # N-10: 서버를 띄운 뒤. Next 업그레이드 필수
 node proplus/scripts/reconcile-registry.mjs --dry                   # 원장 status 를 실제 코드·테스트와 대조
 ```
 

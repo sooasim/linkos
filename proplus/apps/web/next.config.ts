@@ -16,52 +16,42 @@ const isDev = process.env.NODE_ENV !== "production";
 /**
  * N-10 / P-042 (보안정책 §2 "프로필 XSS").
  *
- * ## `script-src` 에 'unsafe-inline' 이 있는 이유 — 정직하게
+ * ## CSP 는 이 파일이 아니라 `src/proxy.ts` 가 보낸다
  *
- * 원래는 nonce 기반(`'nonce-…' 'strict-dynamic'`)으로 만들었다. **Next 16.4 에서 동작하지 않는다.**
- * 측정 결과: CSP 요청 헤더에 nonce 를 실어 보내도(미들웨어 경유든 클라이언트가 직접 보내든)
- * RSC 페이로드에 `"nonce":"$undefined"` 가 찍히고 `<script>` 에 nonce 가 붙지 않는다.
- * Next 는 `parseRequestHeaders()` 에서 nonce 를 추출하지만 그 값이 렌더 컨텍스트까지 오지 않는다.
+ * nonce 는 **요청마다 달라야** 하므로 정적인 설정 파일에서는 만들 수 없다.
+ * 디렉티브 전문과 그 근거는 `src/proxy.ts` 에 있다.
  *
- * 그 상태에서 `'strict-dynamic'` 을 두면 브라우저가 `'self'` 를 **무시**하므로
- * 인라인 스크립트는 물론 `/_next/static/chunks/*.js` 까지 전부 차단된다 — 화면은 SSR 로 그려지고
- * 서버는 200 을 주는데 아무 버튼도 동작하지 않는다. 빌드·타입체크·SSR 스모크가 모두 통과하므로
- * 사람이 클릭해 봐야 발견된다. 그래서 **작동하지 않는 강한 CSP 대신 작동하는 CSP** 를 택했다.
+ * ADR-011 은 Next 16.4.0 에서 nonce 가 `<script>` 에 붙지 않는다는 측정으로
+ * `script-src 'self' 'unsafe-inline'` 을 여기서 내려보냈다. **16.4.3 에서 고쳐졌고**
+ * 2026-10-25 재측정으로 확인해서(ADR-011 "갱신 2026-10-25") CSP 를 `proxy.ts` 로 옮겼다:
+ * `script-src 'self' 'nonce-<요청별>'` — 인라인 스크립트가 더는 열려 있지 않다.
+ * (`'strict-dynamic'` 은 **일부러 빼 두었다** — 이유는 `proxy.ts` 주석과 ADR-011 갱신 절.)
  *
- * ## 그럼 N-10 은 무엇이 지키는가
+ * ⚠️ **CSP 를 여기서 다시 보내지 마라.** 헤더가 두 개면 브라우저가 둘의 **교집합**을 적용해서
+ * 조용히 더 엄해진다 — `proxy.ts` 의 nonce 와 여기의 `'unsafe-inline'` 이 겹치면
+ * 교집합에서 둘 다 살아남지 못하는 조합이 생긴다. nginx vhost 도 공통 스니펫을 include 하지 않는다
+ * (`infra/nginx` 주석 참조). CSP 를 내려보내는 곳은 **`proxy.ts` 한 곳**이고
+ * `architecture.test.ts` 가 그것을 강제한다.
  *
- * CSP 는 원래도 N-10 의 **마지막 겹**이었다. 실제로 막는 것은 아래 네 개이고, 모두 테스트가 있다:
+ * ## N-10 은 CSP 혼자 지키지 않는다
+ *
+ * CSP 는 N-10 의 **마지막 겹**이다. nonce 가 돌아왔어도 1차 방어선은 그대로 코드 쪽이고,
+ * 모두 테스트가 있다 — CSP 가 또 한 번 프레임워크 사정으로 약해져도 N-10 은 유지된다:
  *   1. `blockSchema.ts` allowlist — 임의 HTML 을 **저장할 경로 자체가 없다** (P-040)
  *   2. `sanitizeText()` — 태그·javascript: 스킴·엔티티 다중 인코딩 제거 (P-041)
  *   3. React 자동 이스케이프 — 보간된 문자열은 HTML 로 파싱되지 않는다
  *   4. `dangerouslySetInnerHTML`·`eval`·`new Function` 금지 —
  *      `services/api/test/architecture.test.ts` 가 소스를 훑어 **기계적으로** 막는다
  *
- * 'unsafe-eval' 은 프로덕션에서 **빼 둔다**(dev 만 HMR 때문에 허용). eval 기반 페이로드는 계속 막힌다.
- * `object-src 'none'`·`base-uri 'self'`·`form-action 'self'`·`frame-ancestors 'none'` 도 그대로 유효하다.
+ * ## 되돌리거나 또 깨졌을 때
  *
- * Next 가 nonce 를 고치면 되돌린다: 이 배열의 script-src 를 `'nonce-…' 'strict-dynamic'` 으로 바꾸고,
- * 요청마다 nonce 를 발급하는 `src/proxy.ts` 를 되살린 뒤(이 커밋 이전 이력에 있다)
- * `node proplus/scripts/check-csp-nonce.mjs` 로 **실제로 script 태그에 붙는지** 확인해야 한다.
+ * `'strict-dynamic'` 은 `'self'` 를 **무시**한다. nonce 가 하나라도 빠지면
+ * `/_next/static/chunks/*.js` 까지 전부 차단되는데, 서버는 200 을 주고 SSR 마크업도 정상이라
+ * **빌드·타입체크·테스트가 전부 통과한다.** 그래서 Next 를 올릴 때마다
+ * `node proplus/scripts/check-csp-nonce.mjs` 로 **응답 HTML 의 `<script>` 를 확인한다.**
+ * 그 검사가 실패하면 `proxy.ts` 의 `script-src` 를 `'self' 'unsafe-inline'` 으로 되돌리고
+ * ADR-011 에 측정값을 남긴다.
  */
-const csp = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-  // next/font 가 @font-face 를 인라인 <style> 로 심는다. 스타일은 임의 코드 실행 경로가 아니다.
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
-  "media-src 'none'",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "frame-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  ...(isDev ? [] : ["upgrade-insecure-requests"]),
-].join("; ");
 
 /**
  * 기능 권한은 전부 끈다. PROPLUS 의 증거 제출은 **파일 업로드**이고(모듈명세 M04),
@@ -81,9 +71,8 @@ const permissionsPolicy = [
 ].join(", ");
 
 const securityHeaders = [
-  // CSP 는 **여기 한 곳에서만** 보낸다. nginx vhost 도 공통 스니펫을 include 하지 않는다 —
-  // CSP 헤더가 두 개면 브라우저가 둘의 교집합을 적용해서 조용히 더 엄해진다(infra/nginx 주석 참조).
-  { key: "Content-Security-Policy", value: csp },
+  // Content-Security-Policy 는 **의도적으로 여기 없다** — `src/proxy.ts` 가 요청별 nonce 와 함께
+  // 보낸다(위 주석 참조). 다시 추가하면 CSP 헤더가 두 개가 되어 교집합이 적용된다.
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

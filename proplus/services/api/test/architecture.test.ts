@@ -264,10 +264,12 @@ describe("SQL 자리표시자와 인자 개수가 맞는다", () => {
   });
 });
 
-describe("N-10: 임의 코드 실행 경로가 없다 (CSP 의 'unsafe-inline' 을 보상하는 통제)", () => {
+describe("N-10: 임의 코드 실행 경로가 없다 (CSP 와 **독립적인** 1차 방어선)", () => {
   /**
-   * `next.config.ts` 의 CSP 는 Next 16.4 의 nonce 미동작 때문에 `script-src 'unsafe-inline'` 을 쓴다.
-   * 그래서 N-10 의 실질적 방어선이 **코드 쪽으로** 옮겨왔다 — 이 테스트가 그 방어선이다.
+   * CSP 는 N-10 의 마지막 겹일 뿐이다. 2026-10-25 에 Next 16.4.3 에서 nonce 가 되살아나
+   * `script-src` 가 `'unsafe-inline'` 에서 `'nonce-…' 'strict-dynamic'` 으로 돌아왔지만
+   * (ADR-011 "갱신 2026-10-25"), **이 테스트의 존재 이유는 그대로다** — CSP 가 또 프레임워크
+   * 사정으로 약해져도 사용자 입력이 실행되지 않아야 한다.
    *
    * 막는 것: 사용자 데이터가 HTML·코드로 **파싱될 경로**. React 는 보간 문자열을 자동
    * 이스케이프하므로, 그걸 우회하는 수단(아래 목록)이 저장소에 없으면 사용자 입력은 실행되지 않는다.
@@ -290,11 +292,17 @@ describe("N-10: 임의 코드 실행 경로가 없다 (CSP 의 'unsafe-inline' �
     }
   });
 
+  /**
+   * CSP 는 `src/proxy.ts` 가 요청마다 내려보낸다(ADR-011 "갱신 2026-10-25").
+   * 설정 파일이 아니라 미들웨어인 이유는 **nonce 가 요청마다 달라야** 하기 때문이다.
+   *
+   * 주석을 먼저 지운다 — 설명 블록에도 "script-src"·"unsafe-inline" 이 적혀 있어서
+   * 원문을 그대로 찾으면 설명 문장이 먼저 걸리고, 테스트가 **코드가 아니라 주석을 검사**하게 된다.
+   */
+  const proxySrc = codeOnly(read(resolve(WEB_SRC, "proxy.ts")));
+  const scriptSrc = /script-src[^\n]*/.exec(proxySrc)?.[0] ?? "";
+
   it("CSP 가 'unsafe-eval' 을 프로덕션에서 허용하지 않는다", () => {
-    // 주석을 먼저 지운다 — 위 설명 블록에도 "script-src" 가 적혀 있어서 원문을 그대로 찾으면
-    // 설명 문장이 먼저 걸리고, 테스트가 **코드가 아니라 주석을 검사**하게 된다.
-    const cfg = codeOnly(read(resolve(WEB_SRC, "../next.config.ts")));
-    const scriptSrc = /script-src[^\n]*/.exec(cfg)?.[0] ?? "";
     expect(scriptSrc, "script-src 를 찾지 못했다").not.toBe("");
     // 'unsafe-eval' 은 isDev 조건부로만 등장해야 한다. 조건 없이 박혀 있으면 eval 페이로드가 열린다.
     expect(scriptSrc).toContain("'unsafe-eval'");
@@ -303,17 +311,69 @@ describe("N-10: 임의 코드 실행 경로가 없다 (CSP 의 'unsafe-inline' �
     expect(scriptSrc.replace(/\$\{[^}]*\}/g, "")).not.toContain("'unsafe-eval'");
   });
 
+  it("script-src 가 요청별 nonce 를 쓰고 'unsafe-inline' 을 쓰지 않는다", () => {
+    // ADR-011 이 양보했던 지점. 16.4.3 에서 되찾았으므로 **다시 양보하면 실패**해야 한다.
+    expect(scriptSrc, "script-src 가 'unsafe-inline' 으로 되돌아갔다 — ADR-011 갱신 절 참조").not.toContain(
+      "'unsafe-inline'",
+    );
+    // nonce 는 상수가 아니라 보간된 값이어야 한다. `'nonce-abc'` 처럼 고정값이면 무의미하다.
+    expect(scriptSrc, "script-src 에 보간된 nonce 가 없다").toMatch(/'nonce-\$\{[^}]+\}'/);
+  });
+
+  it("script-src 에 'strict-dynamic' 이 **없다** (정적 오류 페이지를 전부 차단한다)", () => {
+    /**
+     * 되돌리기 쉬운 함정이라 기계로 막는다. `'strict-dynamic'` 은 `'self'` 를 무시하므로
+     * nonce 를 넣을 수 없는 페이지의 스크립트를 **전부** 차단한다. 이 앱에는 그런 페이지가
+     * 구조적으로 둘 있다 — 빌드 시점에 굽는 `_not-found.html`·`_global-error.html`
+     * (`scripts/check-no-prerender.mjs` 가 의도적 예외로 허용하는 바로 그 둘).
+     *
+     * 실측(2026-10-25): `'strict-dynamic'` 을 넣으면 404 페이지의 <script> 10개가 전부 차단되고
+     * 하이드레이션이 죽는다. 빼면 외부 청크 7개가 `'self'` 로 정상 로드된다.
+     * 자세한 근거는 ADR-011 "갱신 2026-10-25" 와 `apps/web/src/proxy.ts` 주석.
+     */
+    expect(scriptSrc, "'strict-dynamic' 을 추가하면 정적 오류 페이지가 깨진다 — ADR-011 참조").not.toContain(
+      "'strict-dynamic'",
+    );
+  });
+
+  it("nonce 는 요청마다 128bit 난수로 새로 만든다", () => {
+    // 고정 nonce 는 'unsafe-inline' 보다 나쁘다 — 강해 보이면서 실제로는 열려 있다.
+    expect(proxySrc, "crypto.getRandomValues 로 nonce 를 만들지 않는다").toMatch(/crypto\.getRandomValues/);
+    expect(proxySrc, "nonce 바이트 수가 16(128bit) 이 아니다").toMatch(/new Uint8Array\(16\)/);
+    // edge 런타임에는 node:crypto 가 없다. import 하면 런타임에 죽는다.
+    expect(proxySrc, "proxy 는 edge 런타임이라 node:crypto 를 쓸 수 없다").not.toMatch(/node:crypto/);
+  });
+
+  it("proxy 가 CSP 를 **요청** 헤더에 심는다 (이게 빠지면 nonce 가 조용히 사라진다)", () => {
+    /**
+     * ADR-011 의 함정이 바로 이것이다. 응답 헤더에만 CSP 를 세팅하면 Next 렌더러는
+     * nonce 를 보지 못해 `<script>` 에 붙이지 않는데, `'strict-dynamic'` 때문에 `'self'` 가
+     * 무시되어 **모든 스크립트가 차단된다.** 그런데 서버는 200 을 주고 SSR 마크업도 정상이라
+     * 빌드·타입체크·이 파일을 제외한 테스트가 전부 통과한다 — 그래서 구조로 못 박는다.
+     */
+    expect(proxySrc, "NextResponse.next({ request: { headers } }) 로 요청 헤더를 넘기지 않는다").toMatch(
+      /NextResponse\.next\(\s*\{\s*request:\s*\{\s*headers/,
+    );
+    // 응답 헤더에도 세팅해야 브라우저가 실제로 정책을 적용한다.
+    expect(proxySrc).toMatch(/response\.headers\.set\(\s*["']content-security-policy["']/);
+  });
+
   it("CSP 가 object-src·base-uri·form-action·frame-ancestors 를 잠근다", () => {
-    const cfg = read(resolve(WEB_SRC, "../next.config.ts"));
     for (const d of ["object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"]) {
-      expect(cfg, `CSP 에 ${d} 가 없다`).toContain(d);
+      expect(proxySrc, `CSP 에 ${d} 가 없다`).toContain(d);
     }
   });
 
   it("CSP 를 내려보내는 곳이 한 군데다 (헤더 두 개면 브라우저가 교집합을 적용한다)", () => {
-    const cfg = read(resolve(WEB_SRC, "../next.config.ts"));
-    const occurrences = (cfg.match(/key:\s*"Content-Security-Policy"/g) ?? []).length;
-    expect(occurrences).toBe(1);
+    const cfg = codeOnly(read(resolve(WEB_SRC, "../next.config.ts")));
+    // next.config.ts 는 CSP 를 보내지 않는다 — proxy.ts 의 nonce 정책과 교집합이 되면
+    // 둘 다 살아남지 못하는 조합이 생긴다.
+    expect(cfg, "next.config.ts 가 CSP 를 다시 보낸다 — proxy.ts 와 합쳐 두 개가 된다").not.toMatch(
+      /Content-Security-Policy/i,
+    );
+    const inProxy = (proxySrc.match(/content-security-policy/gi) ?? []).length;
+    // proxy.ts 안에서는 요청·응답 양쪽에 같은 값을 세팅하므로 2회가 정상이다.
+    expect(inProxy, "proxy.ts 가 CSP 를 요청·응답 양쪽에 세팅해야 한다").toBe(2);
   });
 });
 

@@ -343,9 +343,10 @@ M03 미니사이트는 사용자가 블록을 배치해 공개 프로필을 구�
 
 ---
 
-## ADR-011 CSP 는 nonce 대신 `'unsafe-inline'` 을 쓰고, N-10 방어를 코드 쪽으로 옮긴다
+## ADR-011 CSP 가 nonce 를 못 쓰는 동안 N-10 방어를 코드 쪽으로 옮긴다 (→ 2026-10-25 nonce 복원)
 
-**상태** 채택 (2026-10-24) — Next 가 nonce 를 고치면 되돌린다
+**상태** 채택 (2026-10-24) → **되돌림 (2026-10-25, Next 16.4.3)** — 아래 "갱신 2026-10-25" 절 참조.
+이 항목은 기록으로 남긴다. 결정의 *근거*(CSP 는 N-10 의 마지막 겹이고, 1차 방어선은 코드 쪽에 있다)는 여전히 유효하다.
 
 **맥락**
 
@@ -405,3 +406,110 @@ Next 가 nonce 를 고치면: `next.config.ts` 의 `script-src` 를 `'nonce-…'
 - *Next 인라인 스크립트의 해시를 CSP 에 넣기*: RSC 페이로드가 요청마다 달라 해시가 고정되지 않는다.
 - *모든 화면을 JS 없이 동작하게*: 공개 프로필은 이미 그렇지만, 워크스페이스·관리자 콘솔은 상호작용이 본질이다.
 - *Next 다운그레이드*: nonce 하나 때문에 프레임워크 버전을 되돌리면 보안 패치를 포기하게 된다.
+
+---
+
+### **갱신 2026-10-25** — Next 16.4.3 에서 nonce 가 동작한다. CSP 를 복원했다.
+
+보안 패치 업그레이드(16.4.0 → 16.4.3) 뒤 이 ADR 의 핵심 주장을 재측정했다. **고쳐졌다.**
+이 ADR 이 남긴 경고("헤더에 nonce 가 보이는 것만으로는 동작 증거가 아니다")를 그대로 따라
+**응답 HTML 의 `<script>` 태그**를 셌고, 거기서 멈추지 않고 브라우저 하이드레이션까지 확인했다.
+
+**측정 (프로덕션 빌드, `next start`, Next 16.4.3)**
+
+```
+CSP: default-src 'self'; script-src 'self' 'nonce-chUS/H5BpAHNDpy2TgJXQg=='; …
+CSP nonce: chUS/H5BpAHNDpy2TgJXQg==
+전체 <script> 여는 태그: 11
+nonce 가 붙은 <script>: 11
+nonce 가 없는 <script>: 0
+RSC 페이로드의 "nonce":"$undefined": 0개
+참조된 /_next/static/chunks/*.js: 8개 → 전부 200
+```
+
+`/`·`/login`·`/search` 모두 11/11 이고 nonce 는 요청마다 다르다. 16.4.0 에서 고장 신호였던
+`"nonce":"$undefined"` 는 사라졌다(HTML 에 남은 `$undefined` 16개는 `crossOrigin`·`templateStyles`
+등 **nonce 와 무관한** RSC 키다 — 그것까지 확인했다).
+`next start` 와 배포 형태인 **standalone(`node server.js`)** 양쪽에서 같은 결과다.
+
+**브라우저 확인** (이 ADR 이 "사람이 버튼을 눌러 봐야 안다"고 적은 바로 그 단계)
+
+- `securitypolicyviolation` 리스너로 수집한 CSP 위반: **0건**. 콘솔 오류 없음.
+- React 하이드레이션 완료(`__reactFiber$…` 가 `<html>`·`<body>`·자식들에 붙음), `window.next.router` 생존.
+- `/` → `/search` → `/login` **클라이언트 라우팅** 성공(`performance` navigation 엔트리가 `/` 에
+  머문 채 URL 만 바뀜 = 전체 리로드가 아니다). curl 로는 알 수 없는 부분이다.
+
+**무엇이 달라졌나**
+
+16.4.3 에서는 `parseRequestHeaders()` 가 뽑은 nonce 가 렌더 컨텍스트(`ctx.nonce`)까지 도달해
+부트스트랩 스크립트·인라인 RSC 데이터 스크립트·preload `<link>` 에 모두 전파된다.
+16.4.0 에서 끊겨 있던 구간이 이어졌다.
+
+**`'strict-dynamic'` 은 복원하지 않았다 — 측정해 보고 뺐다**
+
+처음에는 설계 그대로 `'nonce-…' 'strict-dynamic'` 으로 복원했고 랜딩·로그인·검색은 완벽했다.
+그런데 **404 페이지에서 ADR-011 의 함정을 한 번 더 밟았다.** 브라우저 실측:
+
+```
+'strict-dynamic' 있음 → 404 페이지 <script> 10개 전부 차단, 하이드레이션 없음, 콘솔 위반 10건
+   "Note that 'strict-dynamic' is present, so host-based allowlisting is disabled."
+'strict-dynamic' 없음 → 외부 청크 7개는 'self' 로 200 로드, 인라인 3개만 차단
+```
+
+원인은 **고칠 수 없는 구조**다. Next 는 `_not-found.html`·`_global-error.html` 을 빌드 시점에
+굽고, `scripts/check-no-prerender.mjs` 가 그 둘을 **의도적 예외**로 허용한다("서버가 죽었을 때도
+떠야 한다"). 구워진 HTML 에는 요청별 nonce 를 넣을 방법이 없다. 특히 `_global-error` 는
+서버가 실패했을 때의 최후 화면이므로 **정의상 동적 렌더가 불가능하다.**
+그리고 `'strict-dynamic'` 이 있으면 브라우저가 `'self'` 를 무시하므로 그 페이지들은 전부 차단된다.
+
+중요한 점: **curl 은 이것을 잡지 못한다.** 청크 요청은 그대로 200 이다 — 차단은 브라우저가 한다.
+그래서 `check-csp-nonce.mjs` 는 디렉티브 자체를 거부하고, 404 페이지도 같이 받아 본다.
+
+**바뀐 결정**
+
+1. `script-src 'self' 'nonce-<요청별>'`. **`'unsafe-inline'` 을 제거했다** — 이것이 이번 변경의 실익이다.
+   주입된 인라인 스크립트는 nonce 가 없으므로 차단되고(N-10 이 막으려던 것), 교차출처
+   스크립트는 `'self'` 가 막는다. `'unsafe-eval'` 은 전과 같이 프로덕션에서 제외(dev 만 HMR 용).
+2. **`'strict-dynamic'` 은 쓰지 않는다.** 포기한 것은 "same-origin 스크립트 URL 주입" 차단뿐이고,
+   그걸 악용하려면 공격자가 마크업 주입 **과** 공격자가 제어하는 same-origin JS 경로를 둘 다 가져야
+   한다. PROPLUS 에는 사용자 업로드를 JS 로 서빙하는 경로가 없다(증거 파일은 signed URL 전용).
+   그 작은 이득과 "정적 오류 페이지가 통째로 죽는다"를 바꾸지 않는다 —
+   이 ADR 의 원래 판단("작동하지 않는 보안 설정은 보안이 아니다")을 그대로 적용한 결과다.
+3. CSP 를 내려보내는 곳이 `next.config.ts` → **`apps/web/src/proxy.ts`** 로 옮겼다.
+   nonce 는 요청마다 달라야 하므로 정적 설정 파일에서 만들 수 없다.
+   여전히 **한 곳**이다 — `next.config.ts` 는 CSP 를 보내지 않고, `architecture.test.ts` 가 그걸 강제한다.
+4. **N-10 의 코드 쪽 방어선은 그대로 둔다.** 이 ADR 이 추가한 통제(`architecture.test.ts` 의
+   `dangerouslySetInnerHTML`·`eval`·`new Function` 부재 검사)를 되돌리지 않았다.
+   CSP 가 또 프레임워크 사정으로 약해질 수 있고, 그때 1차 방어선이 남아 있어야 한다.
+   즉 이번 변경은 **겹을 하나 되찾은 것**이고 기존 겹을 교체한 것이 아니다.
+
+**남는 알려진 한계**
+
+정적 오류 페이지(`_not-found`·`_global-error`)의 인라인 부트스트랩 3개는 nonce 가 없어 차단된다.
+그래서 그 페이지들은 **하이드레이션되지 않는다** — SSR 마크업으로 표시되고 링크는 평범한
+`<a>` 로 동작한다. `check-no-prerender.mjs` 가 이미 그 둘을 "하이드레이션이 필요 없다"고 적어 둔
+페이지이므로 수용한다. 비용은 404 를 열 때 콘솔 위반 3건이다.
+없애려면 `app/not-found.tsx` 를 동적으로 추가해야 하는데, 그건 404 화면 디자인을 새로 정하는
+**제품 결정**이라 이 작업 범위에서 하지 않았다(`_global-error` 는 그래도 해결되지 않는다).
+
+**재발 방지**
+
+`proplus/scripts/check-csp-nonce.mjs` 를 추가했다. 응답 HTML 의 `<script>` 를 세고,
+`"nonce":"$undefined"` 를 찾고, 참조된 청크가 실제로 200 인지 받아 본다.
+**Next 를 올릴 때마다 돌린다** — 이 함정은 빌드·타입체크·테스트를 전부 통과시키기 때문에
+사람의 기억에 맡기면 다시 밟는다.
+
+`architecture.test.ts` 에는 구조 가드 4개를 추가했다(각각 변이를 넣어 **실제로 실패하는지 확인했다**):
+
+| 가드 | 막는 재발 |
+|---|---|
+| `script-src` 에 `'unsafe-inline'` 재등장 금지 + 보간된 nonce 필수 | 이 ADR 이 양보했던 지점으로 되돌아감 |
+| `script-src` 에 `'strict-dynamic'` **부재** | 정적 오류 페이지를 통째로 차단 |
+| nonce 는 `getRandomValues` 로 16바이트 | 고정 nonce — 강해 보이면서 실제로는 열려 있다 |
+| `proxy.ts` 가 **요청** 헤더에 CSP 를 심는지 | 이 ADR 의 함정 자체. 응답 헤더에만 세팅하면 nonce 가 조용히 사라진다 |
+
+**또 깨지면**
+
+`check-csp-nonce.mjs` 가 실패하면 `proxy.ts` 의 `script-src` 를 `'self' 'unsafe-inline'` 으로 되돌리고
+이 절 아래에 측정값과 함께 다시 기록한다. `'strict-dynamic'` 은 다시 넣지 마라 — 위 "복원하지 않았다"
+절의 측정이 그 이유다.

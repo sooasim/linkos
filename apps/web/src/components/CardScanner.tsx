@@ -25,21 +25,14 @@ export interface ScanExtra {
 }
 
 /**
- * Pipeline: EXIF-orient → detect card quad → perspective warp → OCR.
- * 명암 보정은 엔진마다 다르므로 `@/lib/ocr` 안에서 한다.
+ * 촬영/선택한 사진 한 장을 읽는다 — 실제 절차는 `@/lib/ocr` 의 `readCardImage` 에 있다.
+ * 사진첩 일괄 가져오기(F-012)도 같은 함수를 쓴다. 인식을 좋게 하는 일은 그 한 곳에서 한다.
  */
 export async function runOcr(file: Blob, onProgress: (p: number, label: string) => void, langs = "kor+eng", opts: { autoCorrect?: boolean; locale?: Locale } = {}): Promise<{ lines: OcrLineOut[]; extra: ScanExtra; preview: string }> {
   const t = SCANNER_MESSAGES[opts.locale ?? "ko"];
-  onProgress(0.03, t.findingEdges);
-  const pipe = await import("@/lib/imagePipeline");
-  const { ocrCanvas } = await import("@/lib/ocr");
-  const base = await pipe.loadCanvas(file);
-  const fixed = opts.autoCorrect === false ? { canvas: base, detection: null } : pipe.autoCorrect(base);
-  onProgress(0.1, fixed.detection ? t.perspectiveDone : t.enhancing);
-  const jpeg = await pipe.canvasToJpeg(fixed.canvas);
-  // 보정본이 빗나갔을 때를 대비해 원본을 함께 넘긴다 (보정본에서 글자가 거의 안 나오면 다시 읽는다)
-  const { lines, engine } = await ocrCanvas(fixed.canvas, langs, onProgress, fixed.detection ? base : null);
-  return { lines, preview: URL.createObjectURL(jpeg), extra: { jpeg, corrected: !!fixed.detection, confidence: fixed.detection?.confidence ?? null, engine } };
+  const { readCardImage } = await import("@/lib/ocr");
+  const r = await readCardImage(file, { langs, autoCorrect: opts.autoCorrect, onProgress, labels: t });
+  return { lines: r.lines, preview: URL.createObjectURL(r.jpeg), extra: { jpeg: r.jpeg, corrected: r.corrected, confidence: r.detectionConfidence, engine: r.engine } };
 }
 
 export function CardScanner({

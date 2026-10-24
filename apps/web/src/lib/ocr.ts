@@ -163,6 +163,74 @@ async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p
   return { lines, engine: "tesseract.js" };
 }
 
+// ---------------------------------------------------------------- 한 장 읽기 (모든 화면이 쓰는 길)
+
+export interface CardRead {
+  lines: OcrLineOut[];
+  engine: OcrEngineId;
+  /** 테두리·원근을 바로잡은 이미지 (원본 보관을 켠 경우에만 올라간다) */
+  jpeg: Blob;
+  /** 검토 화면에 띄우는 작은 그림 */
+  thumb: string;
+  corrected: boolean;
+  /** 테두리 검출 확신 (못 찾았으면 null) */
+  detectionConfidence: number | null;
+}
+
+export interface ReadOptions {
+  langs?: string;
+  /** 테두리·원근 보정을 할 것인가 (사용자가 끌 수 있다) */
+  autoCorrect?: boolean;
+  onProgress?: (p: number, label: string) => void;
+  /** 진행률 문구 (화면 언어에 맞춰 넘긴다) */
+  labels?: { findingEdges: string; perspectiveDone: string; enhancing: string };
+}
+
+/**
+ * 사진 한 장 → 글자줄. **촬영·사진첩 가져오기·게스트 링크·배지가 모두 이 길을 쓴다.**
+ *
+ * 예전에는 같은 절차가 CardScanner 와 BatchImport 에 따로 적혀 있어서, 한쪽만 고치면
+ * 같은 명함이 화면마다 다르게 읽혔다(원본 재시도 폴백이 한동안 촬영 화면에만 있었다).
+ * 인식을 좋게 하는 일은 전부 여기 한 곳에서 한다.
+ */
+export async function readCardImage(file: Blob, opts: ReadOptions = {}): Promise<CardRead> {
+  const t = opts.labels;
+  opts.onProgress?.(0.03, t?.findingEdges ?? "");
+  const pipe = await import("./imagePipeline");
+  const base = await pipe.loadCanvas(file);
+  const fixed = opts.autoCorrect === false ? { canvas: base, detection: null } : pipe.autoCorrect(base);
+  opts.onProgress?.(0.1, (fixed.detection ? t?.perspectiveDone : t?.enhancing) ?? "");
+  return finish(pipe, base, fixed.canvas, fixed.detection?.confidence ?? null, !!fixed.detection, opts);
+}
+
+/**
+ * F-013 한 장에 여러 명함 — 명함마다 한 번씩 읽는다. 조각 하나가 곧 한 장이므로
+ * 원본 재시도는 하지 않는다(원본에는 다른 명함들이 함께 들어 있다).
+ */
+export async function readCardImages(file: Blob, opts: ReadOptions & { split?: boolean } = {}): Promise<CardRead[]> {
+  if (!opts.split) return [await readCardImage(file, opts)];
+  const pipe = await import("./imagePipeline");
+  const base = await pipe.loadCanvas(file);
+  const { canvases } = pipe.splitCards(base);
+  if (canvases.length <= 1) return [await finish(pipe, base, canvases[0] ?? base, null, canvases[0] !== base, opts)];
+  const out: CardRead[] = [];
+  for (const c of canvases) out.push(await finish(pipe, c, c, null, true, opts));
+  return out;
+}
+
+async function finish(
+  pipe: typeof import("./imagePipeline"),
+  fallback: HTMLCanvasElement,
+  canvas: HTMLCanvasElement,
+  detectionConfidence: number | null,
+  corrected: boolean,
+  opts: ReadOptions,
+): Promise<CardRead> {
+  const jpeg = await pipe.canvasToJpeg(canvas);
+  const { lines, engine } = await ocrCanvas(canvas, opts.langs ?? "kor+eng", opts.onProgress, corrected && canvas !== fallback ? fallback : null);
+  return { lines, engine, jpeg, thumb: pipe.thumbnail(canvas), corrected, detectionConfidence };
+}
+
 export async function terminateOcr() {
   const w = shared?.worker;
   shared = null;

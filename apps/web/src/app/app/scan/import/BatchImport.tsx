@@ -53,31 +53,30 @@ export function BatchImport() {
 
   const processOne = async (item: InboxItem) => {
     const off = await import("@/lib/offline");
-    const pipe = await import("@/lib/imagePipeline");
-    const { ocrCanvas } = await import("@/lib/ocr");
+    const { readCardImages } = await import("@/lib/ocr");
     await off.updateInbox(item.id, { status: "processing", error: null });
     const blob = await off.inboxBlob(item.id);
     if (!blob) {
       await off.updateInbox(item.id, { status: "error", error: "사진 데이터를 찾을 수 없어요." });
       return;
     }
-    const base = await pipe.loadCanvas(blob);
-    const canvases = item.split ? pipe.splitCards(base).canvases : [pipe.autoCorrect(base).canvas];
+    // 촬영 화면과 똑같은 길을 쓴다 (테두리 보정 → 엔진 선택 → 빗나가면 원본 재시도)
+    const reads = await readCardImages(blob, { langs: item.langs, split: item.split });
     const cards: InboxCard[] = [];
-    for (const [idx, c] of canvases.entries()) {
-      // 한 장에 한 명함일 때만 원본 폴백이 뜻이 있다 (여러 장을 쪼갠 조각에는 원본이 통째로 들어 있다)
-      const { lines, engine } = await ocrCanvas(c, item.langs, undefined, canvases.length === 1 && c !== base ? base : null);
+    for (const [idx, r] of reads.entries()) {
+      const { lines, engine } = r;
       if (!lines.length) continue;
       let job: any;
       try {
         job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine, lines }, offline: false });
       } catch (e) {
         if (!(e instanceof ClientError) || e.status !== 0) throw e;
-        const r = parseBusinessCard(lines);
-        job = { id: null, fields: r.fields.map((f) => ({ ...f, needsReview: needsReview(f) })), duplicates: [], draft: {} };
+        // offline: 같은 결정적 파서로 기기에서 구조화한다
+        const local = parseBusinessCard(lines);
+        job = { id: null, fields: local.fields.map((f) => ({ ...f, needsReview: needsReview(f) })), duplicates: [], draft: {} };
       }
-      if (item.keepOriginal && job.id) await upload(`/capture/cards/${job.id}/images/front`, await pipe.canvasToJpeg(c), { method: "PUT" }).catch(() => undefined);
-      cards.push({ idx, status: "review", thumb: pipe.thumbnail(c), lines, engine, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
+      if (item.keepOriginal && job.id) await upload(`/capture/cards/${job.id}/images/front`, r.jpeg, { method: "PUT" }).catch(() => undefined);
+      cards.push({ idx, status: "review", thumb: r.thumb, lines, engine, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
     }
     // the photo itself is no longer needed on the device once it has been read
     await off.updateInbox(item.id, { status: "done", cards, error: cards.length ? null : "글자를 찾지 못했어요." }, { dropBlob: true });

@@ -19,6 +19,7 @@ import {
   type Quad,
   REC_DROP_SCORE,
   REC_HEIGHT,
+  autoContrast,
   buildCharset,
   dbBoxes,
   decodeCtc,
@@ -170,7 +171,9 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
 
   const size = detResize(canvas.width, canvas.height);
   const img = resized(canvas, size.width, size.height);
-  const detIn = new ort.Tensor("float32", normalizeDetInput({ width: size.width, height: size.height, data: img.data }), [1, 3, size.height, size.width]);
+  // 검은 명함에 흰 글씨처럼 밝기 폭이 좁은 사진만 늘린다(넓으면 그대로 둔다)
+  const { data: detPixels } = autoContrast({ width: size.width, height: size.height, data: img.data });
+  const detIn = new ort.Tensor("float32", normalizeDetInput({ width: size.width, height: size.height, data: detPixels }), [1, 3, size.height, size.width]);
   /*
    * 검출은 한 번의 긴 호출이라 그 사이 진행률이 멈춘다. 35% 에 붙어 있으면 사람은
    * 고장으로 읽는다. 돌고 있다는 것만 보이게 조금씩 올린다(실제 진척도는 알 수 없다).

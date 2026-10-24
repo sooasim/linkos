@@ -14,6 +14,12 @@ x-prod-env: &prod-env
   APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in .env}
   AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
   OTP_DEV_ECHO: "0"
+  # AI. docker-compose.yml 의 environment 블록에 없어서 .env 에 있어도 컨테이너에 닿지
+  # 않았다 — 헬스체크의 ai.enabled 가 false 인 이유다. 명함 사진 읽기(F-015 외부 OCR
+  # 어댑터)가 이 키로 돈다. 비워 두면 기기 내 엔진만 쓰고 기능은 그대로 동작한다.
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+  LLM_DISABLED: ${LLM_DISABLED:-}
 
 services:
   db:

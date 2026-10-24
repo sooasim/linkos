@@ -50,11 +50,24 @@ nginx -t && systemctl reload nginx
 
 ## 배치
 
+> **2026-10-24 실배포로 확인한 사실.** 이 문서의 초안은 구서버(`1.234.5.14`, cafe24 ckp24) 기준이었다.
+> 그 서버는 **2026-10-16 에 회수됐다**(죽음). 아래는 실제로 배포해 동작을 확인한 현재 서버 기준이다.
+>
+> | | 초안(구서버) | **실제(현재)** |
+> |---|---|---|
+> | 호스트 | 1.234.5.14 / ckp24.cafe24.com | **1.234.82.36 / qm391-1139** (`ssh ckp`) |
+> | 인증서 | Cloudflare Origin `*.ckp.kr` (2041) | **Let's Encrypt 와일드카드** `/etc/letsencrypt/live/ckp.kr/` (90일 자동갱신) |
+> | 시스템 node | v20 | **v24.22 + npm 11** (`/usr/bin/node`). `/opt/node24/bin` 에는 `node` 하나뿐이라 npm·pnpm 이 없다 |
+> | pnpm | 있다고 가정 | **없다 — `npm i -g pnpm@10.28.0` 이 최초 1회 필요** |
+> | LINKOS | 같은 서버에서 운영 중(4300) | **아직 미이전.** `/var/www/linkos` 없음, `linkos-kr` vhost 만 남아 있다 |
+> | RAM | 3GB(가용 1.4GB) | **32GB** — 빌드 메모리 상한을 걱정할 필요가 없다 |
+> | nginx 레이트리밋 키 | 공통 `$ckp_client_ip` | **그 변수는 이 서버에 없다.** `proplus-http.conf` 가 자기 `map` 으로 정의한다 |
+
 | 항목 | 값 |
 |---|---|
 | 주소 | https://proplus.linkos.com (임시: https://proplus.ckp.kr) |
 | 소스 | `/var/www/proplus` (GitHub `sooasim/linkos` 얕은 clone — LINKOS 체크아웃과 **별도 디렉터리**) |
-| 런타임 | `/opt/node24/bin/node` (v24) — 시스템 node 는 v20 이라 `engines: >=22` 를 못 맞춘다 |
+| 런타임 | `/opt/node24/bin/node` (v24). 시스템 node 도 v24 이지만 유닛은 경로를 고정해 둔다 |
 | 웹/API | `proplus-web.service` → `127.0.0.1:4400` (루프백 전용, 유닛이 `HOSTNAME=127.0.0.1` 을 못 박는다) |
 | 워커 | `proplus-worker.service` (outbox·만료 알림) |
 | DB | 기존 PostgreSQL 14 클러스터의 **`proplus` DB / `proplus` 롤** (LINKOS 의 `linkos` DB 와 분리) |
@@ -212,3 +225,93 @@ pnpm --filter @proplus/web dev                                # http://localhost
 ```
 
 LINKOS 로컬 DB(5432)와 포트가 겹치지 않으므로 두 제품을 동시에 띄울 수 있다.
+
+---
+
+## 부록 — 2026-10-24 임시 검증 배포 기록 (proplus.ckp.kr)
+
+실제로 수행한 최초 설치 순서. 멱등하게 다시 돌릴 수 있다.
+
+```bash
+# 1) 도구·사용자·디렉터리
+ssh ckp 'npm i -g pnpm@10.28.0'
+ssh ckp 'useradd --system --home /var/lib/proplus --shell /usr/sbin/nologin proplus
+         install -d -o proplus -g proplus -m 750 /var/lib/proplus /var/lib/proplus/storage
+         install -d -m 755 /etc/proplus'
+
+# 2) DB — 확장은 superuser 가 만들어야 한다(마이그레이션의 CREATE EXTENSION 은 그 뒤 no-op)
+ssh ckp 'sudo -u postgres psql -c "CREATE ROLE proplus LOGIN PASSWORD '"'"'…'"'"'"
+         sudo -u postgres createdb -O proplus proplus
+         sudo -u postgres psql -d proplus -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;
+                                              CREATE EXTENSION IF NOT EXISTS btree_gist;
+                                              CREATE EXTENSION IF NOT EXISTS pg_trgm;"'
+
+# 3) /etc/proplus/proplus.env (root:proplus 640) — 항목은 proplus/.env.example
+#    AUTH_SECRET·FIELD_KEY·STORAGE_SIGNING_SECRET·ANALYTICS_SALT·VISITOR_SALT 는 openssl rand 로 생성
+#    APP_ORIGIN 은 **실제 주소와 정확히 같아야** 한다(스킴 포함) — CSRF origin 검사 기준이다
+
+# 4) 소스 배치 (브랜치 미푸시 상태라 git archive 로 전송했다)
+git archive --format=tar HEAD -- ':!dd' ':!docs/screenshots' | gzip > /tmp/proplus-src.tgz
+scp /tmp/proplus-src.tgz ckp:/tmp/
+ssh ckp 'cd /var/www/proplus && find . -maxdepth 1 -mindepth 1 ! -name node_modules -exec rm -rf {} +
+         tar xzf /tmp/proplus-src.tgz'
+
+# 5) 설치·빌드·정적자산·마이그레이션
+ssh ckp 'cd /var/www/proplus
+         pnpm install --frozen-lockfile --filter "@proplus/web..." --filter "@proplus/api..." --filter "@proplus/domain..."
+         set -a; . /etc/proplus/proplus.env; set +a
+         pnpm --filter @proplus/web build
+         S=proplus/apps/web/.next/standalone/proplus/apps/web
+         cp -r proplus/apps/web/.next/static "$S/.next/static"
+         chown -R proplus:proplus /var/www/proplus
+         node_modules/.bin/tsx proplus/services/api/src/migrate.ts'
+
+# 6) systemd
+ssh ckp 'install -m 644 /var/www/proplus/proplus/infra/systemd/proplus-*.service /etc/systemd/system/
+         systemctl daemon-reload
+         systemctl enable --now proplus-web.service proplus-worker.service'
+
+# 7) nginx — **반드시 nginx -t 통과 후에만 reload** (같은 서버에 다른 사이트가 여럿 있다)
+ssh ckp 'install -d -m 755 /etc/ssl/proplus
+         ln -sfn /etc/ssl/ckp/pt.pem /etc/ssl/proplus/proplus.pem
+         ln -sfn /etc/ssl/ckp/pt.key /etc/ssl/proplus/proplus.key
+         cp /var/www/proplus/proplus/infra/nginx/proplus-http.conf      /etc/nginx/conf.d/proplus.conf
+         cp /var/www/proplus/proplus/infra/nginx/proplus.linkos.com.conf /etc/nginx/sites-available/proplus-kr
+         ln -sfn /etc/nginx/sites-available/proplus-kr /etc/nginx/sites-enabled/proplus-kr
+         nginx -t && systemctl reload nginx'
+```
+
+### 남은 일 — DNS
+
+`proplus.ckp.kr` 의 **A 레코드가 아직 없다.** 서버·TLS·앱은 전부 준비됐고 오리진에서 200 이 확인됐다.
+
+- Cloudflare zone `ckp.kr` → Type `A`, Name `proplus`, Content **`1.234.82.36`**, Proxied **ON**
+- 등록하면 바로 `https://proplus.ckp.kr` 로 열린다(인증서는 와일드카드라 추가 발급 불필요).
+
+⚠️ **DNS 를 붙이기 전에 `DEMO_LOGIN` 을 끌지 결정해야 한다.** 지금은 SMTP 가 없어 매직링크
+메일이 나가지 않으므로 검증용으로 `DEMO_LOGIN=1` 이다 — 이 상태로 공개되면 **주소를 아는
+누구나 로그인할 수 있다.** 공개 전에 `0` 으로 내리고 `SMTP_URL` 을 채운 뒤
+`systemctl restart proplus-web` 한다.
+
+### 검증한 것 (2026-10-24, 오리진 직접 호출)
+
+| 항목 | 결과 |
+|---|---|
+| `/api/v1/health` | `{"status":"ok","db":"ok","migrations":2}` |
+| 마이그레이션 멱등 | 2회차 `database up to date` |
+| 시드 멱등 | 2회 연속 성공 (FK 정리 순서 수정이 통했다) |
+| 공개 프로필 | 200 · 배지 4개 각각 강도·범위·확인일 표기 |
+| **N-9 읽기시점 만료** | `expires_at` 을 과거로 → **워커 없이 즉시** 공개 목록에서 사라짐 |
+| **P-085 소속 연동** | 배지 만료일 1년 남은 상태에서 `ended_at` 과거로 → 즉시 사라지고, 복구하면 다시 보임 (0002 마이그레이션) |
+| **N-1 DB 우회 차단** | `self_declared`+`verified` 직접 INSERT → CHECK 제약이 거부 |
+| **N-1 배지 차단** | verified 아닌 검증으로 배지 INSERT → 트리거가 거부 |
+| **N-8 지표 차단** | 근거 빈 문자열·표본 0·기간 역전 → CHECK 가 거부 |
+| **N-7 감사로그** | `UPDATE audit_logs` → 트리거가 거부 |
+| **N-6 자동 기록** | `verification.verified` ×8, `verification.needs_more_info` ×2 자동 생성 |
+| **N-11 동의 분리** | 폼에 체크박스 2개(마케팅 기본 해제, "동의하지 않아도 상담은 진행") |
+| **P-102 암호화** | 저장값 `v1:…`, 평문 조회 0건, 응답은 `ve***@example.test` 만 |
+| 상담 제출 | 201 + 보존기한 자동 설정 |
+| P-112 레이트리밋 | 한도 초과 시 429 + `retry-after: 153` |
+| CSP 헤더 | **1개만** 내려감(nginx 중복 없음), `script-src` 에 `unsafe-eval` 없음 |
+| 콘솔 오류 | 없음 (하이드레이션 정상) |
+| 기존 사이트 | ckp.kr·pt·link·bu·kakao **전부 200 유지** |

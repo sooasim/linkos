@@ -11,10 +11,11 @@
  * 경로(내보내기 파일의 `consents`)만 안내한다 (CLAUDE.md §7 "미결정은 임의로 결정하지 않는다").
  */
 
-import { identity } from "@proplus/api";
+import { identity, integration } from "@proplus/api";
 import { CONSENT_PURPOSES, type ConsentPurpose } from "@proplus/domain";
 import type { Metadata } from "next";
 import { getViewer } from "@/lib/server";
+import { IntegrationSettings } from "./IntegrationSettings";
 import { SettingsClient } from "./SettingsClient";
 
 export const metadata: Metadata = { title: "설정", robots: { index: false, follow: false } };
@@ -37,6 +38,8 @@ export default async function SettingsPage() {
   if (!userId) return null;
 
   const sessions = await identity.listSessions(ctx);
+  // 연동 설정은 프로필이 없어도 읽을 수 있어야 한다(아직 프로필을 안 만든 사용자도 이 화면에 온다).
+  const integrationSettings = await integration.integrationSettings(ctx);
 
   return (
     <div>
@@ -52,6 +55,13 @@ export default async function SettingsPage() {
         컴포넌트의 children 으로 넘기면 그 자리에 그대로 들어간다 — 이 설명 문구를 클라이언트 번들로
         옮기지 않고도 순서를 지킬 수 있다.
       */}
+      {/*
+        연동 설정 (ADR-012 / 05_LINKOS_INTEGRATION.md). 동의 섹션 **앞**에 둔다 —
+        둘 다 "내 데이터가 어디까지 가는가" 를 다루지만, 연동은 사용자가 **켜고 끌 수 있는 것**이고
+        동의 기록은 **이미 일어난 일**이다. 조작 가능한 것을 먼저 보여 준다.
+      */}
+      <IntegrationSettings initial={integrationSettings} />
+
       <SettingsClient sessions={sessions}>
         <section aria-labelledby="h-consents" className="card flex flex-col gap-3 p-6">
           <h2 id="h-consents" className="text-[17px] font-semibold">

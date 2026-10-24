@@ -45,3 +45,10 @@ export * from "./origin";
 // 노출 투명성과 이벤트 (N-15, 기술백서 §7).
 export * from "./search";
 export * from "./events";
+
+// LINKOS 연동 경계 (ADR-012 / 05_LINKOS_INTEGRATION §1). 오가는 것은 서명된 문자열이고,
+// 그 검증은 순수 함수여야 거부 경로를 전수 테스트할 수 있어서 도메인에 있다.
+export * from "./ssoAssertion";
+
+// LINKOS 연동의 입력 규칙 (05_LINKOS_INTEGRATION §3 — 이메일 해시 조회).
+export * from "./directory";

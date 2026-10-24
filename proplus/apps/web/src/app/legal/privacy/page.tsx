@@ -6,6 +6,11 @@
  *   암호화    → `services/api/src/lib/crypto.ts` (AES-256-GCM), `leads.contact_channel_encrypted`
  *   보존기간  → `modules/lead.ts` 의 `DEFAULT_LEAD_RETENTION_DAYS = 180` + `retention_policies` 테이블
  *   동의 분리 → `domain/consent.ts` 의 `REQUIRED_FOR_LEAD = ['service']`
+ *   외부 전달 → `modules/integration.ts` 의 `forwardLeadToLinkos()` + `docs/05_LINKOS_INTEGRATION.md` §2
+ *
+ * 전달 항목을 여기 적는 이유: 리드 전달은 **담당자의 설정**으로 일어나고 상담을 남긴 사람에게
+ * 동의를 더 받지 않는다(05 문서 §2 — 받지 않은 동의를 `consent_records` 에 기록하는 것이 N-11 이
+ * 막으려는 거짓이다). 동의를 받지 않는 대신 **사실을 알린다.** 적지 않고 보내면 그게 거짓말이다.
  *
  * 법적 약속(국외 이전, 위탁사 목록, 확정 보유기간)은 **미결정**이라 적지 않는다.
  * 출처 문서 10_전제와_미결정사항.md 가 그것들을 미정으로 명시한다.
@@ -38,6 +43,11 @@ export default function PrivacyPage() {
         <li>• 성함, 연락처(이메일 또는 휴대전화 번호 중 선택한 하나), 문의 내용</li>
         <li>• 어떤 프로필·상품을 보고 문의했는지, 유입 경로(UTM) 정보</li>
         <li>• 동의 기록 — <b>목적별로 분리</b>해 저장합니다(상담 처리 / 마케팅 수신). 동의 시점의 방침 버전을 함께 기록합니다.</li>
+        <li>
+          • 담당자가 연동을 켜 둔 경우, 남긴 <b>성함·연락처·문의 내용</b>이 담당자의 연락처 관리
+          도구(LINKOS)로 전달됩니다. <b>마케팅 수신 동의 여부는 전달되지 않습니다.</b> 연동은 담당자가
+          직접 켜야 하고 기본값은 꺼짐이며, 전달된 사실은 기록으로 남습니다.
+        </li>
       </ul>
 
       <h3 className="mt-5 text-[15px] font-semibold">프로필을 만들 때</h3>

@@ -9,6 +9,7 @@
 //
 // 모듈 계층(services/api/src/modules/*)을 import 하지 않는다: 워커가 모듈 전체를 끌고 오면
 // 한 모듈의 import 오류로 outbox 발행이 멈춘다. 여기서 필요한 것은 SQL 몇 개뿐이다.
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PoolClient } from "pg";
@@ -16,6 +17,9 @@ import { closePool, q, tx } from "./lib/db";
 import { log } from "./lib/log";
 import { purgeOldLimitWindows } from "./lib/limits";
 import { sendMail } from "./lib/mail";
+import { linkosConfigured } from "./lib/linkosClient";
+import { systemCtx } from "./lib/ctx";
+import * as integration from "./modules/integration";
 
 /** 만료 며칠 전에 알릴지. 소속·자격 재검증에는 서류 준비 시간이 필요하므로 한 달 전에 알린다 (보안정책 §4.5). */
 export const EXPIRY_NOTICE_DAYS = Number(process.env.PROPLUS_EXPIRY_NOTICE_DAYS ?? 30);
@@ -90,6 +94,10 @@ async function dispatch(c: PoolClient, ev: OutboxRow): Promise<void> {
       const owner = await ownerOf(c, "lead", ev.aggregate_id);
       // 알림에 고객 이름·연락처를 쓰지 않는다. 내용은 워크스페이스에서 권한을 확인한 뒤 보여 준다 (N-13 / 보안정책 §3).
       if (owner) await notifyOnce(c, owner, { kind: "lead.created", title: "새 상담 요청", body: "상담함에서 확인하세요.", link: `/app/leads/${ev.aggregate_id}` });
+      // 연동 ②(ADR-012 / 05 §2)의 LINKOS 전달은 **여기서 하지 않는다.**
+      // dispatch 는 outbox 트랜잭션 안에서 돌고(아래 relayOutbox), 외부 HTTP 호출을 그 안에 넣으면
+      // 느린 응답 하나가 트랜잭션을 붙잡아 큐 전체를 막는다. 전달은 `forwardPendingLeads()` 가
+      // 별도 패스로 처리한다 — 거기서는 이미 보낸 것을 쿼리로 걸러내므로 재시도도 공짜다.
       return;
     }
     case "appeal.submitted":
@@ -230,13 +238,58 @@ export async function purgePlatformScratch(): Promise<void> {
   await purgeOldLimitWindows();
 }
 
-export async function tick(): Promise<{ relayed: number; expiring: number; purgedLeads: number }> {
+/**
+ * 연동 ② (ADR-012 / 05 §2): 소유자가 켜 둔 프로필의 상담을 LINKOS 연락처로 전달한다.
+ *
+ * **왜 outbox dispatch 가 아니라 별도 패스인가**
+ *   `dispatch` 는 outbox 트랜잭션 안에서 돈다. 외부 HTTP 호출을 그 안에 넣으면 느린 응답 하나가
+ *   트랜잭션을 붙잡아 큐 전체를 막는다(head-of-line blocking). 여기서는 트랜잭션 밖이다.
+ *
+ * **멱등성**(P-184): 보낼 대상을 고르는 쿼리가 이미 보낸 것을 `integration_deliveries` 로 제외한다.
+ *   그래서 재시도가 공짜다 — 실패하면 다음 tick 에 자연히 다시 집힌다. 워커가 중간에 죽어도
+ *   같은 리드를 두 번 보내지 않는 근거는 그 테이블의 UNIQUE 다.
+ *
+ * 연동이 설정되지 않았으면 쿼리조차 돌리지 않는다. PROPLUS 핵심은 LINKOS 없이 동작해야 한다(05 §5).
+ */
+export async function forwardPendingLeads(limit = 20): Promise<number> {
+  if (!linkosConfigured()) return 0;
+
+  const rows = await q<{ id: string }>(
+    `SELECT l.id::text AS id
+       FROM leads l
+       JOIN profiles p ON p.id = l.profile_id
+      WHERE COALESCE((p.public_settings->>'linkosSync')::boolean, false) = true
+        AND NOT EXISTS (
+          SELECT 1 FROM integration_deliveries d
+           WHERE d.target = 'linkos' AND d.kind = 'lead' AND d.source_id = l.id
+        )
+      ORDER BY l.created_at
+      LIMIT $1`,
+    [limit],
+  );
+
+  let sent = 0;
+  for (const row of rows) {
+    // 한 건의 실패가 나머지를 막지 않는다. 실패 사유는 integration_deliveries 에 남는다.
+    const r = await integration
+      .forwardLeadToLinkos(systemCtx(randomUUID()), row.id)
+      .catch((e) => {
+        log("warn", "worker.lead_forward_failed", { leadId: row.id, error: (e as Error).message });
+        return { status: "failed" as const };
+      });
+    if (r.status === "sent") sent += 1;
+  }
+  return sent;
+}
+
+export async function tick(): Promise<{ relayed: number; expiring: number; purgedLeads: number; forwarded: number }> {
   const relayed = await relayOutbox();
   // 알림·삭제가 실패해도 outbox 발행은 계속되어야 한다. 그래서 각각을 따로 감싼다.
   const expiring = await notifyExpiringBadges().catch((e) => (log("warn", "worker.expiry_failed", { error: (e as Error).message }), 0));
   const purgedLeads = await purgeExpiredLeads().catch((e) => (log("warn", "worker.retention_failed", { error: (e as Error).message }), 0));
+  const forwarded = await forwardPendingLeads().catch((e) => (log("warn", "worker.forward_failed", { error: (e as Error).message }), 0));
   if (Math.random() < 0.05) await purgePlatformScratch().catch(() => undefined);
-  return { relayed, expiring, purgedLeads };
+  return { relayed, expiring, purgedLeads, forwarded };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

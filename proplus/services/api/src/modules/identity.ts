@@ -122,7 +122,12 @@ type SessionAuthRow = {
  */
 const EMAIL_RE = /^[^\s@,:;<>"]+@[^\s@,:;<>"]+\.[a-z]{2,}$/i;
 
-function normalizeEmail(raw: string): string {
+/**
+ * 이메일 정규화. **export 하는 이유**: 계정을 이메일로 잇는 경로가 둘이 됐다
+ * (매직링크, LINKOS SSO — 05_LINKOS_INTEGRATION §1). 두 경로가 서로 다르게 접으면
+ * 같은 주소에 계정이 **조용히 두 개** 생긴다. 접는 규칙은 한 곳에만 있어야 한다.
+ */
+export function normalizeEmail(raw: string): string {
   return typeof raw === "string" ? raw.normalize("NFKC").trim().toLowerCase() : "";
 }
 
@@ -198,6 +203,61 @@ async function createSession(
   );
   if (!row) throw unavailable("session_create_failed", "세션을 만들 수 없습니다.");
   return { id: row.id, token, expiresAt };
+}
+
+/**
+ * P-002: **이미 신원이 확인된** 사용자에게 세션을 발급한다.
+ *
+ * 왜 이 함수가 따로 있는가: 세션 생성(`createSession`)은 지금까지 `consumeLoginLink` 안에만
+ * 있었다. 그런데 LINKOS SSO(ADR-012)는 매직링크 토큰 없이 신원을 확인한다 —
+ * assertion 서명·만료·1회성·계정 연결을 `linkosSso` 가 이미 끝낸 뒤다.
+ * 그 경로가 세션을 만들려고 `createSession` 을 복제하면 **세션 수명·감사·토큰 생성이 두 벌**이 되고,
+ * 한쪽만 고쳐지는 날 조용히 갈라진다. 그래서 발급 경로를 하나로 모은다.
+ *
+ * ⚠️ **이 함수는 신원을 확인하지 않는다.** 호출부가 이미 확인했다는 전제로 세션을 만든다.
+ * 라우트에서 직접 부르지 마라 — 부르는 순간 `userId` 를 아는 누구나 로그인하게 된다.
+ * 지금 호출부는 `modules/linkosSso.ts` 하나뿐이고, 늘릴 때는 "무엇이 신원을 확인했는가" 를
+ * 먼저 답할 수 있어야 한다.
+ *
+ * @param reason 감사로그에 남길 확인 근거 (예: "linkos_sso"). 비울 수 없다.
+ */
+export async function issueSession(
+  ctx: Ctx,
+  userId: string,
+  reason: string,
+  meta: { userAgent?: string; kind?: SessionKind } = {},
+): Promise<SessionIssued> {
+  if (!reason.trim()) {
+    throw badRequest("issue_reason_required", "세션 발급 근거가 필요합니다.");
+  }
+
+  return tx(async (c) => {
+    // 계정 상태를 다시 본다. 호출부가 신원은 확인했어도 **정지·삭제는 발급 시점에** 봐야 한다
+    // (P-011: 삭제·정지된 계정의 기존 쿠키가 통하지 않는 것과 같은 기준).
+    const user = await one<{ id: string; status: string; deleted_at: Date | null }>(
+      `SELECT id, status, deleted_at FROM users WHERE id = $1 FOR UPDATE`,
+      [userId],
+      c,
+    );
+    if (!user || user.deleted_at || user.status !== "active") {
+      throw forbidden("이 계정으로는 로그인할 수 없습니다.");
+    }
+
+    const s = await createSession(c, user.id, meta.userAgent ?? ctx.userAgent, meta.kind ?? "web");
+    await q(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id], c);
+
+    await writeAudit(c, {
+      eventType: "identity.session_issued",
+      actorId: user.id,
+      aggregateType: "session",
+      aggregateId: s.id,
+      correlationId: ctx.requestId,
+      // N-13: 이메일·토큰 금지. 어떤 근거로 발급했는지만 남긴다.
+      payload: { reason, kind: meta.kind ?? "web" },
+    });
+
+    return { userId: user.id, sessionId: s.id, sessionToken: s.token, expiresAt: iso(s.expiresAt) };
+  });
 }
 
 /**

@@ -16,6 +16,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getViewer, safeNext } from "@/lib/server";
+import { linkosSso } from "@proplus/api";
 import { LoginForm } from "./LoginForm";
 
 export const metadata: Metadata = {
@@ -37,6 +38,8 @@ export default async function LoginPage({
   if (userId) redirect(next);
 
   const demoLogin = process.env.DEMO_LOGIN === "1";
+  // 연동이 설정되지 않았으면 버튼을 아예 그리지 않는다 (05 §5: 연동 env 가 비면 그 연동만 꺼진다).
+  const linkosSsoOn = linkosSso.linkosSsoEnabled();
 
   return (
     <div>
@@ -59,6 +62,26 @@ export default async function LoginPage({
 
         <div className="card mt-9 p-6 sm:p-7">
           <LoginForm next={next} demoLogin={demoLogin} />
+
+          {/*
+            연동 ① SSO (ADR-012 / 05 §1). 서버에 연동이 설정됐을 때만 보인다 —
+            꺼져 있는데 버튼만 보이면 누르는 사람에게 404 를 주게 된다.
+
+            `<a>` 다. 이 링크는 **다른 출처로 나가는 이동**이고(LINKOS 가 신원을 확인한다),
+            클라이언트 라우팅으로 가로채면 안 된다. GET 이라 CSRF 도 성립하지 않는다 —
+            실제 교환은 state 쿠키를 대조하는 POST 에서 일어난다.
+          */}
+          {linkosSsoOn ? (
+            <div className="mt-6 border-t border-[var(--line)] pt-6">
+              <a href="/api/v1/auth/linkos/start" className="btn btn-ghost w-full" data-testid="login-linkos">
+                LINKOS 계정으로 계속
+              </a>
+              <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--fg-mute)]">
+                LINKOS 에서 본인 확인만 하고 돌아옵니다. 같은 이메일이면 기존 PROPLUS 계정에 연결되고,
+                연락처·명함 내용은 가져오지 않습니다.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <ul className="mt-7 flex flex-col gap-2.5 text-[13.5px] leading-relaxed text-[var(--fg-mute)]">

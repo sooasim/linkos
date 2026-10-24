@@ -49,11 +49,35 @@ const moduleFiles = tsFiles(MODULES_DIR);
 const domainFiles = tsFiles(DOMAIN_DIR);
 
 describe("전략 §3: 모듈 목록이 기술백서 §2 의 모듈 경계와 일치한다", () => {
-  it("11개 모듈만 존재한다 (임의 이름의 모듈 추가 차단)", () => {
+  /**
+   * 기술백서 §2 의 **제품 모듈** 11개. 이 목록은 늘어나면 안 된다 —
+   * 새 제품 기능은 이 중 하나에 들어가지, 자기 이름의 모듈을 만들지 않는다.
+   */
+  const PRODUCT_MODULES = [
+    "admin", "analytics", "billing", "booking", "catalog",
+    "identity", "lead", "org", "profile", "proof", "search",
+  ];
+
+  /**
+   * **연동 모듈** — 제품 경계가 아니라 외부 시스템과의 경계다 (ADR-012 / 05_LINKOS_INTEGRATION.md).
+   *
+   * 따로 세는 이유: 이것들은 기술백서 §2 의 도메인이 아니라 **바깥으로 나가는 어댑터**다.
+   * 제품 모듈 목록에 섞으면 "PROPLUS 의 도메인이 13개" 처럼 읽히고, 다음 사람이
+   * 연동 하나 추가할 때마다 도메인이 늘어난다고 착각한다.
+   *
+   * 이 목록도 아무거나 늘릴 수 없다 — 연동 대상이 늘면 ADR 이 먼저 바뀌어야 한다.
+   */
+  const INTEGRATION_MODULES = ["directory", "integration", "linkosSso"];
+
+  it("제품 모듈 11개 + 연동 모듈만 존재한다 (임의 이름의 모듈 추가 차단)", () => {
     const names = moduleFiles.map((f) => f.split(/[\\/]/).pop()!.replace(/\.ts$/, "")).sort();
-    expect(names).toEqual(
-      ["admin", "analytics", "billing", "booking", "catalog", "identity", "lead", "org", "profile", "proof", "search"],
-    );
+    expect(names).toEqual([...PRODUCT_MODULES, ...INTEGRATION_MODULES].sort());
+  });
+
+  it("연동 모듈이 제품 모듈 이름을 차지하지 않는다", () => {
+    for (const m of INTEGRATION_MODULES) {
+      expect(PRODUCT_MODULES, `${m} 가 제품 모듈 이름과 겹친다`).not.toContain(m);
+    }
   });
 });
 

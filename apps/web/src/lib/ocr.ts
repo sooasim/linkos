@@ -24,6 +24,55 @@ export interface OcrResult {
   engine: OcrEngineId;
 }
 
+/** 기기 내 인식을 할 수 없을 때 던진다 (`code` 로 가려낸다 — 동적 import 라 instanceof 를 쓰지 않는다) */
+export interface OcrUnavailable extends Error {
+  code: "wasm_blocked";
+}
+
+/**
+ * 두 엔진 모두 WebAssembly 로 돈다. 응답 헤더의 CSP `script-src` 에 `'wasm-unsafe-eval'` 이
+ * 없으면 `WebAssembly.compile` 이 던지고, 그러면 tesseract 도 PP-OCR 도 쓸 수 없다.
+ *
+ * 이걸 미리 보지 않으면 진행률이 35%("언어 데이터 불러오는 중" 끝 = "글자 위치 찾는 중" 시작)에서
+ * 영구히 멈춘 것처럼 보인다 — 실제로 nginx 가 공용 CSP 를 하나 더 붙여 그렇게 됐다.
+ * 여기서 8바이트짜리 빈 모듈을 컴파일해 보고, 막혀 있으면 바로 사람에게 알린다.
+ */
+let wasmProbe: Promise<boolean> | null = null;
+export function wasmUsable(): Promise<boolean> {
+  wasmProbe ??= (async () => {
+    try {
+      if (typeof WebAssembly?.compile !== "function") return false;
+      await WebAssembly.compile(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  return wasmProbe;
+}
+
+/**
+ * 멈춘 엔진을 기다리지 않는다. 밑에서 돌던 일을 취소할 수는 없지만(wasm 호출은 중간에
+ * 끊을 수 없다) 다음 갈래로 넘어갈 수는 있다. PP-OCR 은 첫 실행에 모델 33MB 를 받으므로
+ * 넉넉히 준다 — 받는 동안은 진행률이 움직이니 사람이 기다릴 수 있다.
+ */
+const PADDLE_BUDGET_MS = 90_000;
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 type Worker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 let shared: { langs: string; worker: Promise<Worker> } | null = null;
 let progressCb: ((p: number, label: string) => void) | null = null;
@@ -70,10 +119,15 @@ async function ocrTesseract(canvas: HTMLCanvasElement, langs: string, onProgress
  * 명암 보정은 엔진에 맞춰 안에서 한다.
  */
 export async function ocrCanvas(canvas: HTMLCanvasElement, langs = "kor+eng", onProgress?: (p: number, label: string) => void): Promise<OcrResult> {
+  if (!(await wasmUsable())) {
+    const e = new Error("WebAssembly is blocked — CSP script-src is missing 'wasm-unsafe-eval'") as OcrUnavailable;
+    e.code = "wasm_blocked";
+    throw e;
+  }
   try {
     const paddle = await import("./ocrPaddle");
     if (await paddle.paddleModelsAvailable(langs)) {
-      const lines = await paddle.ocrCanvasPaddle(canvas, langs, onProgress);
+      const lines = await withTimeout(paddle.ocrCanvasPaddle(canvas, langs, onProgress), PADDLE_BUDGET_MS, "PP-OCRv5");
       if (lines.length) {
         onProgress?.(1, "완료");
         return { lines: lines.map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox })), engine: "ppocrv5-on-device" };

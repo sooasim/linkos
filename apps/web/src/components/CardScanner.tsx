@@ -78,8 +78,11 @@ export function CardScanner({
       setCorrected(r.extra.corrected);
       if (!r.lines.length) throw new Error("empty");
       onLines(r.lines, r.preview, r.extra);
-    } catch {
-      if (typeof navigator !== "undefined" && navigator.onLine === false && onOfflinePhoto) {
+    } catch (e) {
+      // WebAssembly 가 막힌 경우는 사진을 다시 찍어도 소용없다 — 다른 말을 해 줘야 한다
+      if ((e as { code?: string } | null)?.code === "wasm_blocked") {
+        setError(t.noWasm);
+      } else if (typeof navigator !== "undefined" && navigator.onLine === false && onOfflinePhoto) {
         onOfflinePhoto(file);
       } else {
         setError(kind === "badge" ? t.readFailedBadge : t.readFailedCard);

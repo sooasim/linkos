@@ -79,8 +79,9 @@ export function paddleModelsAvailable(langs: string): Promise<boolean> {
   if (!p) {
     p = (async () => {
       try {
+        // 끊긴 망에서 영원히 매달리지 않는다 — 못 물어보면 모델이 없는 것으로 보고 tesseract 로 간다
         const heads = await Promise.all(
-          [DET_MODEL, cfg.model, cfg.dict].map((f) => fetch(MODEL_BASE + f, { method: "HEAD", cache: "force-cache" })),
+          [DET_MODEL, cfg.model, cfg.dict].map((f) => fetch(MODEL_BASE + f, { method: "HEAD", cache: "force-cache", signal: AbortSignal.timeout(8000) })),
         );
         return heads.every((r) => r.ok);
       } catch {
@@ -174,7 +175,18 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
   const size = detResize(canvas.width, canvas.height);
   const img = resized(canvas, size.width, size.height);
   const detIn = new ort.Tensor("float32", normalizeDetInput({ width: size.width, height: size.height, data: img.data }), [1, 3, size.height, size.width]);
-  const detOut = await det.run({ [det.inputNames[0]!]: detIn });
+  /*
+   * 검출은 한 번의 긴 호출이라 그 사이 진행률이 멈춘다. 35% 에 붙어 있으면 사람은
+   * 고장으로 읽는다. 돌고 있다는 것만 보이게 조금씩 올린다(실제 진척도는 알 수 없다).
+   */
+  let faux = 0.35;
+  const tick = setInterval(() => onProgress?.((faux = Math.min(0.48, faux + 0.01)), "글자 위치 찾는 중"), 250);
+  let detOut: Awaited<ReturnType<typeof det.run>>;
+  try {
+    detOut = await det.run({ [det.inputNames[0]!]: detIn });
+  } finally {
+    clearInterval(tick);
+  }
   const probTensor = detOut[det.outputNames[0]!]!;
   const dims = probTensor.dims;
   const pw = Number(dims[dims.length - 1]);

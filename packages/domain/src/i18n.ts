@@ -208,6 +208,9 @@ const scannerKo = {
   enhancing: "이미지 보정 중",
   readFailedCard: "글자를 읽지 못했어요. 밝은 곳에서 명함이 화면을 가득 채우도록 다시 촬영하거나 직접 입력하세요.",
   readFailedBadge: "배지 글자를 읽지 못했어요. 이름이 잘 보이도록 가까이에서 다시 촬영하거나 직접 입력하세요.",
+  // 기기 내 인식은 두 엔진 모두 WebAssembly 로 돈다. 서버 응답 헤더나 브라우저 설정이
+  // 그것을 막으면 아무 엔진도 못 쓴다 — 진행률이 멈춘 채 기다리게 하지 않고 이걸 보여 준다.
+  noWasm: "이 브라우저에서 기기 내 글자 인식을 쓸 수 없어요(WebAssembly 차단). 직접 입력하거나 다른 브라우저로 열어 주세요.",
   nounCard: "종이 명함",
   nounBadge: "행사 배지",
   pickPhoto: "{noun} 사진 선택",
@@ -232,6 +235,7 @@ export const SCANNER_MESSAGES: Record<Locale, ScannerMessages> = {
     enhancing: "Enhancing the image",
     readFailedCard: "We couldn't read the text. Retake the photo in good light with the card filling the screen, or enter it manually.",
     readFailedBadge: "We couldn't read the badge. Move closer so the name is clearly visible, or enter it manually.",
+    noWasm: "On-device text recognition isn't available in this browser (WebAssembly is blocked). Enter it manually or try another browser.",
     nounCard: "business card",
     nounBadge: "event badge",
     pickPhoto: "Choose a {noun} photo",
@@ -253,6 +257,7 @@ export const SCANNER_MESSAGES: Record<Locale, ScannerMessages> = {
     enhancing: "画像を補正中",
     readFailedCard: "文字を読み取れませんでした。明るい場所で名刺が画面いっぱいになるよう撮り直すか、手入力してください。",
     readFailedBadge: "バッジの文字を読み取れませんでした。名前がはっきり見えるよう近づいて撮り直すか、手入力してください。",
+    noWasm: "このブラウザーでは端末内の文字認識を利用できません（WebAssembly がブロックされています）。手入力するか、別のブラウザーでお試しください。",
     nounCard: "名刺",
     nounBadge: "イベントバッジ",
     pickPhoto: "{noun}の写真を選択",

@@ -18,10 +18,16 @@ import type { MetadataRoute } from "next";
 const APP_ORIGIN = (process.env.APP_ORIGIN ?? "http://localhost:4400").replace(/\/+$/, "");
 
 /**
- * 프로필이 발행·비발행될 때마다 사이트맵이 바뀐다. 매 요청 전수 조회는 비싸고(P-194),
- * 검색엔진은 몇 시간 단위로 읽으므로 1시간 캐시가 적절하다.
+ * **요청마다 만든다.** ISR 캐시(`revalidate`)를 쓰지 않는 이유는 배포에서 직접 확인했다:
+ *
+ * 빌드 시점에는 DB 에 데이터가 없다(마이그레이션·시드는 빌드 **뒤에** 돈다). 그런데 `revalidate`
+ * 를 두면 Next 가 빌드 때 한 번 생성해 캐시하므로, 배포 직후 사이트맵이 **랜딩 한 줄짜리**로
+ * 굳고 첫 재검증 시각까지 그대로 있다. 실제로 그렇게 나왔다.
+ *
+ * 비용도 걱정만큼 크지 않다: `publishedSlugs()` 는 공개 뷰에서 slug 와 발행일만 읽고,
+ * 사이트맵은 검색엔진이 가끔 가져가는 경로라 사용자 요청 경로(P-194)와 무관하다.
  */
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();

@@ -98,6 +98,13 @@ const noStore = [
 
 const config: NextConfig = {
   output: "standalone",
+  /**
+   * `next dev`·`next build` 의 업그레이드 알림 정책. 'security' 는 Next 의 기본값이기도 하지만
+   * **명시해 둔다** — 기본값이 바뀌어도 이 저장소는 "보안 권고가 있을 때만 알린다"에 머문다.
+   * 'latest'·'experimental-future' 는 보안과 무관한 메이저·마이너 업그레이드까지 권하므로 쓰지 않는다.
+   * 이 옵션은 스스로 업그레이드하지 않는다(알림 정책만 정한다).
+   */
+  experimental: { agentUpgrade: "security" },
   // 배포 단위는 proplus/ 만이 아니라 저장소 루트 node_modules 를 공유한다 (전략 §1 "공유하는 것").
   //
   // `new URL(...).pathname` 을 쓰면 Windows 에서 `/E:/linkos/...` 가 나오고(앞에 슬래시가 붙은 드라이브 문자)

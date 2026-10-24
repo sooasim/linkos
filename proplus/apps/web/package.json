@@ -15,7 +15,7 @@
     "@fontsource/instrument-serif": "^5.2.6",
     "@proplus/api": "workspace:*",
     "@proplus/domain": "workspace:*",
-    "next": "16.4.0",
+    "next": "16.4.3",
     "pretendard": "^1.3.9",
     "qrcode": "^1.5.4",
     "react": "19.3.0",

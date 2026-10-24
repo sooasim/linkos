@@ -91,6 +91,53 @@ ssh ckp 'tar xzf /tmp/linkos-deploy.tgz -C /opt/linkos'   # .env 는 추적 대�
 >
 > 고치는 순간 `AUTH_SECRET` 이 바뀌므로 **기존 로그인 세션은 모두 끊긴다.** 의도된 결과다.
 
+### 🔴 nginx 공용 CSP 가 명함 인식을 막는다 (2026-10-24)
+
+"사진 인식이 35% 에서 멈춘다" 의 원인이다. 운영 응답에는 `Content-Security-Policy` 가
+**두 개** 내려온다 — 앱이 보내는 것(`apps/web/next.config.ts`)과
+`/etc/nginx/snippets/ckp-security.conf` 가 붙이는 공용 정책. 브라우저는 CSP 가 여러 개면
+**교집합**을 강제하므로 공용 쪽이 빠뜨린 것이 전부 금지된다.
+
+```bash
+curl -skI --resolve linkos.ckp.kr:443:127.0.0.1 https://linkos.ckp.kr/app/scan | grep -ci '^content-security-policy'
+# 2  ← nginx 가 하나 더 붙인다 (컨테이너 직접 조회는 1)
+```
+
+공용 정책의 `script-src` 에 **`'wasm-unsafe-eval'` 이 없다** → WebAssembly 가 통째로
+막힌다 → tesseract.js 도 PP-OCRv5 도 못 돈다. 진행률 0.35 는 "언어 데이터 불러오는 중"
+이 끝나는 지점이라 거기서 굳는다. `connect-src` 에 tessdata·jsDelivr 가 없어 언어 데이터도
+못 받고, `camera=()` 가 앱의 `camera=(self)` 를 덮어 카메라 권한도 함께 막힌다.
+
+고치는 방법은 linkos vhost 에서 그 include 를 빼는 것이다. 앱이 이미 완전한 보안 헤더
+묶음을 보내고 있어, 빼면 오히려 대부분 더 엄격해진다.
+
+| 헤더 | 앱(Next) | 공용 스니펫 | include 제거 시 |
+|---|---|---|---|
+| CSP `script-src` | `'wasm-unsafe-eval'` 있음 | 없음 | **OCR 이 돌게 된다** |
+| CSP `connect-src` | jsDelivr·tessdata 허용 | `'self'` + CF 만 | tesseract 폴백이 살아난다 |
+| CSP `frame-ancestors` | `'none'` | `'self'` | 더 엄격 |
+| CSP `img-src` | `'self' data: blob:` | `https:` 전부 | 더 엄격 |
+| `X-Frame-Options` | `DENY` | `SAMEORIGIN` | 더 엄격 |
+| `Permissions-Policy` | `camera=(self), microphone=(self), geolocation=()` | `camera=(), microphone=(), geolocation=(self)` | 카메라·마이크 허용(제품 기능), 위치는 더 엄격 |
+| `Strict-Transport-Security` | `63072000; includeSubDomains; preload` | `31536000; includeSubDomains` | 더 강함 |
+| `X-Content-Type-Options`·`Referrer-Policy` | 동일 | 동일 | 변화 없음 |
+
+```bash
+ssh ckp 'cp /etc/nginx/sites-available/linkos-kr{,.bak} \
+  && sed -i "s|^\( *\)include snippets/ckp-security.conf;|\1# 보안 헤더는 앱이 직접 보낸다 — 공용 CSP 를 함께 붙이면 교집합 때문에 WebAssembly(OCR)가 막힌다\n\1# include snippets/ckp-security.conf;|" /etc/nginx/sites-available/linkos-kr \
+  && nginx -t && systemctl reload nginx'
+```
+
+다른 사이트가 쓰는 `snippets/ckp-security.conf` 자체는 건드리지 않는다. 적용 뒤:
+
+```bash
+curl -sI https://linkos.ckp.kr/app/scan | grep -ci '^content-security-policy'   # 1 이어야 한다
+```
+
+앱 쪽은 이 상황에서도 영원히 기다리지 않게 고쳐 두었다 — 시작 전에 WebAssembly 를
+컴파일해 보고 막혀 있으면 "기기 내 인식을 쓸 수 없다" 고 바로 알린다(`lib/ocr.ts`).
+즉 nginx 를 안 고치면 **인식이 안 되는 것은 그대로이고, 멈춘 채 기다리지만 않는다.**
+
 아직 남은 것(확인만 하고 손대지 않았다):
 
 - `infra/docker-compose.yml` 의 `environment` 블록이 넘기는 키는 9개뿐이다 —

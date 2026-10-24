@@ -34,7 +34,7 @@ dd/                 원본 기획 번들 (zip, 백서 docx, 압축 해제본)
 1. **공유 1탭** `/app/exchange` → 192-bit 일회성 토큰(서버엔 해시만) + 숫자 4자리 교환 코드 생성(10분·1회성, 틀린 코드 시도 제한)
 2. **Adaptive Handoff** — OS 공유 시트 → (NFC 카드) → 단축코드 → **QR은 시간초과/실패 후 자동 표시되는 최종 폴백**
 3. **Guest Landing** `/x/{token}` 또는 `/c/{code}` — 로그인 없이 3초 카드 열람, “내 명함도 보내기”
-4. **게스트 촬영** — 사진에서 글자만 뽑아 구조화(서버 비전 어댑터 → 기기 내 PP-OCRv5 → tesseract), 서버는 텍스트만 받아 구조화 (원문 없는 값 생성 금지, 필드별 신뢰도) → [docs/OCR_ENGINE.md](docs/OCR_ENGINE.md)
+4. **게스트 촬영** — 사진에서 **글자만** 읽고(서버 비전 어댑터 → 기기 내 PP-OCRv5 → tesseract), 칸 가르기는 결정적 파서가 한다 (원문 없는 값 생성 금지, 필드별 신뢰도) → [docs/OCR_ENGINE.md](docs/OCR_ENGINE.md)
 5. **검토·동의** — 보낼 항목을 직접 체크 → 양쪽 Contact/Encounter/Relationship 생성, 발신자 화면에 SSE로 실시간 표시
 6. **Claim(교환 후)** — 이메일 OTP 또는 Google로 가입 → 게스트 초안으로 Living Card 자동 생성, 상대 명함이 내 주소록에
 

@@ -21,6 +21,7 @@ import {
   detResize,
   detectCardQuad,
   mergeNumberRuns,
+  mergeSpacedChars,
   normalizeDetInput,
   normalizeRecInput,
   parseBusinessCard,
@@ -101,7 +102,7 @@ async function ocrLines(src) {
     if (t && confidence >= REC_DROP_SCORE) lines.push({ text: t, confidence: confidence * box.score, bbox: quadBBox(box.quad) });
     else if (t) dropped.push({ text: t, confidence: +confidence.toFixed(2) });
   }
-  return { lines: mergeNumberRuns(lines), dropped, boxes: boxes.length };
+  return { lines: mergeNumberRuns(mergeSpacedChars(lines)), dropped, boxes: boxes.length };
 }
 
 let lastContrast = false;

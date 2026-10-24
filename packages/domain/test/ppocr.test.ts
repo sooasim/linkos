@@ -14,6 +14,7 @@ import {
   decodeCtc,
   detResize,
   mergeNumberRuns,
+  mergeSpacedChars,
   minAreaRect,
   normalizeDetInput,
   normalizeRecInput,
@@ -305,6 +306,49 @@ describe("mergeNumberRuns — 여러 줄로 쪼개 인쇄한 번호", () => {
 
   it("빈 입력", () => {
     expect(mergeNumberRuns([])).toEqual([]);
+  });
+});
+
+describe("mergeSpacedChars — 자간 넓게 벌려 찍은 이름", () => {
+  // 실제 사진에서 나온 좌표 (KBT 2026-10-24, 세전건설 명함)
+  const boxed = (text: string, x0: number, y0: number, x1: number, y1: number) => ({ text, confidence: 0.9, bbox: { x0, y0, x1, y1 } });
+
+  it("같은 줄에 흩어진 한 글자들을 앞줄에 붙인다", () => {
+    const out = mergeSpacedChars([
+      boxed("이사 최", 489, 350, 756, 448),
+      boxed("원", 983, 371, 1029, 428),
+      boxed("석", 1270, 359, 1337, 437),
+      boxed("경기도 수원시", 670, 499, 1296, 553),
+    ]);
+    expect(out.map((l) => l.text)).toEqual(["이사 최원석", "경기도 수원시"]);
+    expect(out[0]!.bbox).toEqual({ x0: 489, y0: 350, x1: 1337, y1: 448 });
+  });
+
+  it("줄이 다르면 붙이지 않는다", () => {
+    const out = mergeSpacedChars([boxed("이사 최", 0, 0, 100, 50), boxed("원", 0, 200, 40, 250)]);
+    expect(out.map((l) => l.text)).toEqual(["이사 최", "원"]);
+  });
+
+  it("너무 멀면 붙이지 않는다", () => {
+    const out = mergeSpacedChars([boxed("이사 최", 0, 0, 100, 50), boxed("원", 900, 0, 940, 50)]);
+    expect(out.map((l) => l.text)).toEqual(["이사 최", "원"]);
+  });
+
+  it("이름 길이를 넘겨 붙이지 않는다 (최대 세 글자)", () => {
+    const run = ["가", "나", "다", "라"].map((t, k) => boxed(t, 200 + k * 60, 0, 240 + k * 60, 50));
+    const out = mergeSpacedChars([boxed("김", 0, 0, 40, 50), ...run]);
+    expect(out[0]!.text).toBe("김가나다");
+    expect(out[1]!.text).toBe("라");
+  });
+
+  it("한글 한 글자가 아니면 건드리지 않는다", () => {
+    const out = mergeSpacedChars([boxed("최", 0, 0, 40, 50), boxed("A", 60, 0, 100, 50), boxed("12", 120, 0, 160, 50)]);
+    expect(out.map((l) => l.text)).toEqual(["최", "A", "12"]);
+  });
+
+  it("상자가 없으면 그대로 둔다", () => {
+    const plain = [{ text: "최" }, { text: "원" }];
+    expect(mergeSpacedChars(plain).map((l) => l.text)).toEqual(["최", "원"]);
   });
 });
 

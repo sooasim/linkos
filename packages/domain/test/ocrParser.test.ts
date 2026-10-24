@@ -58,6 +58,51 @@ describe("tidyOcrText — 사진에서 섞여 들어온 찌꺼기", () => {
   });
 });
 
+describe("직책을 이름보다 먼저 찍은 줄", () => {
+  it("'이사 최원석' 에서 이름을 집어낸다", () => {
+    const d = draft("SAE JEUN CONST.CO.,LTD.", "이사 최원석", "H.P:010-4927-1175");
+    expect(d.fullName).toBe("최원석");
+    expect(d.jobTitle).toBe("이사");
+  });
+
+  it("직책 낱말을 이름으로 보지 않는다", () => {
+    // 'Director/대표이사' 의 대표이사는 네 글자 한글이라 이름 조건을 통과해 버린다
+    const d = draft("(주)티브랜딩", "정승호", "Director/대표이사");
+    expect(d.fullName).toBe("정승호");
+    expect(d.jobTitle).toBe("Director/대표이사");
+  });
+
+  it("두 쪽이 다 자격증이면 이름을 만들지 않는다", () => {
+    const d = draft("서율회계법인", "공인회계사/세무사", "Tel. 02-735-2425");
+    expect(d.fullName).toBeUndefined();
+    expect(d.jobTitle).toBe("공인회계사/세무사");
+    expect(d.company).toBe("서율회계법인");
+  });
+});
+
+describe("이름이 아닌 줄을 이름 칸에 넣지 않는다", () => {
+  it("업무 낱말이 섞인 영문 두 낱말은 사람 이름이 아니다", () => {
+    const d = draft("Medical Community", "MCOM", "dshin3@medicalcom.co.kr");
+    expect(d.fullName).toBeUndefined();
+  });
+
+  it("보통의 영문 이름은 그대로 잡는다", () => {
+    const d = draft("Acme Labs", "Jane Doe", "jane@acme.com");
+    expect(d.fullName).toBe("Jane Doe");
+  });
+
+  it("조사로 끝나는 문구 조각은 회사가 아니다", () => {
+    const d = draft("건강컨설팅의", "유선영", "yoosonia@gmail.com");
+    expect(d.company).not.toBe("건강컨설팅의");
+    expect(d.fullName).toBe("유선영");
+  });
+
+  it("쉼표가 든 줄은 부서가 아니다 (주소 조각)", () => {
+    const d = draft("Kim Seong Kwang", "Incheon, Korea", "as817@hanmail.net");
+    expect(d.department).not.toBe("Incheon, Korea");
+  });
+});
+
 describe("한 줄에 붙은 이름·부서·직책", () => {
   it("이름 / 부서 / 직책", () => {
     const d = draft("준바이오셀", "임채원 해외영업팀/ 부장", "Mobile 010-2424-9696");

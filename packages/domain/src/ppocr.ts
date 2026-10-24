@@ -381,6 +381,53 @@ export function decodeCtc(probs: ArrayLike<number>, steps: number, classes: numb
 /** 인식 결과를 버리는 기준 (PaddleOCR drop_score) */
 export const REC_DROP_SCORE = 0.5;
 
+const ONE_HANGUL = /^[가-힣]$/;
+/** 줄 끝이 1~3글자 한글 토막인가 (자간을 벌려 찍은 이름의 첫 글자) */
+const HANGUL_TAIL = /(?:^|\s)[가-힣]{1,3}$/;
+
+/**
+ * 같은 줄에 아주 넓게 벌려 찍은 이름을 한 덩어리로 되붙인다.
+ *
+ *   "이사 최"   "원"   "석"   →   "이사 최원석"
+ *
+ * 한국 명함은 이름을 자간 넓게 찍는 일이 흔하다. 글자 사이가 글자 높이의 서너 배까지
+ * 벌어지면 검출기는 글자마다 상자를 따로 잡고, 그러면 이름이 한 글자씩 흩어져 어느
+ * 조각도 이름으로 보이지 않는다(측정 묶음에서 '최원석' 이 통째로 사라졌다).
+ *
+ * 좁게 건다 — ① 뒤 상자가 한글 **한 글자**뿐이고 ② 앞 줄이 1~3글자 한글로 끝나고
+ * ③ 두 상자가 세로로 겹쳐(같은 줄) ④ 가로 틈이 글자 높이의 다섯 배 이내일 때만,
+ * ⑤ 최대 세 글자까지만 붙인다(이름은 네 글자를 넘지 않는다).
+ */
+export function mergeSpacedChars(lines: OcrLine[], opts: { gapRatio?: number; maxAppend?: number } = {}): OcrLine[] {
+  const gapRatio = opts.gapRatio ?? 5;
+  const maxAppend = opts.maxAppend ?? 3;
+  const out: OcrLine[] = [];
+  let appended = 0; // 지금 줄에 몇 글자를 이어 붙였는지 — 이름 길이를 넘지 않게 센다
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    const a = prev?.bbox;
+    const b = line.bbox;
+    if (prev && a && b && appended < maxAppend && ONE_HANGUL.test(line.text) && HANGUL_TAIL.test(prev.text)) {
+      const ha = a.y1 - a.y0;
+      const hb = b.y1 - b.y0;
+      const overlap = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+      const gap = b.x0 - a.x1;
+      if (overlap > 0.5 * Math.min(ha, hb) && gap >= 0 && gap <= gapRatio * Math.min(ha, hb)) {
+        out[out.length - 1] = {
+          text: prev.text + line.text,
+          confidence: Math.min(prev.confidence ?? 1, line.confidence ?? 1),
+          bbox: { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) },
+        };
+        appended++;
+        continue;
+      }
+    }
+    out.push(line);
+    appended = 0;
+  }
+  return out;
+}
+
 /** 숫자만으로 이뤄진 토막 (번호 조각) */
 const DIGIT_GROUP = /^\d{2,4}$/;
 

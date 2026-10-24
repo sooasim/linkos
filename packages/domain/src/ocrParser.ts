@@ -182,7 +182,7 @@ const TITLE_WORDS = [
 ];
 const COMPANY_MARKERS = [
   /\(주\)/, /㈜/, /주식회사/, /유한회사/, /株式会社/, /有限公司/, /集团/,
-  /\b(inc|corp|corporation|co\.,?\s*ltd|ltd|llc|gmbh|limited|plc|group|holdings|labs?|studio|partners|ventures|capital|technologies|systems|solutions|cosmetics|beauty)\b\.?/i,
+  /\b(inc|corp|corporation|co\.,?\s*ltd|ltd|llc|gmbh|limited|plc|group|holdings|labs?|studio|partners|ventures|capital|technology|technologies|systems|solutions|consulting|cosmetics|beauty)\b\.?/i,
   /(그룹|홀딩스|컴퍼니|랩스|스튜디오|벤처스|파트너스|테크|솔루션|시스템즈|코리아|코스메틱|뷰티)$/,
   /*
    * 한국 상호에 흔한 업종 꼬리말. 법인 표기(㈜)를 빼고 인쇄한 명함이 많아
@@ -252,6 +252,13 @@ const SURNAMES = new Set(
  * 그래서 부서 꼬리말로 끝나는 세 글자 이상은 이름으로 보지 않는다.
  */
 const DEPT_TAIL = /(본부|사업부|연구소|센터|그룹|팀|부|실)$/;
+
+/*
+ * 조사로 끝나는 줄은 이름이 아니라 문구의 조각이다 — "건강컨설팅의 프로" 가 상자
+ * 둘로 끊기면 "건강컨설팅의" 가 남아 회사 칸에 들어앉는다. 상호가 '의'·'은'·'를' 로
+ * 끝나는 일은 없다. ('암웨이' 처럼 '이' 로 끝나는 상호는 흔하므로 '이' 는 넣지 않는다.)
+ */
+const PARTICLE_TAIL = /(의|은|는|을|를|에서|부터|까지|에게|한테)$/;
 function looksLikeKoreanName(s: string): boolean {
   const n = normalizePersonName(s);
   if (!/^[가-힣]{2,4}$/.test(n)) return false;
@@ -270,8 +277,23 @@ function looksLikePersonNameStrict(s: string): boolean {
   return SURNAMES.has(n.charAt(0));
 }
 
+/*
+ * 대문자로 시작하는 두 낱말이면 전부 사람 이름처럼 보인다 — "Medical Community",
+ * "Total Solution", "Global Partners" 가 이름 칸에 들어앉았다. 사람 이름에 쓰이지 않는
+ * 흔한 업무 낱말이 하나라도 섞이면 이름으로 보지 않는다. 성씨 목록처럼 이름을
+ * 가려내는 사전이 아니라, '이것은 이름이 아니다' 만 거르는 짧은 목록이다.
+ */
+const NOT_A_NAME = new Set(
+  ("medical community technology technologies solution solutions marketing sales service services consulting " +
+   "design studio group partners partner global korea international trading industry industries system systems " +
+   "network networks digital creative media communication communications research institute center centre " +
+   "company corporation enterprise holdings ventures capital labs lab works factory total premium smart " +
+   "reservation only since est estd").split(" "),
+);
 function looksLikeLatinName(s: string): boolean {
-  return /^[A-Z][a-zA-Z'’-]+(?:\s[A-Z][a-zA-Z'’.-]+){1,2}$/.test(s.trim()) && !/\d/.test(s);
+  const t = s.trim();
+  if (!/^[A-Z][a-zA-Z'’-]+(?:\s[A-Z][a-zA-Z'’.-]+){1,2}$/.test(t) || /\d/.test(t)) return false;
+  return !t.split(/\s+/).some((w) => NOT_A_NAME.has(w.replace(/[^a-zA-Z]/g, "").toLowerCase()));
 }
 
 /**
@@ -564,6 +586,24 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
        */
       const toks = l.text.split(/\s*[,|/·]\s*|\s+/).filter(Boolean);
       const titleAt = toks.findIndex((t) => hasTitleWord(t));
+      /*
+       * 직책을 이름보다 **먼저** 찍는 명함도 있다("이사 최원석"). 앞머리를 이름으로
+       * 보는 아래 흐름은 그 꼴을 통째로 직책 칸에 넣어 버린다.
+       */
+      if (titleAt === 0 && nameIdx < 0 && toks.length >= 2) {
+        /*
+         * 직책 낱말은 후보에서 뺀다 — "Director/대표이사" 의 '대표이사' 는 네 글자
+         * 한글이라 이름 조건을 통과해, 직책이 이름 칸에 들어앉는다(실제로 걸렸다).
+         */
+        const at = toks.findIndex((t, k) => k > 0 && !hasTitleWord(t) && looksLikePersonNameStrict(t));
+        if (at > 0) {
+          const nameValue = toks[at]!;
+          push({ key: "fullName", value: nameValue, normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+          nameIdx = i;
+          const rest = toks.filter((_, k) => k !== at);
+          titleValue = sliceSpanning(l.text, rest) ?? toks[0]!;
+        }
+      }
       if (titleAt > 0) {
         /*
          * 이름을 **먼저** 가른다. 부서를 먼저 찾으면 '김부' 처럼 부서 꼬리말로
@@ -749,6 +789,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       // 찌꺼기 줄을 회사로 앉히지 않으려는 세 가지 (실제로 걸린 것들이다)
       if (lineConf(cl) < 0.7) continue;
       if (/[|｜]/.test(ct)) continue;
+      if (PARTICLE_TAIL.test(ct)) continue;                     // 문구의 조각 ("건강컨설팅의")
       if (!/[가-힣一-鿿぀-ヿ]/.test(ct) && !/^[A-Z0-9]/.test(ct)) continue;
       pool.push({ i: ci, l: cl });
     }
@@ -785,6 +826,13 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       if (ADDRESS_MARKERS.some((re) => re.test(dt))) continue;
       if (COMPANY_MARKERS.some((re) => re.test(dt))) continue;
       if (lineConf(dl) < 0.7 || /[|｜]/.test(dt)) continue;
+      if (PARTICLE_TAIL.test(dt)) continue;                     // 문구의 조각
+      /*
+       * 쉼표가 든 줄은 부서가 아니라 주소 조각이다 — "Incheon, Korea",
+       * "14,443, Anaji-ro, Gyeyang-gu," 가 부서 칸에 들어앉았다. 부서 이름에
+       * 쉼표를 찍는 경우는 없다.
+       */
+      if (dt.includes(",")) continue;
       if (!/[가-힣一-鿿぀-ヿ]/.test(dt) && !/^[A-Z]/.test(dt)) continue;
       push({ key: "department", value: dt, normalized: null, confidence: lineConf(dl) * 0.6, provenance: "ocr", sourceLine: di, bbox: dl.bbox });
       used.add(di);

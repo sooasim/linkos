@@ -215,13 +215,78 @@ describe("OCR 이 읽었는데 분류가 놓치던 것들", () => {
     expect(d.jobTitle).toBe("팀장");
   });
 
-  it("꼬리말 없는 영문 부서도 되찾는다", () => {
+  /*
+   * 예전에는 '남은 짧은 줄' 을 부서로 보아 "Global Sourcing" 을 되찾았다.
+   * 실제로 찍은 명함 13장으로 재 보니 그 갈래가 아홉 장에서 틀렸다 —
+   * 태그라인·로마자 이름·한자 상호·모임 이름, 심지어 사람 이름까지 부서가 됐다.
+   * 틀린 부서는 연락처에 그대로 박히므로 빈 부서보다 나쁘다. 추측을 그만뒀다.
+   * 나머지 칸은 그대로 잡혀야 한다.
+   */
+  it("꼬리말 없는 줄은 부서로 추측하지 않는다", () => {
     const d = draft("Northgate Beauty Ltd", "Oliver Hartley", "Category Manager", "Global Sourcing",
       "Mobile +44 7700 900123");
     expect(d.company).toBe("Northgate Beauty Ltd");
     expect(d.fullName).toBe("Oliver Hartley");
     expect(d.jobTitle).toBe("Category Manager");
-    expect(d.department).toBe("Global Sourcing");
+    expect(d.department).toBeUndefined();
+  });
+
+  it("꼬리말이 있으면 부서를 잡는다", () => {
+    const d = draft("한빛솔루션", "김수민", "해외영업팀", "과장", "010-2345-6789");
+    expect(d.department).toBe("해외영업팀");
+    expect(d.fullName).toBe("김수민");
+  });
+
+  it("이름은 직책 줄 옆을 먼저 본다 (지점 이름에 뺏기지 않는다)", () => {
+    const d = draft("차돌삼합 진대감", "선릉점", "대표", "박제인", "M 010.4741.1177");
+    expect(d.fullName).toBe("박제인");
+    expect(d.company).toBe("차돌삼합 진대감");
+  });
+
+  it("이름 줄에 로마자 표기가 구분자로 붙어도 한글 이름을 집는다", () => {
+    const d = draft("orner studio", "이수진 | SU JIN LEE", "Space Design Director", "010-3229-4983");
+    expect(d.fullName).toBe("이수진");
+  });
+
+  it("로마자 병기는 회사가 아니다 (이름 옆 줄이어도)", () => {
+    const d = draft("SOULRISE", "대표이사 · CEO", "윤종석", "JONGSEOK YOON", "010-7788-3313");
+    expect(d.fullName).toBe("윤종석");
+    expect(d.company).toBe("SOULRISE");
+  });
+
+  it("세 글자 한글 상호는 이름 옆에 있어도 회사로 잡는다", () => {
+    const d = draft("BNi PROMISE", "건강컨설팅의 프로", "유선영", "암웨이", "yoosonia@gmail.com");
+    expect(d.fullName).toBe("유선영");
+    expect(d.company).toBe("암웨이");
+  });
+
+  it("두 글자 한글 상호도 회사다", () => {
+    const d = draft("이동준 대표변호사", "mobile 010. 5658. 0958", "www.yulamlaw.com", "율암");
+    expect(d.company).toBe("율암");
+    expect(d.fullName).toBe("이동준");
+  });
+
+  it("구분자 뒤에 공백을 둔 번호도 잡는다", () => {
+    const d = draft("이동준 대표변호사", "mobile 010. 5658. 0958", "tel 02. 6959. 2558 | fax 02. 567. 2038");
+    expect(d.mobile).toBe("010. 5658. 0958");
+    expect(d.phone).toBe("02. 6959. 2558");
+    expect(d.fax).toBe("02. 567. 2038");
+  });
+
+  it("라벨 뒤에 지역번호 괄호가 열려도 팩스로 본다", () => {
+    const d = draft("세전건설", "이사 최원석", "TEL : (031)206-5067", "FAX : (031)205-6376");
+    expect(d.fax).toBe("031)205-6376");
+  });
+
+  it("직책 뒤에 오는 부서도 잡는다", () => {
+    const d = draft("한성자동차(주)", "임승관 부장", "Sales Senior | 서초 전시장 영업팀");
+    expect(d.department).toBe("서초 전시장 영업팀");
+    expect(d.fullName).toBe("임승관");
+  });
+
+  it("로마자로 적은 한국 주소도 주소다", () => {
+    const d = draft("Kim Seong Kwang", "Team Leader", "14, 443, Anaji-ro, Gyeyang-gu,", "M. +82 10 2934 7976");
+    expect(d.address).toBe("14, 443, Anaji-ro, Gyeyang-gu,");
   });
 
   it("한자 이름 뒤 한 글자 찌꺼기는 버린다", () => {

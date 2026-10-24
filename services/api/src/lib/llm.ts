@@ -108,6 +108,106 @@ export async function structured<S extends z.ZodType>(
   return null;
 }
 
+// ---------------------------------------------------------------- 사진에서 글자 읽기 (F-015 외부 OCR 어댑터)
+
+/*
+ * 모델에게 **보이는 글자만** 묻는다. "이 사람의 직책은?" 을 물으면 안 보이는 것도 채워
+ * 넣으므로, 글자만 받아 와서 칸 가르기는 결정적 파서(parseBusinessCard)가 한다.
+ * 그래야 저장되는 모든 값이 원문의 부분 문자열로 남는다(CLAUDE.md 규칙 6·12).
+ */
+const OCR_PROMPT =
+  "이 이미지는 명함입니다. 보이는 글자를 그대로 줄 단위로 옮겨 적으세요.\n" +
+  "규칙:\n" +
+  "1. 보이지 않는 정보는 절대 쓰지 마세요. 추측·보완·번역·요약을 하지 마세요.\n" +
+  "2. 줄마다 한 줄씩, 인쇄된 순서대로 적으세요.\n" +
+  "3. 설명·머리말·번호·따옴표를 붙이지 마세요. 글자만 적으세요.\n" +
+  "4. 읽을 수 없는 부분은 그 줄을 건너뛰세요.\n";
+
+export const OCR_PROMPT_VERSION = "card-ocr-1";
+
+/** 한 줄씩 끊고 목록 기호·번호를 떼어 낸다 (모델이 가끔 붙인다). */
+function linesFromReply(text: string): string[] {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((raw) => raw.replace(/\s+/g, " ").trim().replace(/^[-*·•]\s*/, "").replace(/^\d+[.)]\s*/, ""))
+    .filter((t) => t && !t.startsWith("```"))
+    .slice(0, 120); // capture API 의 줄 수 상한과 같게
+}
+
+/**
+ * 사진 한 장 → 글자 줄. 키가 없거나 실패하면 null 을 돌려주고, 호출자는 기기 내 엔진을 쓴다
+ * (이 경로가 막혀도 명함 인식이 멈추지 않는다).
+ */
+export async function visionLines(opts: {
+  image: Buffer;
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  ownerUserId: string | null;
+  sourceId: string;
+}): Promise<{ lines: string[]; model: string } | null> {
+  if (!llmEnabled()) return null;
+  if (opts.ownerUserId && !(await tryConsume(opts.ownerUserId, "ai_calls").catch(() => true))) {
+    log("info", "llm.quota_exhausted", { kind: "card_ocr" });
+    return null;
+  }
+  const tier = tierForKind("card_ocr");
+  let choice = await chooseModel(anthropic(), tier);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await anthropic().messages.create({
+        model: choice.model,
+        /*
+         * 넉넉히 준다. 1024 로 두면 모델이 thinking 에 예산을 다 써서 글자 출력이 통째로
+         * 비는 사진이 나온다(측정 묶음 13장 중 2장이 그랬다). 옮겨 적기에 추론은 필요 없다.
+         */
+        max_tokens: 4096,
+        thinking: { type: "between_tools" },
+        system: SYSTEM_GUARD,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: opts.mime, data: opts.image.toString("base64") } },
+              { type: "text", text: OCR_PROMPT },
+            ],
+          },
+        ],
+      });
+      if (response.stop_reason === "refusal") {
+        log("warn", "llm.no_output", { kind: "card_ocr", model: choice.model, stop: response.stop_reason });
+        return null;
+      }
+      const text = (response.content ?? []).map((b) => ("text" in b ? b.text : "")).join("\n");
+      const lines = linesFromReply(text);
+      if (!lines.length) return null;
+      // 원문(명함 글자)은 남기지 않는다 — 줄 수만 적는다
+      await q("INSERT INTO ai_runs (owner_user_id, kind, model, prompt_version, source_ids, output) VALUES ($1,$2,$3,$4,$5,$6)", [
+        opts.ownerUserId,
+        "card_ocr",
+        response.model,
+        OCR_PROMPT_VERSION,
+        [opts.sourceId],
+        JSON.stringify({ lines: lines.length, tier }),
+      ]);
+      const usage = response.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const base = { userId: opts.ownerUserId, jobType: "llm" as const, jobId: "card_ocr", provider: response.model };
+      await recordCost(null, { ...base, rateKey: llmRateKey(response.model, "input"), units: usage?.input_tokens ?? 0 });
+      await recordCost(null, { ...base, rateKey: llmRateKey(response.model, "output"), units: usage?.output_tokens ?? 0 });
+      return { lines, model: response.model };
+    } catch (e) {
+      if (attempt === 0 && isModelUnavailable(e)) {
+        blockLlmModel(choice.model);
+        choice = await chooseModel(anthropic(), tier);
+        continue;
+      }
+      if (e instanceof Anthropic.APIError) log("warn", "llm.api_error", { kind: "card_ocr", model: choice.model, status: e.status });
+      else log("warn", "llm.failed", { kind: "card_ocr", model: choice.model, error: (e as Error).message });
+      return null;
+    }
+  }
+  return null;
+}
+
 /**
  * "이 모델을 못 쓴다" 인지 판별한다. 카탈로그에는 보이지만 이 키로는 접근이 안 되는 모델
  * (접근 프로그램 전용, 리전 미지원 등)을 걸러 다음 후보로 넘어가기 위한 것이다.

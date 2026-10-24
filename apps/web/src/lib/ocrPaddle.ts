@@ -215,8 +215,8 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
     if (trimmed && confidence >= REC_DROP_SCORE) lines.push({ text: trimmed, confidence: confidence * box.score, bbox: quadBBox(box.quad) });
     onProgress?.(0.5 + (0.45 * (i + 1)) / boxes.length, "글자 인식 중");
   }
-  // 자간 넓게 찍어 토막으로 잡힌 것을 잇는다 — 번호("010 5598 4392")와 이름("최 원 석")
-  return mergeNumberRuns(mergeSpacedChars(lines));
+  // 토막 잇기는 엔진과 무관한 손질이라 lib/ocr.ts 에서 한다(어떤 엔진을 써도 같게)
+  return lines;
 }
 
 /** 쓰고 난 세션을 놓는다 (배치 스캔이 끝났을 때). */

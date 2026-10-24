@@ -16,8 +16,11 @@ export interface OcrLineOut {
   bbox?: { x0: number; y0: number; x1: number; y1: number };
 }
 
-/** capture API 의 `engine` 값으로 그대로 올라간다 (F-187 과금: on-device 는 0원) */
-export type OcrEngineId = "tesseract.js" | "ppocrv5-on-device";
+/**
+ * capture API 의 `engine` 값으로 그대로 올라간다 (F-187 과금: on-device 는 0원,
+ * `vision:…` 은 서버 1장 요율). 어떤 엔진이 읽었는지는 나중에 되짚을 수 있어야 한다.
+ */
+export type OcrEngineId = "tesseract.js" | "ppocrv5-on-device" | `vision:${string}`;
 
 export interface OcrResult {
   lines: OcrLineOut[];
@@ -140,6 +143,16 @@ export async function ocrCanvas(
   return second && second.lines.length > first.lines.length ? second : first;
 }
 
+/**
+ * 엔진이 뱉은 줄을 손질한다 — **어떤 엔진을 써도 같은 손질을 거친다.**
+ * 자간 넓게 찍어 토막으로 잡힌 이름("최 원 석")과, 여러 줄로 쪼개 인쇄한 번호
+ * ("010 / 5598 / 4392")를 잇는다. 상자 좌표가 없는 엔진에서는 이름 잇기가 그냥 지나간다.
+ */
+export async function tidyLines(lines: OcrLineOut[]): Promise<OcrLineOut[]> {
+  const { mergeNumberRuns, mergeSpacedChars } = await import("@linkos/domain");
+  return mergeNumberRuns(mergeSpacedChars(lines)).map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox }));
+}
+
 async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p: number, label: string) => void): Promise<OcrResult> {
   if (!(await wasmUsable())) {
     const e = new Error("WebAssembly is blocked — CSP script-src is missing 'wasm-unsafe-eval'") as OcrUnavailable;
@@ -152,7 +165,7 @@ async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p
       const lines = await withTimeout(paddle.ocrCanvasPaddle(canvas, langs, onProgress), PADDLE_BUDGET_MS, "PP-OCRv5");
       if (lines.length) {
         onProgress?.(1, "완료");
-        return { lines: lines.map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox })), engine: "ppocrv5-on-device" };
+        return { lines: await tidyLines(lines.map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox }))), engine: "ppocrv5-on-device" };
       }
     }
   } catch {
@@ -160,7 +173,7 @@ async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p
   }
   const lines = await ocrTesseract(canvas, langs, onProgress);
   onProgress?.(1, "완료");
-  return { lines, engine: "tesseract.js" };
+  return { lines: await tidyLines(lines), engine: "tesseract.js" };
 }
 
 // ---------------------------------------------------------------- 한 장 읽기 (모든 화면이 쓰는 길)
@@ -218,6 +231,41 @@ export async function readCardImages(file: Blob, opts: ReadOptions & { split?: b
   return out;
 }
 
+/** 서버 OCR 어댑터가 멈춰 있어도 스캔이 멈추지 않게 하는 상한 */
+const SERVER_BUDGET_MS = 25_000;
+
+const toBase64 = (buf: ArrayBuffer) => {
+  const bytes = new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+/**
+ * F-015 서버 OCR 어댑터. 기기 내 엔진이 못 읽는 명함(흐린 인쇄·로고꼴 이름·세로 배치)을
+ * 위해 둔 갈래다. 서버가 키 없이 돌고 있으면 빈 목록을 주므로 자연히 기기 내로 돌아간다 —
+ * 켜고 끄는 것은 서버 환경( `ANTHROPIC_API_KEY` · `LLM_DISABLED` )이 정한다.
+ */
+async function ocrServer(jpeg: Blob, onProgress?: (p: number, label: string) => void): Promise<OcrResult | null> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
+    onProgress?.(0.2, "글자 인식 중");
+    const res = await fetch("/api/v1/capture/ocr", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(SERVER_BUDGET_MS),
+      body: JSON.stringify({ mime: "image/jpeg", image: toBase64(await jpeg.arrayBuffer()) }),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { lines?: { text: string; confidence?: number }[]; engine?: string };
+    if (!j.lines?.length || !j.engine) return null;
+    return { lines: j.lines.map((l) => ({ text: l.text, confidence: l.confidence ?? 0.9 })), engine: j.engine as OcrEngineId };
+  } catch {
+    return null; // 오프라인·시간초과·서버 꺼짐 — 기기 내 엔진으로 간다
+  }
+}
+
 async function finish(
   pipe: typeof import("./imagePipeline"),
   fallback: HTMLCanvasElement,
@@ -227,8 +275,15 @@ async function finish(
   opts: ReadOptions,
 ): Promise<CardRead> {
   const jpeg = await pipe.canvasToJpeg(canvas);
+  const thumb = pipe.thumbnail(canvas);
+  // ① 서버 어댑터(가장 잘 읽는다) → ② 기기 내 PP-OCRv5 → ③ tesseract
+  const server = await ocrServer(jpeg, opts.onProgress);
+  if (server) {
+    opts.onProgress?.(1, "완료");
+    return { lines: await tidyLines(server.lines), engine: server.engine, jpeg, thumb, corrected, detectionConfidence };
+  }
   const { lines, engine } = await ocrCanvas(canvas, opts.langs ?? "kor+eng", opts.onProgress, corrected && canvas !== fallback ? fallback : null);
-  return { lines, engine, jpeg, thumb: pipe.thumbnail(canvas), corrected, detectionConfidence };
+  return { lines, engine, jpeg, thumb, corrected, detectionConfidence };
 }
 
 export async function terminateOcr() {

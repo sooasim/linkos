@@ -64,8 +64,11 @@ const INTL_PHONE_RE = /\+\d[\d\s.()-]{6,20}\d/g;
 /*
  * 앞이 `\b` 였을 때 라벨이 번호에 딱 붙으면 통째로 놓쳤다 — "T02.564,1253" 은 T 와 0
  * 사이에 낱말 경계가 없다. 숫자만 앞에 오지 않으면 되므로 전후를 숫자로만 막는다.
+ *
+ * 구분자를 두 글자까지 받는 것은 점 뒤에 공백을 두고 찍는 명함 때문이다
+ * ("Mobile 010. 5658. 0958", "tel 02. 6959. 2558"). 한 글자만 받으면 통째로 놓친다.
  */
-const KR_PHONE_RE = /(?<!\d)0\d{1,2}\)?[\s.,-]?\d{3,4}[\s.,-]?\d{4}(?!\d)/g;
+const KR_PHONE_RE = /(?<!\d)0\d{1,2}\)?[\s.,-]{0,2}\d{3,4}[\s.,-]{0,2}\d{4}(?!\d)/g;
 /*
  * 나라번호별 휴대폰 앞자리(국내번호 기준, 트렁크 0 을 뗀 뒤).
  * 라벨이 없거나 OCR 이 라벨을 못 읽은 번호를 휴대폰/유선으로 가른다 —
@@ -98,9 +101,13 @@ function intlLooksMobile(raw: string): boolean {
 }
 const SNS_RE = /\b(?:linkedin\.com\/in\/[\w-]+|instagram\.com\/[\w.]+|x\.com\/\w+|twitter\.com\/\w+|github\.com\/[\w-]+|@[a-z0-9_.]{3,30})\b/gi;
 
-const LABEL_MOBILE = /(?:^|[\s|/])(?:m|mob|mobile|h\.?p|cell|휴대폰|휴대전화|핸드폰|携帯|手机)\s*[.:)]?\s*$/i;
-const LABEL_FAX = /(?:^|[\s|/])(?:f|fax|팩스|传真)\s*[.:)]?\s*$/i;
-const LABEL_TEL = /(?:^|[\s|/])(?:t|tel|phone|office|전화|대표|直通|电话)\s*[.:)]?\s*$/i;
+/*
+ * 라벨과 번호 사이에 오는 것은 제각각이다 — "FAX : (031)205-6376" 처럼 지역번호
+ * 괄호가 먼저 열리기도 한다. 그 '(' 를 끝에 허용하지 않으면 팩스 판정을 통째로 비켜 간다.
+ */
+const LABEL_MOBILE = /(?:^|[\s|/])(?:m|mob|mobile|h\.?p|cell|휴대폰|휴대전화|핸드폰|携帯|手机)[\s.:)(]*$/i;
+const LABEL_FAX = /(?:^|[\s|/])(?:f|fax|팩스|传真)[\s.:)(]*$/i;
+const LABEL_TEL = /(?:^|[\s|/])(?:t|tel|phone|office|전화|대표|直通|电话)[\s.:)(]*$/i;
 /** 메일 주소 바로 앞에 오는 라벨 — 이게 아니면 주소 앞머리가 잘렸을 수 있다 */
 const LABEL_EMAIL = /^(?:e|e-?mail|mail|이메일|메일|電子メール|邮箱)[.:)]?$/i;
 
@@ -207,6 +214,12 @@ const ADDRESS_MARKERS = [
   /(특별시|광역시|특별자치시|[가-힣]+시\s|[가-힣]+구\s|[가-힣]+군\s|[가-힣]+로\s?\d|[가-힣]+길\s?\d|[가-힣]+동\s?\d|번지|층|호$)/,
   /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)/,
   /\b(street|st\.|road|rd\.|avenue|ave\.|suite|floor|blvd|building|bldg)\b/i,
+  /*
+   * 로마자로 적은 한국 주소 — "14, 443, Anaji-ro, Gyeyang-gu," · "1F, 155-11, Hannam-dong,".
+   * street·road 같은 말을 쓰지 않아 위 목록으로는 하나도 안 걸렸고, 영문 주소가 통째로
+   * 버려졌다(측정 묶음 13장 중 2장).
+   */
+  /\b[a-z]+-(ro|gil|dong|gu|si|eup|myeon|ri|daero)\b/i,
   /(都|道|府|県|市|区|町|号|路|楼)/,
 ];
 
@@ -251,7 +264,12 @@ const SURNAMES = new Set(
  * 통과해 버리고, 정작 다른 줄의 '김수민' 이 분류되지 못한 채 남는다.
  * 그래서 부서 꼬리말로 끝나는 세 글자 이상은 이름으로 보지 않는다.
  */
-const DEPT_TAIL = /(본부|사업부|연구소|센터|그룹|팀|부|실)$/;
+/*
+ * 조직 단위 꼬리말 — 이것으로 끝나는 세 글자 이상은 사람 이름으로 보지 않는다.
+ * '점' 은 지점 이름이다("선릉점"). 가게 명함은 상호·지점·직책·이름 순으로 찍어서,
+ * 지점 이름이 이름보다 먼저 나오고 성씨처럼 시작하기까지 한다(선 → 성씨 목록에 있다).
+ */
+const DEPT_TAIL = /(본부|사업부|연구소|센터|그룹|지점|팀|부|실|점)$/;
 
 /*
  * 조사로 끝나는 줄은 이름이 아니라 문구의 조각이다 — "건강컨설팅의 프로" 가 상자
@@ -661,6 +679,25 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
           deptDone = true;
         }
         /*
+         * 부서가 직책 **뒤에** 오는 줄 — "Sales Senior | 서초 전시장 영업팀".
+         * 앞쪽만 보면 못 찾고, 그 줄은 '쓴 줄' 로 표시되어 뒤의 부서 패스도 못 본다.
+         * 직책 다음 토큰부터 꼬리말이 나오는 데까지를 통째로 부서로 본다.
+         */
+        if (deptAt < 0 && nameEnd === 0 && !fields.some((f) => f.key === "department")) {
+          let tailAt = -1;
+          for (let d = titleAt + 1; d < toks.length; d++) {
+            if (!/[가-힣一-鿿぀-ヿ]/.test(toks[d]!)) continue;
+            if (DEPT_MARKERS.some((re) => re.test(toks[d]!))) { tailAt = d; break; }
+          }
+          if (tailAt > titleAt) {
+            const deptToks = toks.slice(titleAt + 1, tailAt + 1);
+            push({ key: "department", value: sliceSpanning(l.text, deptToks) ?? toks[tailAt]!, normalized: null, confidence: lineConf(l) * 0.7, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+            deptDone = true;
+            // 직책은 부서를 뺀 앞쪽이다 ("Sales Senior")
+            titleValue = sliceSpanning(l.text, toks.slice(0, titleAt + 1)) ?? titleValue;
+          }
+        }
+        /*
          * 직책은 이름·부서를 뺀 나머지 전부("Sales Director" 처럼 두 낱말도 있다).
          * 다만 앞머리가 다른 줄에 있는 이름의 조각이면("남기훈" 과 "기훈 부장")
          * 직책에 붙이지 않는다 — OCR 이 이름 줄을 두 번 뱉을 때 나온다.
@@ -710,9 +747,18 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       const m = /^([가-힣]{2,4})(?=[A-Za-z])/.exec(t.trim());
       return m && looksLikePersonNameStrict(m[1]!) ? m[1]! : null;
     };
+    /*
+     * 이름 줄에 로마자 표기를 구분자로 붙여 찍는 명함이 흔하다("이수진 | SU JIN LEE").
+     * 줄 전체로는 이름처럼 보이지 않으므로 토막으로 갈라 한 쪽만 본다.
+     */
+    const partName = (t: string) => {
+      const parts = t.split(/\s*[|｜/·,]\s*/).map((p) => p.trim()).filter(Boolean);
+      if (parts.length < 2) return null;
+      return parts.find((p) => !hasTitleWord(p) && looksLikePersonNameStrict(p)) ?? null;
+    };
     let nameCands = candidates
       .filter(({ i }) => !used.has(i))
-      .map((x) => ({ ...x, pick: looksLikeAnyName(x.l.text) ? x.l.text : korPrefix(x.l.text) }))
+      .map((x) => ({ ...x, pick: looksLikeAnyName(x.l.text) ? x.l.text : (korPrefix(x.l.text) ?? partName(x.l.text)) }))
       .filter((x): x is typeof x & { pick: string } => !!x.pick);
     /*
      * OCR 이 같은 이름 줄을 두 번 뱉으면서 한 번은 앞 글자를 흘린다 —
@@ -732,9 +778,17 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
      * 아니라 차례만 매기므로, 성씨 목록에 없는 이름도 다른 후보가 없으면 뽑힌다.
      */
     const startsWithSurname = (t: string) => (SURNAMES.has(normalizePersonName(t).charAt(0)) ? 1 : 0);
+    /*
+     * 직책 줄 바로 옆에 있는 쪽을 먼저 본다 — 이름과 직책은 붙여 찍는다.
+     * "차돌삼합 진대감 / 선릉점 / 대표 / 박제인" 에서 '선릉점'(지점 이름)이 먼저
+     * 나온다는 이유만으로 이름이 됐다. 직책('대표') 옆은 '박제인' 이다.
+     */
+    const titleLine = fields.find((f) => f.key === "jobTitle")?.sourceLine ?? -1;
+    const nextToTitle = (i: number) => (titleLine >= 0 && Math.abs(i - titleLine) === 1 ? 1 : 0);
     nameCands.sort(
       (a, b) =>
         startsWithSurname(b.pick) - startsWithSurname(a.pick) ||
+        nextToTitle(b.i) - nextToTitle(a.i) ||
         bboxHeight(b.l) - bboxHeight(a.l) ||
         a.i - b.i,
     );
@@ -778,12 +832,21 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       const cl = clean[ci]!;
       if (used.has(ci) || !cl.text) continue;
       const ct = cl.text;
-      if (ct.length < 3 || ct.length > 40) continue;
-      if ((ct.match(/[\p{L}]/gu) ?? []).length < 3) continue;   // 글자가 거의 없는 찌꺼기
+      // 한글·한자 상호는 두 글자짜리가 흔하다("율암"). 로마자는 두 글자면 거의 찌꺼기다.
+      const cjkOnly = /^[가-힣一-鿿぀-ヿ\s()]+$/.test(ct);
+      if (ct.length < (cjkOnly ? 2 : 3) || ct.length > 40) continue;
+      if ((ct.match(/[\p{L}]/gu) ?? []).length < (cjkOnly ? 2 : 3)) continue;   // 글자가 거의 없는 찌꺼기
       if ((ct.match(/\d/g) ?? []).length >= 3) continue;        // 번호가 남은 줄
       if (hasTitleWord(ct)) continue;
       // 이름 줄을 아직 못 찾았으면 이름처럼 보이는 줄은 건드리지 않는다
       if (!haveName && looksLikeAnyName(ct)) continue;
+      /*
+       * 이름을 찾았다면, 로마자 사람 이름 꼴은 그 이름의 병기다 — 회사가 아니다.
+       * 한글 이름 옆에 로마자 표기를 따로 찍는 명함이 흔해서("윤종석" / "JONGSEOK YOON"),
+       * '이름 옆 줄' 우선 규칙과 겹치면 로마자 표기가 회사 칸에 들어앉는다.
+       * 한글 쪽은 거르지 않는다 — '암웨이' 처럼 세 글자 상호가 이름 꼴과 똑같다.
+       */
+      if (haveName && looksLikeLatinName(ct)) continue;
       if (DEPT_MARKERS.some((re) => re.test(ct))) continue;
       if (ADDRESS_MARKERS.some((re) => re.test(ct))) continue;
       // 찌꺼기 줄을 회사로 앉히지 않으려는 세 가지 (실제로 걸린 것들이다)
@@ -794,11 +857,16 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       pool.push({ i: ci, l: cl });
     }
     /*
-     * 남은 줄 가운데 **가장 큰 글씨**를 고른다. 상호는 크게 찍고 사업 설명은 작게
-     * 찍는다 — 위에서부터 집으면 "AI 프로그램 개발" 같은 설명 줄이 회사가 된다.
-     * 글씨 크기를 모르면(상자 없음) 예전처럼 맨 위를 쓴다.
+     * 고르는 차례 — ① 이름 줄 바로 옆 ② 가장 큰 글씨 ③ 맨 위.
+     *
+     * ①은 "이름 다음 줄에 소속" 이라는 흔한 배치다. 이게 없으면 "BNI PROMISE"
+     * (모임 이름)처럼 맨 위에 찍힌 줄이 회사가 되고, 정작 이름 밑의 '암웨이' 가 남는다.
+     * ②는 상호를 크게 찍는 배치를 잡는다("AI 프로그램 개발" 같은 설명 줄이 아니라).
+     * 글씨 크기를 모르는 엔진(상자 없음)에서는 ①과 ③만으로 고른다.
      */
-    pool.sort((a, b) => bboxHeight(b.l) - bboxHeight(a.l) || a.i - b.i);
+    const nameLine = fields.find((f) => f.key === "fullName")?.sourceLine ?? -1;
+    const nextToName = (i: number) => (nameLine >= 0 && Math.abs(i - nameLine) === 1 ? 1 : 0);
+    pool.sort((a, b) => nextToName(b.i) - nextToName(a.i) || bboxHeight(b.l) - bboxHeight(a.l) || a.i - b.i);
     const co = pool[0];
     if (co) {
       push({ key: "company", value: co.l.text, normalized: null, confidence: lineConf(co.l) * 0.6, provenance: "ocr", sourceLine: co.i, bbox: co.l.bbox });
@@ -807,38 +875,17 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
   }
 
   /*
-   * 부서도 꼬리말이 없으면 못 잡는다 — "Global Sourcing"·"Einkauf"·
-   * "Merchandising" 처럼 영문 명함의 부서는 team·division 같은 말을 쓰지 않는
-   * 경우가 더 많다. 회사를 찾은 뒤에도 짧은 줄이 남아 있으면 부서로 본다.
+   * 부서는 꼬리말이 있을 때만 잡는다(위의 DEPT_MARKERS 통과분).
+   *
+   * 예전에는 "남은 짧은 줄" 을 부서로 보는 갈래가 있었다 — 꼬리말을 안 쓰는 영문 부서
+   * ("Global Sourcing") 를 잡으려던 것이다. 실제로 찍은 명함 13장으로 재 보니 그 갈래가
+   * 아홉 장에서 틀렸다: 태그라인("Medical Community", "Audit·Tax·Advisory"),
+   * 로마자 이름("CHOI YOUNG JU"), 한자 상호(世全綜合建設株式會社), 모임 이름
+   * ("BNI. PROMISE"), 심지어 사람 이름까지 부서 칸에 들어앉았다.
+   *
+   * 명함에는 부서가 없는 쪽이 오히려 흔하다. 틀린 부서는 빈 부서보다 나쁘다 —
+   * 연락처에 그대로 박히고 사람이 지워야 한다. 그래서 추측을 그만둔다.
    */
-  if (!fields.some((f) => f.key === "department")) {
-    for (let di = 0; di < clean.length; di++) {
-      const dl = clean[di]!;
-      if (used.has(di) || !dl.text) continue;
-      const dt = dl.text;
-      if (dt.length < 3 || dt.length > 28) continue;
-      if ((dt.match(/[\p{L}]/gu) ?? []).length < 3) continue;
-      if (/\d/.test(dt)) continue;
-      if (hasTitleWord(dt)) continue;
-      // 이름을 이미 찾았으면 이름처럼 보이는 줄도 부서 후보다
-      // ("Global Sourcing" 은 두 단어 모두 대문자로 시작해 라틴 이름 꼴과 같다)
-      if (!fields.some((f) => f.key === "fullName") && looksLikeAnyName(dt)) continue;
-      if (ADDRESS_MARKERS.some((re) => re.test(dt))) continue;
-      if (COMPANY_MARKERS.some((re) => re.test(dt))) continue;
-      if (lineConf(dl) < 0.7 || /[|｜]/.test(dt)) continue;
-      if (PARTICLE_TAIL.test(dt)) continue;                     // 문구의 조각
-      /*
-       * 쉼표가 든 줄은 부서가 아니라 주소 조각이다 — "Incheon, Korea",
-       * "14,443, Anaji-ro, Gyeyang-gu," 가 부서 칸에 들어앉았다. 부서 이름에
-       * 쉼표를 찍는 경우는 없다.
-       */
-      if (dt.includes(",")) continue;
-      if (!/[가-힣一-鿿぀-ヿ]/.test(dt) && !/^[A-Z]/.test(dt)) continue;
-      push({ key: "department", value: dt, normalized: null, confidence: lineConf(dl) * 0.6, provenance: "ocr", sourceLine: di, bbox: dl.bbox });
-      used.add(di);
-      break;
-    }
-  }
 
   const unassigned = clean.map((l, i) => ({ line: i, text: l.text })).filter((x) => x.text && !used.has(x.line));
   return { fields, unassigned, language: detectLanguage(clean.map((l) => l.text).join(" ")) };

@@ -11,7 +11,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import sharp from "sharp";
-import { parseBusinessCard, toDraft } from "@linkos/domain";
+import { mergeNumberRuns, mergeSpacedChars, parseBusinessCard, toDraft } from "@linkos/domain";
 
 const args = process.argv.slice(2);
 const dir = args.find((a) => !a.startsWith("--") && !args[args.indexOf(a) - 1]?.startsWith("--"));
@@ -72,7 +72,7 @@ async function readCard(path) {
        * 옮겨 적기에는 추론이 필요 없으므로 thinking 을 끄고 예산을 넉넉히 준다.
        */
       max_tokens: 4096,
-      thinking: { type: "disabled" },
+      thinking: { type: "between_tools" },
       messages: [
         {
           role: "user",
@@ -99,7 +99,9 @@ let outTok = 0;
 for (const f of files) {
   const t0 = Date.now();
   try {
-    const { lines, bytes, usage } = await readCard(join(resolve(dir), f));
+    const { lines: raw, bytes, usage } = await readCard(join(resolve(dir), f));
+    // 제품 경로(lib/ocr.ts tidyLines)와 같은 손질을 거친다 — 엔진이 달라도 같아야 한다
+    const lines = mergeNumberRuns(mergeSpacedChars(raw));
     const parsed = parseBusinessCard(lines);
     const draft = toDraft(parsed.fields);
     inTok += usage?.input_tokens ?? 0;

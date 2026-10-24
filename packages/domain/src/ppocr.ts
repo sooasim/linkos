@@ -10,6 +10,7 @@
 // 상수와 절차는 PaddleOCR 추론 설정(det: limit_type=min/736, thresh 0.3, box_thresh 0.6,
 // unclip_ratio 1.5 / rec: 3×48×W, (x/255-0.5)/0.5, CTC blank=0)을 그대로 따른다.
 import { type Point, type Quad, componentHull, connectedComponents, convexHull, orderQuad, polygonArea } from "./imaging";
+import type { OcrLine } from "./ocrParser";
 
 export interface RgbaImage {
   width: number;
@@ -52,6 +53,40 @@ export function detResize(width: number, height: number, opts: { limitSideLen?: 
   const outW = snap(w);
   const outH = snap(h);
   return { width: outW, height: outH, ratioX: w / outW, ratioY: h / outH };
+}
+
+/**
+ * 명암이 좁은 사진만 늘린다 (2–98 퍼센타일 → 0–255, 세 채널에 같은 선형 사상).
+ *
+ * 검정 명함에 흰 글씨를 어두운 바닥에 놓고 찍으면 밝기 폭이 수십 단계밖에 안 되고,
+ * 검출 모델이 글자를 하나도 못 찾는다(측정 묶음에서 13장 중 1장이 통째로 그랬다).
+ * 멀쩡한 사진까지 건드리면 오히려 색이 뭉개지므로, 좁을 때만 손댄다.
+ * 이진화가 아니라 선형 확대다 — 획이 끊기거나 생기지 않는다.
+ */
+export function autoContrast(img: RgbaImage, opts: { minSpan?: number; lowPct?: number; highPct?: number } = {}): { data: Uint8ClampedArray; applied: boolean } {
+  const { width: w, height: h, data } = img;
+  const n = w * h;
+  const out = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n * 4; i++) out[i] = data[i]!;
+  const hist = new Uint32Array(256);
+  for (let p = 0, i = 0; p < n; p++, i += 4) hist[(data[i]! * 0.299 + data[i + 1]! * 0.587 + data[i + 2]! * 0.114) | 0]!++;
+  const at = (frac: number) => {
+    let acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v]!;
+      if (acc >= n * frac) return v;
+    }
+    return 255;
+  };
+  const lo = at(opts.lowPct ?? 0.02);
+  const hi = at(opts.highPct ?? 0.98);
+  if (hi - lo >= (opts.minSpan ?? 140) || hi <= lo) return { data: out, applied: false };
+  const scale = 255 / (hi - lo);
+  for (let i = 0; i < n * 4; i += 4) {
+    for (let c = 0; c < 3; c++) out[i + c] = (data[i + c]! - lo) * scale;
+    out[i + 3] = 255;
+  }
+  return { data: out, applied: true };
 }
 
 /** RGBA → CHW Float32 (RGB, (v/255 - mean) / std). 입력은 이미 모델 크기로 줄여 둔 것이다. */
@@ -266,6 +301,18 @@ export function recPadWidth(cropWidth: number): number {
 }
 
 /**
+ * 자를 때 쓸 꼭짓점 차례. 세로로 긴 상자는 90° 돌려 가로 줄로 만든다
+ * (PaddleOCR get_rotate_crop_image 의 np.rot90 과 같은 방향).
+ *
+ * 명함을 세워서 찍거나 카드가 돌아간 사진에서 글자줄은 세로로 길게 잡힌다 —
+ * 그대로 48px 높이에 맞추면 글자가 옆으로 누운 채 눌려 아무것도 읽히지 않는다.
+ */
+export function recCropQuad(quad: Quad): Quad {
+  const { width, height } = boxSize(quad);
+  return height >= width * 1.5 ? [quad[1], quad[2], quad[3], quad[0]] : quad;
+}
+
+/**
  * 자른 글자줄 RGBA → CHW Float32, (v/255 - 0.5) / 0.5. 남는 오른쪽은 0 으로 채운다
  * (정규화 뒤의 0 = 중간 회색, PaddleOCR 과 같다).
  */
@@ -333,3 +380,53 @@ export function decodeCtc(probs: ArrayLike<number>, steps: number, classes: numb
 
 /** 인식 결과를 버리는 기준 (PaddleOCR drop_score) */
 export const REC_DROP_SCORE = 0.5;
+
+/** 숫자만으로 이뤄진 토막 (번호 조각) */
+const DIGIT_GROUP = /^\d{2,4}$/;
+
+/**
+ * 번호를 여러 줄로 쪼개 인쇄한 명함을 한 줄로 잇는다.
+ *
+ *   010
+ *   5598      →  "010 5598 4392"
+ *   4392
+ *
+ * 디자인을 크게 하려고 번호만 몇 줄에 나눠 찍는 명함이 꾸준히 있다(측정 묶음 13장 중
+ * 2장이 그랬고, 둘 다 전화 칸이 통째로 비었다). 토막 하나하나는 "010"·"5598" 이라
+ * 어떤 번호 규칙에도 걸리지 않는다.
+ *
+ * 아주 좁게 건다 — ① 잇달아 나온 줄이고 ② 저마다 숫자 2~4자리뿐이고 ③ 첫 토막이
+ * 0 으로 시작하고 ④ 합쳐서 9~11자리(국내 번호 길이)일 때만이다. 연도나 번지수가
+ * 잇달아 나온 것과는 섞이지 않는다. 붙이는 것뿐, 글자를 지어내지 않는다.
+ */
+export function mergeNumberRuns(lines: OcrLine[]): OcrLine[] {
+  const out: OcrLine[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const start = lines[i]!;
+    if (!DIGIT_GROUP.test(start.text) || !start.text.startsWith("0")) {
+      out.push(start);
+      continue;
+    }
+    let end = i;
+    let digits = start.text.length;
+    while (end + 1 < lines.length && DIGIT_GROUP.test(lines[end + 1]!.text) && digits + lines[end + 1]!.text.length <= 11) {
+      end++;
+      digits += lines[end]!.text.length;
+    }
+    if (end === i || digits < 9) {
+      out.push(start);
+      continue;
+    }
+    const run = lines.slice(i, end + 1);
+    const box = run.map((l) => l.bbox).filter((b): b is NonNullable<typeof b> => !!b);
+    out.push({
+      text: run.map((l) => l.text).join(" "),
+      confidence: Math.min(...run.map((l) => l.confidence ?? 1)),
+      bbox: box.length
+        ? { x0: Math.min(...box.map((b) => b.x0)), y0: Math.min(...box.map((b) => b.y0)), x1: Math.max(...box.map((b) => b.x1)), y1: Math.max(...box.map((b) => b.y1)) }
+        : undefined,
+    });
+    i = end;
+  }
+  return out;
+}

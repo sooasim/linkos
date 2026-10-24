@@ -37,7 +37,8 @@ export async function runOcr(file: Blob, onProgress: (p: number, label: string) 
   const fixed = opts.autoCorrect === false ? { canvas: base, detection: null } : pipe.autoCorrect(base);
   onProgress(0.1, fixed.detection ? t.perspectiveDone : t.enhancing);
   const jpeg = await pipe.canvasToJpeg(fixed.canvas);
-  const { lines, engine } = await ocrCanvas(fixed.canvas, langs, onProgress);
+  // 보정본이 빗나갔을 때를 대비해 원본을 함께 넘긴다 (보정본에서 글자가 거의 안 나오면 다시 읽는다)
+  const { lines, engine } = await ocrCanvas(fixed.canvas, langs, onProgress, fixed.detection ? base : null);
   return { lines, preview: URL.createObjectURL(jpeg), extra: { jpeg, corrected: !!fixed.detection, confidence: fixed.detection?.confidence ?? null, engine } };
 }
 

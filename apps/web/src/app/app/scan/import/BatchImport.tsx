@@ -65,7 +65,8 @@ export function BatchImport() {
     const canvases = item.split ? pipe.splitCards(base).canvases : [pipe.autoCorrect(base).canvas];
     const cards: InboxCard[] = [];
     for (const [idx, c] of canvases.entries()) {
-      const { lines, engine } = await ocrCanvas(c, item.langs);
+      // 한 장에 한 명함일 때만 원본 폴백이 뜻이 있다 (여러 장을 쪼갠 조각에는 원본이 통째로 들어 있다)
+      const { lines, engine } = await ocrCanvas(c, item.langs, undefined, canvases.length === 1 && c !== base ? base : null);
       if (!lines.length) continue;
       let job: any;
       try {

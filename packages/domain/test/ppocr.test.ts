@@ -7,15 +7,18 @@ import {
   type Quad,
   REC_BASE_WIDTH,
   REC_HEIGHT,
+  autoContrast,
   boxScore,
   buildCharset,
   dbBoxes,
   decodeCtc,
   detResize,
+  mergeNumberRuns,
   minAreaRect,
   normalizeDetInput,
   normalizeRecInput,
   pointInQuad,
+  recCropQuad,
   recCropWidth,
   recPadWidth,
   sortBoxesReadingOrder,
@@ -227,6 +230,81 @@ describe("recCropWidth / recPadWidth — 인식 입력 폭", () => {
 
   it("아주 긴 줄도 상한을 넘지 않는다", () => {
     expect(recCropWidth(rect(0, 0, 10000, 10))).toBeLessThanOrEqual(1600);
+  });
+});
+
+describe("autoContrast — 명암이 좁은 사진만 늘린다", () => {
+  const gray = (v: number, n = 64) => {
+    const d = new Uint8ClampedArray(n * 4);
+    for (let i = 0; i < n; i++) {
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = i < n / 2 ? v : v + 20;
+      d[i * 4 + 3] = 255;
+    }
+    return { width: n, height: 1, data: d };
+  };
+
+  it("폭이 좁으면 0–255 로 늘린다", () => {
+    const r = autoContrast(gray(30));
+    expect(r.applied).toBe(true);
+    const lo = r.data[0]!;
+    const hi = r.data[(63 * 4) as number]!;
+    expect(hi - lo).toBeGreaterThan(200);
+  });
+
+  it("이미 넓으면 손대지 않는다", () => {
+    const d = new Uint8ClampedArray(64 * 4);
+    for (let i = 0; i < 64; i++) {
+      const v = i < 32 ? 5 : 250;
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+      d[i * 4 + 3] = 255;
+    }
+    const r = autoContrast({ width: 64, height: 1, data: d });
+    expect(r.applied).toBe(false);
+    expect([...r.data]).toEqual([...d]);
+  });
+
+  it("단색이면 그대로 둔다 (0 으로 나누지 않는다)", () => {
+    const flat = new Uint8ClampedArray(16 * 4).fill(120);
+    const r = autoContrast({ width: 16, height: 1, data: flat });
+    expect(r.applied).toBe(false);
+  });
+});
+
+describe("recCropQuad — 세로로 긴 상자는 돌려 자른다", () => {
+  it("가로 줄은 그대로", () => {
+    const q = rect(0, 0, 200, 50);
+    expect(recCropQuad(q)).toEqual(q);
+  });
+
+  it("세로 줄은 꼭짓점 차례를 한 칸 민다", () => {
+    const q = rect(0, 0, 50, 200);
+    expect(recCropQuad(q)).toEqual([q[1], q[2], q[3], q[0]]);
+  });
+});
+
+describe("mergeNumberRuns — 여러 줄로 쪼개 인쇄한 번호", () => {
+  const line = (text: string, y: number) => ({ text, confidence: 0.9, bbox: { x0: 10, y0: y, x1: 200, y1: y + 60 } });
+
+  it("010 / 5598 / 4392 를 한 줄로 잇는다", () => {
+    const out = mergeNumberRuns([line("BNI", 0), line("010", 100), line("5598", 200), line("4392", 300), line("변진수", 400)]);
+    expect(out.map((l) => l.text)).toEqual(["BNI", "010 5598 4392", "변진수"]);
+    expect(out[1]!.bbox).toEqual({ x0: 10, y0: 100, x1: 200, y1: 360 });
+  });
+
+  it("합쳐서 번호 길이가 아니면 잇지 않는다", () => {
+    expect(mergeNumberRuns([line("2024", 0), line("2025", 100)]).map((l) => l.text)).toEqual(["2024", "2025"]);
+  });
+
+  it("0 으로 시작하지 않으면 잇지 않는다", () => {
+    expect(mergeNumberRuns([line("1588", 0), line("1234", 100), line("5678", 200)]).map((l) => l.text)).toEqual(["1588", "1234", "5678"]);
+  });
+
+  it("이미 한 줄인 번호는 건드리지 않는다", () => {
+    expect(mergeNumberRuns([line("010-5598-4392", 0)]).map((l) => l.text)).toEqual(["010-5598-4392"]);
+  });
+
+  it("빈 입력", () => {
+    expect(mergeNumberRuns([])).toEqual([]);
   });
 });
 

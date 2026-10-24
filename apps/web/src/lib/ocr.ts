@@ -115,10 +115,32 @@ async function ocrTesseract(canvas: HTMLCanvasElement, langs: string, onProgress
 }
 
 /**
- * 명함 한 장을 읽는다. `canvas` 는 테두리·원근을 이미 바로잡은(rectified) 이미지다 —
- * 명암 보정은 엔진에 맞춰 안에서 한다.
+ * 원근 보정이 빗나갔다고 볼 수 있는 줄 수. 명함은 이름·회사·연락처만 해도 이보다 많다.
+ *
+ * 테두리 검출은 자신 있게 틀릴 때가 있다 — 측정 묶음의 검은 명함에서 반사광 경계를
+ * 카드로 잡아(confidence 0.98) 글자가 한쪽에 눌린 채 잘렸고, 글자줄이 하나도 안 나왔다.
+ * 같은 사진을 원본 그대로 읽으면 일곱 줄이 전부 나온다. 그래서 빈약하면 다시 읽는다.
  */
-export async function ocrCanvas(canvas: HTMLCanvasElement, langs = "kor+eng", onProgress?: (p: number, label: string) => void): Promise<OcrResult> {
+const MIN_LINES = 4;
+
+/**
+ * 명함 한 장을 읽는다. `canvas` 는 테두리·원근을 이미 바로잡은(rectified) 이미지다 —
+ * 명암 보정은 엔진에 맞춰 안에서 한다. `fallback` 을 주면(보정 전 원본) 보정본에서
+ * 글자가 거의 안 나왔을 때 그걸로 한 번 더 읽고 더 많이 읽힌 쪽을 쓴다.
+ */
+export async function ocrCanvas(
+  canvas: HTMLCanvasElement,
+  langs = "kor+eng",
+  onProgress?: (p: number, label: string) => void,
+  fallback?: HTMLCanvasElement | null,
+): Promise<OcrResult> {
+  const first = await ocrOnce(canvas, langs, onProgress);
+  if (first.lines.length >= MIN_LINES || !fallback || fallback === canvas) return first;
+  const second = await ocrOnce(fallback, langs, onProgress).catch(() => null);
+  return second && second.lines.length > first.lines.length ? second : first;
+}
+
+async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p: number, label: string) => void): Promise<OcrResult> {
   if (!(await wasmUsable())) {
     const e = new Error("WebAssembly is blocked — CSP script-src is missing 'wasm-unsafe-eval'") as OcrUnavailable;
     e.code = "wasm_blocked";

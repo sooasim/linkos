@@ -24,7 +24,9 @@ import {
   decodeCtc,
   detResize,
   normalizeDetInput,
+  mergeNumberRuns,
   normalizeRecInput,
+  recCropQuad,
   recCropWidth,
   recPadWidth,
   sortBoxesReadingOrder,
@@ -156,13 +158,6 @@ const quadBBox = (q: Quad) => {
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 };
 
-/** 세로로 긴 글자줄은 90° 돌려 자른다 (PaddleOCR get_rotate_crop_image 와 같은 방향) */
-const forCrop = (q: Quad): Quad => {
-  const w = Math.hypot(q[0].x - q[1].x, q[0].y - q[1].y);
-  const h = Math.hypot(q[0].x - q[3].x, q[0].y - q[3].y);
-  return h >= w * 1.5 ? [q[1], q[2], q[3], q[0]] : q;
-};
-
 /**
  * 명함 한 장 → 글자줄 목록. 좌표는 입력 캔버스 기준이라 파서가 글씨 크기를 그대로 쓸 수 있다
  * (DB 검출 상자는 tesseract 의 줄 상자보다 글자에 딱 붙는다).
@@ -201,7 +196,7 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
   const lines: OcrLine[] = [];
   for (let i = 0; i < boxes.length; i++) {
     const box = boxes[i]!;
-    const quad = forCrop(box.quad);
+    const quad = recCropQuad(box.quad);
     const cropW = recCropWidth(quad);
     const padW = recPadWidth(cropW);
     const crop = warpPerspective(src, quad, cropW, REC_HEIGHT);
@@ -216,7 +211,8 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
     if (trimmed && confidence >= REC_DROP_SCORE) lines.push({ text: trimmed, confidence: confidence * box.score, bbox: quadBBox(box.quad) });
     onProgress?.(0.5 + (0.45 * (i + 1)) / boxes.length, "글자 인식 중");
   }
-  return lines;
+  // 자간 넓게 찍은 번호가 토막으로 잡힌 것을 잇는다 ("010 5598 4392")
+  return mergeNumberRuns(lines);
 }
 
 /** 쓰고 난 세션을 놓는다 (배치 스캔이 끝났을 때). */

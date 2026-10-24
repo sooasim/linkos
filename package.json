@@ -28,7 +28,8 @@
     "vault:rotate": "tsx scripts/rotate-credentials.ts",
     "security:scan": "node scripts/security-scan.mjs",
     "ocr:models": "node scripts/ocr/fetch-models.mjs",
-    "ocr:verify": "pnpm --filter @linkos/web exec node scripts/verify-ocr.mjs"
+    "ocr:verify": "pnpm --filter @linkos/web exec node scripts/verify-ocr.mjs",
+    "ocr:bench": "pnpm --filter @linkos/web exec tsx scripts/ocr-bench.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

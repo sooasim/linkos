@@ -315,3 +315,58 @@ ssh ckp 'install -d -m 755 /etc/ssl/proplus
 | CSP 헤더 | **1개만** 내려감(nginx 중복 없음), `script-src` 에 `unsafe-eval` 없음 |
 | 콘솔 오류 | 없음 (하이드레이션 정상) |
 | 기존 사이트 | ckp.kr·pt·link·bu·kakao **전부 200 유지** |
+
+### DNS 등록 완료 (2026-10-24)
+
+Cloudflare zone `ckp.kr` (`b8cf2e89f03464ef07e703b386b09267`) 에 A 레코드를 만들었다.
+
+| | |
+|---|---|
+| Name | `proplus` |
+| Content | `1.234.82.36` |
+| Proxied | **ON** (주황 구름) |
+| TTL | auto |
+
+토큰은 **서버의 certbot 자격증명**(`/root/.secrets/cloudflare.ini`, `dns_cloudflare_api_token`)을
+서버 안에서 그대로 썼다. 로컬로 내리거나 출력하지 않았다. 재등록이 필요하면:
+
+```bash
+ssh ckp 'TOKEN=$(grep -oP "dns_cloudflare_api_token\s*=\s*\K\S+" /root/.secrets/cloudflare.ini)
+  curl -s -X POST "https://api.cloudflare.com/client/v4/zones/b8cf2e89f03464ef07e703b386b09267/dns_records" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    --data "{\"type\":\"A\",\"name\":\"proplus\",\"content\":\"1.234.82.36\",\"ttl\":1,\"proxied\":true}"'
+```
+
+공개 주소에서 확인한 것: `/` `/search` `/p/demo-pro` `/p/demo-pro/contact` `/login`
+`/robots.txt` `/sitemap.xml` 전부 200 · `/app` 307(로그인 유도) · `/admin` 404(존재를 알리지 않음)
+· `/api/v1/me`·`/api/v1/admin/queue` 401.
+
+### 알려진 콘솔 오류 — Cloudflare Web Analytics beacon
+
+```
+Loading the script 'https://static.cloudflareinsights.com/beacon.min.js/…' violates
+the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'"
+```
+
+Cloudflare 가 **zone 전역으로** HTML 에 beacon 을 자동 주입하는데 우리 CSP 가 막는다
+(`E:\ckp\SERVER-ACCESS.md` 가 "엄격한 CSP 를 쓰는 새 사이트는 허용하거나 RUM 을 꺼야 한다" 고 경고한 항목).
+
+**지금은 그대로 둔다.** 차단이 정상 동작이고 기능에는 영향이 없다(순수 분석용).
+`static.cloudflareinsights.com` 을 CSP 에 허용하는 쪽은 택하지 않았다 — 신뢰·개인정보를 파는
+제품에 제3자 스크립트를 들이는 것은 N-13 의 방향과 어긋난다. 콘솔을 깨끗이 하려면
+**Cloudflare 대시보드에서 이 호스트의 Web Analytics(RUM)를 끄는 쪽**이 맞다.
+
+### ⚠️ Next.js 보안 권고 (2026-10-24 빌드 중 표시됨)
+
+`next build` 가 한 번 멈추며 알렸다:
+
+```
+Your version of Next.js is affected by a known security vulnerability.
+**We strongly recommend you upgrade Next.js.**
+```
+
+현재 `next@16.4.0`. 같은 명령을 다시 실행하면 빌드는 정상 진행된다(실제로 그렇게 배포했다).
+업그레이드는 **아직 하지 않았다** — 버전을 올리면 CSP nonce 동작(ADR-011)과 `proxy` 규약이
+함께 바뀔 수 있어 재검증이 필요하다. 올릴 때 ADR-011 의 "되돌리는 방법" 을 같이 확인할 것.
+
+참고: https://registry.npmjs.org/-/npm/v1/security/advisories/bulk

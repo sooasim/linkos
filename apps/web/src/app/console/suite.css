@@ -2,7 +2,7 @@
    (navy/teal design tokens from uiux/design_tokens.json), isolated under .linkos-suite so it
    never fights the global "Porcelain & Pastel" theme. See docs: uiux/06_DESIGN_SYSTEM_COMPONENTS.md */
 .linkos-suite{
-  --ink:#12253e;--muted:#698096;--muted2:#8ca1b5;--night:#122239;--night2:#182d48;--surface:#fff;
+  --ink:#12253e;--muted:#566a7e;--muted2:#8ca1b5;--night:#122239;--night2:#182d48;--surface:#fff;
   --canvas:#f4f7fb;--line:#e6edf4;--teal:#087f77;--teal2:#0e9e92;--mint:#e1f5ef;--blue:#3268d7;
   --blueTint:#edf3ff;--amber:#9a5a10;--amberTint:#fff3e2;--red:#bd3b4c;--redTint:#feeaee;
   --radius:16px;--shadow:0 9px 32px rgba(15,42,68,.045);
@@ -44,7 +44,7 @@
 .identity{display:flex;align-items:center;gap:10px;padding-left:8px;border-left:1px solid var(--line)}
 .avatar{height:34px;width:34px;display:grid;place-items:center;background:linear-gradient(160deg,#d6f2ea,#b0dfe0);border-radius:11px;color:#12675f;font-weight:900;font-size:12px}
 .identity-name{font-weight:750;font-size:12px}
-.identity-desc{color:#889db0;font-size:10px;padding-top:2px}
+.identity-desc{color:var(--muted);font-size:10px;padding-top:2px}
 .mobile-menu{display:none}
 .content{padding:31px 34px 58px;max-width:1600px;margin:auto}
 .demo-note{margin:0 0 23px;border:1px solid #c9e6e3;background:#ecfaf7;color:#246960;padding:11px 15px;border-radius:11px;font-size:11px;line-height:1.65;display:flex;gap:9px;align-items:flex-start}
@@ -87,7 +87,7 @@
 .activity .dot{width:33px;height:33px;border-radius:11px;background:#f0f7fa;color:#276581;display:grid;place-items:center;flex:none}
 .activity strong{font-size:12px;display:block;line-height:1.5}
 .activity p{font-size:11px;color:var(--muted);margin:4px 0 0;line-height:1.6}
-.activity time{margin-left:auto;color:#8aa0b3;font-size:10px;white-space:nowrap}
+.activity time{margin-left:auto;color:var(--muted);font-size:10px;white-space:nowrap}
 .pill{display:inline-flex;gap:4px;align-items:center;border-radius:7px;background:#edf4f7;color:#557085;font-size:10px;font-weight:750;padding:5px 8px;white-space:nowrap}
 .pill.green{background:var(--mint);color:#067363}
 .pill.blue{background:var(--blueTint);color:#295fbd}
@@ -95,7 +95,7 @@
 .pill.red{background:var(--redTint);color:var(--red)}
 .pill.gray{background:#eff3f6;color:#688197}
 .list-table{width:100%;border-collapse:collapse;font-size:12px}
-.list-table th{text-align:left;color:#7b90a5;font-size:10px;font-weight:800;letter-spacing:.02em;border-bottom:1px solid #e8eef4;padding:12px 10px}
+.list-table th{text-align:left;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.02em;border-bottom:1px solid #e8eef4;padding:12px 10px}
 .list-table td{border-bottom:1px solid #eef2f6;padding:15px 10px;color:#405b71;vertical-align:middle}
 .list-table tbody tr:last-child td{border:0}
 .list-table strong{color:var(--ink)}
@@ -128,7 +128,7 @@
 .number-box{border-radius:12px;background:#f5f9fc;border:1px solid #e8eff6;padding:13px;display:grid;gap:5px}
 .number-box strong{font-size:20px}
 .tabs{display:flex;gap:6px;align-items:center;background:#eaf0f6;border-radius:11px;padding:4px;max-width:max-content;margin-bottom:17px}
-.tab{border:0;background:none;color:#738da4;font-size:12px;font-weight:800;padding:9px 13px;border-radius:8px}
+.tab{border:0;background:none;color:var(--muted);font-size:12px;font-weight:800;padding:9px 13px;border-radius:8px}
 .tab.active{background:white;box-shadow:0 2px 5px #1734500d;color:#183956}
 .empty{padding:35px;text-align:center;color:#60788e;font-size:12px;line-height:1.7}
 .empty strong{display:block;color:#29415a;font-size:14px;margin-bottom:6px}
@@ -150,8 +150,8 @@
 .feature{border:1px solid #e7eef5;padding:16px;border-radius:12px;background:#fff}
 .feature strong{font-size:12px;display:block}
 .feature p{font-size:11px;color:var(--muted);line-height:1.6;margin:8px 0 0}
-.chart-label{font-size:11px;color:#738ca0;text-align:right}
-.footer-help{padding-top:15px;color:#95a7b9;font-size:10px;line-height:1.7}
+.chart-label{font-size:11px;color:var(--muted);text-align:right}
+.footer-help{padding-top:15px;color:var(--muted);font-size:10px;line-height:1.7}
 .modal-backdrop{position:fixed;inset:0;background:rgba(8,25,46,.54);z-index:50;display:grid;place-items:center;padding:18px;backdrop-filter:blur(2px)}
 .modal{background:white;border-radius:18px;width:min(550px,100%);padding:26px;box-shadow:0 30px 100px rgba(5,19,38,.28);max-height:92vh;overflow-y:auto}
 .modal-head{display:flex;align-items:center;justify-content:space-between}

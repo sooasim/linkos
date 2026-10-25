@@ -120,8 +120,10 @@ export function Activity({ title, sub, when, icon = "link" }: { title: ReactNode
 }
 
 export function Table({ heads, rows }: { heads: string[]; rows: ReactNode[][] }) {
+  // tabIndex={0} keeps the horizontally-scrollable region keyboard-reachable on narrow
+  // viewports even when a row has no focusable cell (WCAG 2.1.1 — axe scrollable-region-focusable).
   return (
-    <div className="table-scroll">
+    <div className="table-scroll" tabIndex={0} role="group" aria-label="표 (가로 스크롤)">
       <table className="list-table">
         <thead>
           <tr>

@@ -456,8 +456,9 @@ proof:
     name: 직군 간 단순 순위화 금지
     module: proof
     priority: P0
-    status: planned
+    status: done
     accept: 비교 불가 지표를 단일 순위로 만들지 않는다 (보안정책 §4.9)
+    test: packages/domain/test/ranking.test.ts
   - id: P-072
     name: 발급기관 등록·신뢰 확인
     module: proof

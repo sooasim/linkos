@@ -12,10 +12,10 @@
 
 | 우선순위 | 전체 | ✅ 검증 | ⚠️ 테스트 없음 | 🟡 진행 | ⬜ 계획 |
 |---|---|---|---|---|---|
-| P0 | 100 | 78 | 0 | 15 | 7 |
+| P0 | 100 | 79 | 0 | 15 | 6 |
 | P1 | 50 | 18 | 0 | 17 | 15 |
 | P2 | 6 | 0 | 0 | 0 | 6 |
-| 합계 | 156 | 96 | 0 | 32 | 28 |
+| 합계 | 156 | 97 | 0 | 32 | 27 |
 
 ## ⚠️ 검증 안 됨 (원장 `status: done` · 테스트 참조 없음)
 
@@ -104,7 +104,7 @@
 | P-068 | P1 | 응답시간 지표 표기 | 🟡 진행 | `apps/web/src/components/MetricClaim.tsx`, `packages/domain/src/metric.ts` | — |  |
 | P-069 | P0 | 배지 설명 패널 | ✅ 검증 | `apps/web/src/app/api/v1/evidence-types/route.ts`, `apps/web/src/app/globals.css`, `apps/web/src/components/Disclosure.tsx`, `apps/web/src/components/TrustSection.tsx` +1 | `tests/e2e/publicProfile.spec.ts` |  |
 | P-070 | P0 | 배지 유료 구매 차단 | ✅ 검증 | — | `packages/domain/test/badge.test.ts`, `services/api/test/proof.test.ts` | N-2 |
-| P-071 | P0 | 직군 간 단순 순위화 금지 | ⬜ 계획 | — | — |  |
+| P-071 | P0 | 직군 간 단순 순위화 금지 | ✅ 검증 | `packages/domain/src/index.ts`, `packages/domain/src/ranking.ts` | `packages/domain/test/ranking.test.ts` |  |
 | P-072 | P1 | 발급기관 등록·신뢰 확인 | ✅ 검증 | `db/migrations/0001_proplus_core.sql`, `db/seeds/seed.ts`, `packages/domain/src/proof.ts` | `packages/domain/test/proof.test.ts`, `services/api/test/org.test.ts` |  |
 | P-073 | P0 | 증거 원본 다운로드 감사 | ✅ 검증 | `apps/web/src/app/admin/evidence/[id]/PurposeGate.tsx`, `apps/web/src/app/api/v1/files/[id]/route.ts`, `apps/web/src/app/api/v1/files/route.ts`, `services/api/src/modules/admin.ts` +1 | `services/api/test/audit.test.ts` |  |
 | P-074 | P1 | 증거 보존기간·삭제 | ⬜ 계획 | `services/api/src/modules/proof.ts` | — |  |

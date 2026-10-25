@@ -44,6 +44,8 @@ export * from "./origin";
 
 // 노출 투명성과 이벤트 (N-15, 기술백서 §7).
 export * from "./search";
+// 직군 간 단순 순위화 금지 (P-071 / 보안정책 §4.9) — search·metric 과 같은 "점수를 만들지 않는다" 계열.
+export * from "./ranking";
 export * from "./events";
 
 // LINKOS 연동 경계 (ADR-012 / 05_LINKOS_INTEGRATION §1). 오가는 것은 서명된 문자열이고,

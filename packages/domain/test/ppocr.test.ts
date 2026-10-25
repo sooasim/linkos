@@ -215,6 +215,50 @@ describe("sortBoxesReadingOrder", () => {
     const one = [{ quad: rect(0, 0, 1, 1) }];
     expect(sortBoxesReadingOrder(one)).toHaveLength(1);
   });
+
+  // unclip 으로 넓힌 상자는 줄 간격이 좁으면 세로로 겹친다. 오른쪽 정렬한 전화번호 토막이
+  // 그렇다 — 세로로 쌓였으니 위→아래 그대로여야지, 왼→오로 뒤섞이면 안 된다.
+  // (상자 높이 48, 줄 간격 28 → 세로로 겹침. 왼쪽 끝은 아래로 갈수록 왼쪽으로 민다)
+  const stack = [
+    { quad: rect(200, -4, 260, 44), id: "010" },
+    { quad: rect(180, 24, 260, 72), id: "5598" },
+    { quad: rect(180, 52, 260, 100), id: "4392" },
+  ];
+
+  it("세로로 겹쳐 쌓인 번호 토막은 위→아래를 지킨다", () => {
+    expect(sortBoxesReadingOrder(stack).map((b) => b.id)).toEqual(["010", "5598", "4392"]);
+  });
+
+  it("입력 순서가 달라도 결과는 같다 (이행적·결정적)", () => {
+    const rev = [...stack].reverse();
+    const shuffled = [stack[2]!, stack[0]!, stack[1]!];
+    expect(sortBoxesReadingOrder(rev).map((b) => b.id)).toEqual(["010", "5598", "4392"]);
+    expect(sortBoxesReadingOrder(shuffled).map((b) => b.id)).toEqual(["010", "5598", "4392"]);
+  });
+
+  it("세로로 가까워도 나란히 놓였으면 왼→오로 한 줄", () => {
+    // 이름 줄의 로마자 병기 — 같은 줄, 가로로 안 겹친다
+    const boxes = [
+      { quad: rect(260, 42, 460, 90), id: "SU JIN LEE" },
+      { quad: rect(100, 40, 200, 88), id: "이수진" },
+    ];
+    expect(sortBoxesReadingOrder(boxes).map((b) => b.id)).toEqual(["이수진", "SU JIN LEE"]);
+  });
+
+  it("정렬 뒤 mergeNumberRuns 가 번호를 잇는다 (뒤섞였으면 못 잇는다)", () => {
+    const boxes = [
+      { quad: rect(60, 0, 180, 40), text: "홍길동" },
+      { quad: rect(400, 60, 460, 108), text: "010" },
+      { quad: rect(380, 88, 460, 136), text: "5598" },
+      { quad: rect(380, 116, 460, 164), text: "4392" },
+    ];
+    const lines = sortBoxesReadingOrder(boxes).map((b) => {
+      const xs = b.quad.map((p) => p.x);
+      const ys = b.quad.map((p) => p.y);
+      return { text: b.text, confidence: 0.9, bbox: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } };
+    });
+    expect(mergeNumberRuns(lines).map((l) => l.text)).toEqual(["홍길동", "010 5598 4392"]);
+  });
 });
 
 describe("recCropWidth / recPadWidth — 인식 입력 폭", () => {

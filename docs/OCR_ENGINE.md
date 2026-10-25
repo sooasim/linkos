@@ -74,7 +74,14 @@ RapidOCR 프로젝트가 ONNX 로 변환해 공개한 것을 쓴다.
 ```
 
 순수 계산부는 전부 `packages/domain` 에 있고(I/O·DOM 없음) `test/ppocr.test.ts`
-29항목이 잠근다. `apps/web/src/lib/ocrPaddle.ts` 는 onnxruntime 세션만 다룬다.
+49항목이 잠근다. `apps/web/src/lib/ocrPaddle.ts` 는 onnxruntime 세션만 다룬다.
+
+`sortBoxesReadingOrder` 는 (세로 중심, 왼쪽 끝) 으로 한 번 안정 정렬한 뒤 한 방향으로
+훑어 줄로 묶는다 — 입력 순서와 무관하게 결정적이다. 세로로 가까워도 **가로로 크게 겹치면**
+(위아래로 쌓인 토막) 다음 줄로 둔다. unclip 으로 넓힌 상자는 줄 간격이 좁은 명함에서
+세로로 겹치는데, 쌍끼리 비교하는 비교자를 쓰면 `Array.sort` 가 이때 순서를 뒤섞어
+오른쪽 정렬한 전화번호 토막(`010 / 5598 / 4392`)이 흩어지고 `mergeNumberRuns` 가
+번호를 못 잇는다. 나란히 놓인 토막(`이수진  SU JIN LEE`)만 한 줄로 묶는다.
 
 ### PaddleOCR 과 맞춘 값
 
@@ -215,7 +222,7 @@ pnpm ocr:bench:vision <사진 폴더> --env <.env> [--json out.json]            
 
 확인했다:
 
-- 전·후처리·CTC 순수 함수 — 단위테스트 29항목(`packages/domain/test/ppocr.test.ts`)
+- 전·후처리·CTC 순수 함수 — 단위테스트 49항목(`packages/domain/test/ppocr.test.ts`)
 - 파서 전체 — 27,170항목 통과(기존 QA 2,409 카드/배지 포함)
 - 실제 모델로 끝까지 — Node(wasm)에서 합성 명함(900×540, SVG 렌더)을 넣어 검출→인식→파서를
   통과시켰다(2026-10-22). 검출 출력 `[1,1,736,1216]`, 글자줄 5개.

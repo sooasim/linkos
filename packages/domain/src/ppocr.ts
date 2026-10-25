@@ -262,18 +262,54 @@ const quadWidth = (q: Quad) => (Math.hypot(q[0].x - q[1].x, q[0].y - q[1].y) + M
 
 export const boxSize = (q: Quad) => ({ width: quadWidth(q), height: quadHeight(q) });
 
-/** 읽는 순서(위→아래, 같은 줄이면 왼→오)로 정렬. 줄 묶음 허용치는 상자 높이로 잡는다. */
+/**
+ * 읽는 순서(위→아래, 같은 줄이면 왼→오)로 정렬. 줄 묶음 허용치는 상자 높이로 잡는다.
+ *
+ * 쌍끼리 비교하는 비교자(|Δy|>허용치면 y, 아니면 x)는 **이행적이지 않다**: A·B 가 같은 줄,
+ * B·C 가 같은 줄인데 A·C 는 허용치를 넘으면(A<C by y, B<A by x) 순서가 서로 어긋나,
+ * `Array.sort` 가 구현에 따라 뒤섞인다. unclip 으로 넓힌 상자는 줄 간격이 좁은 명함에서
+ * 세로로 겹쳐(상자 높이 ≈ 줄 간격) 바로 이 상황을 만든다 — 오른쪽 정렬한 전화번호 토막
+ * `010 / 5598 / 4392` 가 `5598 / 010 / 4392` 로 뒤섞여 `mergeNumberRuns` 가 번호를
+ * 잇지 못하는 일이 실제로 생긴다(기기 내 경로, `ocrCanvasPaddle`).
+ *
+ * 그래서 쌍 비교 대신 (세로 중심, 왼쪽 끝) 으로 한 번 안정 정렬한 뒤 한 방향으로 훑어
+ * 줄로 묶는다 — 입력 순서와 무관하게 결정적이다. **세로로 가까워도 가로로 크게 겹치면**
+ * (위아래로 쌓인 토막) 같은 줄로 보지 않고 다음 줄로 둔다. 나란히 놓인 토막
+ * (`이수진  SU JIN LEE`)만 한 줄로 묶어 왼→오로 세운다.
+ */
 export function sortBoxesReadingOrder<T extends { quad: Quad }>(boxes: T[]): T[] {
   if (boxes.length < 2) return [...boxes];
-  const mid = (b: T) => ({ y: (b.quad[0].y + b.quad[2].y) / 2, x: Math.min(b.quad[0].x, b.quad[3].x) });
+  const span = (b: T) => {
+    const xs = b.quad.map((p) => p.x);
+    return { cy: (b.quad[0].y + b.quad[2].y) / 2, x0: Math.min(...xs), x1: Math.max(...xs) };
+  };
   const heights = boxes.map((b) => quadHeight(b.quad)).sort((a, b) => a - b);
   const tol = Math.max(1, (heights[Math.floor(heights.length / 2)] ?? 1) * 0.6);
-  return [...boxes].sort((a, b) => {
-    const ma = mid(a);
-    const mb = mid(b);
-    if (Math.abs(ma.y - mb.y) > tol) return ma.y - mb.y;
-    return ma.x - mb.x;
-  });
+  const items = boxes.map((b) => ({ b, s: span(b) }));
+  // 안정적·이행적 1차 기준 — 뒤섞을 여지가 없다.
+  items.sort((p, q) => p.s.cy - q.s.cy || p.s.x0 - q.s.x0);
+  // 가로로 겹친 폭이 좁은 쪽 폭의 1/4 을 넘으면 '나란히' 가 아니라 '쌓인' 것으로 본다.
+  const stacked = (a: { x0: number; x1: number }, b: { x0: number; x1: number }) => {
+    const overlap = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+    return overlap > 0.25 * Math.min(a.x1 - a.x0, b.x1 - b.x0);
+  };
+  const rows: { items: typeof items; lastCy: number; last: { x0: number; x1: number } }[] = [];
+  for (const it of items) {
+    const row = rows[rows.length - 1];
+    if (row && it.s.cy - row.lastCy <= tol && !stacked(it.s, row.last)) {
+      row.items.push(it);
+      row.lastCy = it.s.cy;
+      row.last = it.s;
+    } else {
+      rows.push({ items: [it], lastCy: it.s.cy, last: it.s });
+    }
+  }
+  const out: T[] = [];
+  for (const row of rows) {
+    row.items.sort((p, q) => p.s.x0 - q.s.x0);
+    for (const it of row.items) out.push(it.b);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- recognition input

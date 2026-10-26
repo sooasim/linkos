@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { Icon } from "@/components/Icon";
-import { FEATURE_GROUPS } from "./features";
+import { FEATURE_GROUPS, TIERS } from "./features";
 import { FAQ, GUIDE, QUICK_START } from "./guide";
 
 const TILE = ["bg-[var(--color-lavender)]", "bg-[var(--color-mint)]", "bg-[var(--color-peach)]", "bg-[var(--color-sky)]", "bg-[var(--color-butter)]", "bg-[var(--color-rose)]"];
@@ -40,48 +40,78 @@ export function FeatureCatalog() {
       <div className="mx-auto max-w-7xl px-5 py-28 sm:px-8 sm:py-36">
         <div className="flex flex-wrap items-end justify-between gap-6" data-reveal>
           <div>
-            <p className="eyebrow">06 — 전체 기능</p>
+            <p className="eyebrow">07 — 기능 전체</p>
             <h2 id="features-title" className="display mt-4 text-[54px] sm:text-[80px]">
               필요한 모든 것, <em>한 곳에</em>.
             </h2>
           </div>
           <p className="max-w-md text-[16px] leading-relaxed text-[var(--fg-mute)]">
-            명함 교환부터 미팅 · 팀 · 연동 · 개인정보까지. LINKOS가 하는 일을 {FEATURE_GROUPS.length}개 영역 · {itemCount}개 기능으로 빠짐없이 정리했습니다.
+            LINKOS가 하는 일 {FEATURE_GROUPS.length}가지 묶음 · {itemCount}개 기능을 <b className="font-semibold text-[var(--fg)]">많이 쓰는 순서</b>로 놓았습니다.
+            위에서부터 매일 쓰는 것, 아래로 갈수록 필요할 때 꺼내 쓰는 것입니다.
           </p>
         </div>
 
-        <nav aria-label="기능 영역" className="mt-10 flex flex-wrap gap-2">
-          {FEATURE_GROUPS.map((g) => (
-            <a key={g.key} href={`#feat-${g.key}`} className="chip transition hover:border-[var(--accent)] hover:text-[var(--accent-text)]">
-              {g.title}
-            </a>
+        <nav aria-label="기능 묶음" className="mt-10 grid gap-3">
+          {TIERS.map((tier) => (
+            <div key={tier.key} className="flex flex-wrap items-center gap-2">
+              <span className="w-full text-[13px] font-semibold text-[var(--fg-mute)] sm:w-auto sm:pr-2">
+                {tier.label}
+                <span className="font-normal"> · {tier.note}</span>
+              </span>
+              {FEATURE_GROUPS.map((g, i) =>
+                g.tier === tier.key ? (
+                  <a key={g.key} href={`#feat-${g.key}`} className="chip transition hover:border-[var(--accent)] hover:text-[var(--accent-text)]">
+                    <span className="num text-[var(--fg-mute)]">{i + 1}</span>
+                    {g.title}
+                  </a>
+                ) : null,
+              )}
+            </div>
           ))}
         </nav>
 
-        <div className="mt-12 gap-4 md:columns-2 xl:columns-3">
-          {FEATURE_GROUPS.map((g, i) => (
-            <article key={g.key} id={`feat-${g.key}`} data-feature-group={g.key} className="surface mb-4 scroll-mt-6 break-inside-avoid p-6">
-              <div className="flex items-center gap-3">
-                <span className={`grid size-11 shrink-0 place-items-center rounded-2xl text-[var(--color-iris)] ${TILE[i % TILE.length]}`}>
-                  <Icon name={g.icon} size={21} />
-                </span>
-                <h3 className="text-[19px] font-semibold leading-snug">{g.title}</h3>
+        {TIERS.map((tier) => {
+          const groups = FEATURE_GROUPS.map((g, i) => ({ g, rank: i + 1 })).filter(({ g }) => g.tier === tier.key);
+          const ranks = groups.map((x) => x.rank);
+          return (
+            <div key={tier.key} id={`tier-${tier.key}`} data-tier-band={tier.key} className="mt-14 scroll-mt-6 first:mt-12">
+              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-[var(--line-strong)] pt-5">
+                <h3 className="display text-[34px] sm:text-[44px]">{tier.label}</h3>
+                <p className="text-[15px] text-[var(--fg-mute)]">{tier.note}</p>
+                <p className="num ml-auto text-[13px] font-semibold text-[var(--fg-mute)]">
+                  {Math.min(...ranks)}–{Math.max(...ranks)}
+                </p>
               </div>
-              <p className="mt-3 text-[14.5px] leading-relaxed text-[var(--fg-mute)]">{g.lead}</p>
-              <ul className="mt-5 space-y-3.5 border-t border-[var(--line)] pt-5">
-                {g.items.map((f) => (
-                  <li key={f.t}>
-                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">
-                      {f.t}
-                      {f.tag && <span className={`chip !px-2 !py-0.5 !text-[11px] ${TAG_TONE[f.tag] ?? ""}`}>{f.tag}</span>}
-                    </p>
-                    <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--fg-mute)]">{f.d}</p>
-                  </li>
+              <div className="mt-6 gap-4 md:columns-2 xl:columns-3">
+                {groups.map(({ g, rank }) => (
+                  <article key={g.key} id={`feat-${g.key}`} data-feature-group={g.key} data-tier={g.tier} className="surface mb-4 scroll-mt-6 break-inside-avoid p-6">
+                    <div className="flex items-center gap-3">
+                      <span className={`grid size-11 shrink-0 place-items-center rounded-2xl text-[var(--color-iris)] ${TILE[(rank - 1) % TILE.length]}`}>
+                        <Icon name={g.icon} size={21} />
+                      </span>
+                      <h3 className="min-w-0 text-[19px] font-semibold leading-snug">
+                        <span className="num mr-1.5 text-[var(--fg-mute)]">{String(rank).padStart(2, "0")}</span>
+                        {g.title}
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-[14.5px] leading-relaxed text-[var(--fg-mute)]">{g.lead}</p>
+                    <ul className="mt-5 space-y-3.5 border-t border-[var(--line)] pt-5">
+                      {g.items.map((f) => (
+                        <li key={f.t}>
+                          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">
+                            {f.t}
+                            {f.tag && <span className={`chip !px-2 !py-0.5 !text-[11px] ${TAG_TONE[f.tag] ?? ""}`}>{f.tag}</span>}
+                          </p>
+                          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--fg-mute)]">{f.d}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
                 ))}
-              </ul>
-            </article>
-          ))}
-        </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -93,7 +123,7 @@ export function UsageGuide() {
       <div className="mx-auto max-w-7xl px-5 py-28 sm:px-8 sm:py-36">
         <div className="flex flex-wrap items-end justify-between gap-6" data-reveal>
           <div>
-            <p className="eyebrow">07 — 사용 방법</p>
+            <p className="eyebrow">08 — 사용 방법</p>
             <h2 id="guide-title" className="display mt-4 text-[54px] sm:text-[80px]">
               처음부터 끝까지, <em>이렇게</em>.
             </h2>
@@ -103,8 +133,8 @@ export function UsageGuide() {
           </p>
         </div>
 
-        <h3 className="mt-14 text-[13px] font-semibold uppercase tracking-[0.2em] text-[var(--fg-mute)]">빠른 시작 · 4단계</h3>
-        <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <h3 className="mt-14 text-[13px] font-semibold uppercase tracking-[0.2em] text-[var(--fg-mute)]">빠른 시작 · {QUICK_START.length}단계</h3>
+        <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {QUICK_START.map((s, i) => (
             <li key={s.n} data-reveal style={{ ["--reveal-delay" as string]: `${i * 90}ms` }} className={`rounded-[24px] border border-[var(--line)] p-6 text-[var(--color-ink)] ${TILE[i]}`}>
               <span className="display text-[48px] leading-none text-[var(--color-ink)]/30" aria-hidden>
@@ -215,7 +245,7 @@ export function Faq() {
     <section id="faq" aria-labelledby="faq-title" className="scroll-mt-6 border-t border-[var(--line)] bg-[var(--bg-sunk)]">
       <div className="mx-auto grid max-w-7xl gap-10 px-5 py-28 sm:px-8 sm:py-36 lg:grid-cols-[1fr_1.4fr]">
         <div data-reveal>
-          <p className="eyebrow">08 — FAQ</p>
+          <p className="eyebrow">09 — 자주 묻는 질문</p>
           <h2 id="faq-title" className="display mt-4 text-[54px] sm:text-[80px]">
             자주 묻는 <em>질문</em>.
           </h2>

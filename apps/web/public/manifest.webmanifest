@@ -1,7 +1,7 @@
 {
-  "name": "LINKOS — Business Identity & Relationship OS",
+  "name": "LINKOS — 명함부터 관계 · 소개까지",
   "short_name": "LINKOS",
-  "description": "가입 없이 교환하는 살아있는 명함과 관계 기억",
+  "description": "가입 없이 주고받는 살아있는 명함, 관계 기억, 소개 경로까지",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

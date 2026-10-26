@@ -405,6 +405,11 @@ const ko = {
     myDataTimeout: "준비가 오래 걸리고 있어요. 잠시 후 다시 시도하세요.",
   },
   login: {
+    // 첫 화면과 같은 세 줄 — 쓰는 사람의 언어로 보여준다(랜딩은 한국어 전용, 여기는 앱 언어를 따른다).
+    eyebrow: "명함 · 인맥 · 소개를 한 곳에서",
+    slogan1: "주고받고,",
+    slogan2: "기억하고,",
+    slogan3: "이어줍니다.",
     tagline: "비밀번호 없이. 교환한 명함과 관계는 가입 후에도 그대로 이어집니다.",
     start: "시작하기",
     startBody: "이메일로 받은 6자리 코드로 로그인합니다.",
@@ -843,6 +848,10 @@ const en: AppMessages = {
     myDataTimeout: "This is taking a while. Try again in a moment.",
   },
   login: {
+    eyebrow: "Cards, people and introductions in one place",
+    slogan1: "Meet.",
+    slogan2: "Exchange.",
+    slogan3: "Remember.",
     tagline: "No passwords. Cards and relationships you exchanged carry over after you sign up.",
     start: "Get started",
     startBody: "Sign in with a 6-digit code sent to your email.",

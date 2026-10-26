@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -42,7 +43,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   output: "standalone",
-  outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
+  // fileURLToPath: Windows 에서 URL.pathname 은 "/E:/..." 를 돌려줘 빌드가 경로 해석에 실패한다(리눅스는 동일).
+  outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
   transpilePackages: ["@linkos/domain", "@linkos/api"],
   serverExternalPackages: ["pg", "exceljs", "nodemailer", "sharp", "@aws-sdk/client-s3", "pdfkit", "web-push"],
   // F-126: the PDF export embeds Pretendard from node_modules

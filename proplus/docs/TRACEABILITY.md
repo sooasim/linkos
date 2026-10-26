@@ -13,9 +13,9 @@
 | 우선순위 | 전체 | ✅ 검증 | ⚠️ 테스트 없음 | 🟡 진행 | ⬜ 계획 |
 |---|---|---|---|---|---|
 | P0 | 100 | 79 | 0 | 15 | 6 |
-| P1 | 50 | 18 | 0 | 18 | 14 |
+| P1 | 50 | 19 | 0 | 17 | 14 |
 | P2 | 6 | 0 | 0 | 0 | 6 |
-| 합계 | 156 | 97 | 0 | 33 | 26 |
+| 합계 | 156 | 98 | 0 | 32 | 26 |
 
 ## ⚠️ 검증 안 됨 (원장 `status: done` · 테스트 참조 없음)
 
@@ -60,7 +60,7 @@
 | P-031 | P0 | sitemap·robots | ⬜ 계획 | `apps/web/src/app/robots.ts`, `apps/web/src/app/sitemap.ts`, `services/api/src/modules/profile.ts` | — |  |
 | P-032 | P1 | 프로필 완성도 안내 | ✅ 검증 | `apps/web/src/app/app/page.tsx`, `apps/web/src/app/app/profile/page.tsx`, `packages/domain/src/completeness.ts`, `services/api/src/modules/profile.ts` | `packages/domain/test/completeness.test.ts` | N-3 |
 | P-033 | P0 | SNS·외부 링크 | ✅ 검증 | `apps/web/src/app/p/[slug]/page.tsx`, `apps/web/src/components/OfferCard.tsx`, `packages/domain/src/blockSchema.ts`, `packages/domain/src/sanitize.ts` +1 | `packages/domain/test/blockSchema.test.ts`, `packages/domain/test/sanitize.test.ts`, `packages/domain/test/vcard.test.ts` |  |
-| P-034 | P1 | FAQ 블록 | 🟡 진행 | `apps/web/src/app/p/[slug]/page.tsx`, `packages/domain/src/blockSchema.ts` | — |  |
+| P-034 | P1 | FAQ 블록 | ✅ 검증 | `apps/web/src/app/p/[slug]/page.tsx`, `packages/domain/src/blockSchema.ts` | `packages/domain/test/blockSchema.test.ts` |  |
 | P-035 | P0 | QR·vCard·공유 링크 | ✅ 검증 | `apps/web/src/app/api/v1/public/profiles/[slug]/vcard/route.ts`, `apps/web/src/app/p/[slug]/page.tsx`, `packages/domain/src/vcard.ts`, `services/api/src/modules/profile.ts` | `packages/domain/test/vcard.test.ts`, `tests/e2e/publicProfile.spec.ts` |  |
 | P-036 | P0 | 상담 CTA 구성 | 🟡 진행 | `apps/web/src/app/p/[slug]/contact/page.tsx`, `apps/web/src/app/p/[slug]/page.tsx`, `packages/domain/src/blockSchema.ts`, `services/api/src/modules/profile.ts` | — |  |
 

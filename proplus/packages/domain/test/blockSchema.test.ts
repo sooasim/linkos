@@ -251,6 +251,61 @@ describe("P-040 / P-033: 위험한 url 항목은 떨어진다", () => {
   });
 });
 
+describe("P-034: FAQ 블록 — 질문·답변 쌍, 텍스트만", () => {
+  // 수용기준(01_FEATURE_REGISTRY.yaml P-034): "질문·답변 쌍, 텍스트만".
+  // FAQ 블록의 안전성은 전적으로 blockSchema 의 allowlist 가 책임진다 — 렌더러(/p/[slug] case "faq")는
+  // q/a 를 텍스트 노드로만 그린다(dangerouslySetInnerHTML 없음). 여기 테스트가 그 계약을 고정한다.
+
+  it("질문·답변이 모두 있는 항목만 저장된다 (required ['q','a'])", () => {
+    const p = savedProps(
+      block("faq", {
+        items: [
+          { q: "배송은 얼마나 걸리나요", a: "영업일 기준 2~3일" },
+          { q: "질문만 있음" }, // a 없음 → 떨어진다
+          { a: "답변만 있음" }, // q 없음 → 떨어진다
+        ],
+      }),
+    );
+    expect(p.items).toEqual([{ q: "배송은 얼마나 걸리나요", a: "영업일 기준 2~3일" }]);
+  });
+
+  it("텍스트만 — q/a 의 HTML·스크립트는 sanitize 되어 마크업으로 남지 않는다 (N-10)", () => {
+    const p = savedProps(
+      block("faq", {
+        items: [{ q: "<b>굵게</b> 질문", a: "답변 <img src=x onerror=alert(1)>" }],
+      }),
+    );
+    const items = p.items as Array<{ q: string; a: string }>;
+    expect(items).toHaveLength(1);
+    // 꺾쇠가 남아 있지 않아야 한다 — 렌더러가 텍스트로 그려도 마크업으로 해석될 조각이 없어야 한다.
+    expect(items[0]?.q.includes("<")).toBe(false);
+    expect(items[0]?.a.includes("<")).toBe(false);
+    expect(items[0]?.a.toLowerCase().includes("onerror")).toBe(false);
+  });
+
+  it("on*·style 같은 위험 키가 항목 안에 있으면 삭제가 아니라 거부한다 (N-10 우회 시도)", () => {
+    expect(rejectCode(block("faq", { items: [{ q: "q", a: "a", onclick: "alert(1)" }] }))).toBe("forbidden_prop_key");
+    expect(rejectCode(block("faq", { items: [{ q: "q", a: "a", style: "color:red" }] }))).toBe("forbidden_prop_key");
+  });
+
+  it("항목 수·길이 상한을 넘기면 잘린다 (items≤20, q≤200, a≤1000)", () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ q: `q${i}`, a: `a${i}` }));
+    const p = savedProps(block("faq", { items: many }));
+    const items = p.items as Array<{ q: string; a: string }>;
+    expect(items.length).toBe(20);
+
+    const long = savedProps(block("faq", { items: [{ q: "가".repeat(500), a: "나".repeat(2000) }] }));
+    const li = (long.items as Array<{ q: string; a: string }>)[0];
+    expect(li?.q.length).toBe(200);
+    expect(li?.a.length).toBe(1000);
+  });
+
+  it("items 가 전부 떨어지면 items 키 자체가 사라진다 (빈 배열을 저장하지 않는다)", () => {
+    const p = savedProps(block("faq", { heading: "자주 묻는 질문", items: [{ q: "질문만" }] }));
+    expect(p).toEqual({ heading: "자주 묻는 질문" });
+  });
+});
+
 describe("P-040: kind 와 position 경계", () => {
   it("BLOCK_KINDS 밖의 kind 는 거부한다", () => {
     for (const kind of ["video", "embed", "iframe", "html", "script", "custom", "testimonials", "Intro", "INTRO", ""]) {

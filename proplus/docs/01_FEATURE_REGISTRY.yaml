@@ -211,8 +211,9 @@ profile:
     name: FAQ 블록
     module: profile
     priority: P1
-    status: in_progress
+    status: done
     accept: 질문·답변 쌍, 텍스트만
+    test: packages/domain/test/blockSchema.test.ts
   - id: P-035
     name: QR·vCard·공유 링크
     module: profile

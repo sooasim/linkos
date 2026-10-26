@@ -7,7 +7,7 @@
  * 한쪽만 고치면 같은 명함을 다르게 읽게 되므로 둘을 함께 손본다.
  */
 import { describe, expect, it } from "vitest";
-import { assertGrounded, parseBusinessCard, tidyOcrText, toDraft } from "../src/ocrParser";
+import { assertGrounded, cleanVisionOcrLines, parseBusinessCard, tidyOcrText, toDraft } from "../src/ocrParser";
 
 // 정리(tidyOcrText)는 파서가 스스로 한다 — 사진에서 나온 줄을 손대지 않고 그대로 넣는다
 const draft = (...texts: string[]) => {
@@ -306,5 +306,41 @@ describe("지어내지 않는다", () => {
     ];
     const r = parseBusinessCard(lines);
     expect(() => assertGrounded(r.fields, lines)).not.toThrow();
+  });
+});
+
+// F-015 비전 OCR 어댑터 응답 손질 — 목록 기호·순번은 떼되 전화번호는 건드리지 않는다.
+describe("cleanVisionOcrLines — 비전 응답 손질", () => {
+  it("모델이 붙인 목록 기호·순번을 뗀다", () => {
+    expect(cleanVisionOcrLines("1. 홍길동\n2) 영업팀\n- (주)링코스랩\n• 서울시 강남구")).toEqual([
+      "홍길동",
+      "영업팀",
+      "(주)링코스랩",
+      "서울시 강남구",
+    ]);
+  });
+
+  it("점으로 끊어 적은 전화번호를 순번으로 오인해 지우지 않는다", () => {
+    // "010." 을 순번으로 보고 떼면 "010" 이 사라져 뒤의 파서가 되살릴 수 없다
+    expect(cleanVisionOcrLines("010. 5658. 0958\n02. 1234. 5678")).toEqual(["010. 5658. 0958", "02. 1234. 5678"]);
+  });
+
+  it("점·괄호가 든 번호도 그대로 둔다", () => {
+    expect(cleanVisionOcrLines("(02) 1234-5678\n1588-1234\n010-5658-0958")).toEqual(["(02) 1234-5678", "1588-1234", "010-5658-0958"]);
+  });
+
+  it("코드펜스·빈 줄을 버리고 공백을 한 칸으로 줄인다", () => {
+    expect(cleanVisionOcrLines("```\n최  민서\n\n```json\n  대표이사  ")).toEqual(["최 민서", "대표이사"]);
+  });
+
+  it("줄 수 상한(기본 120)을 지킨다", () => {
+    const many = Array.from({ length: 200 }, (_, i) => `줄${i}`).join("\n");
+    expect(cleanVisionOcrLines(many)).toHaveLength(120);
+  });
+
+  it("빈 입력·널은 빈 목록", () => {
+    expect(cleanVisionOcrLines("")).toEqual([]);
+    expect(cleanVisionOcrLines(null)).toEqual([]);
+    expect(cleanVisionOcrLines(undefined)).toEqual([]);
   });
 });

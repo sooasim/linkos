@@ -175,6 +175,31 @@ export function tidyOcrText(text: string | null | undefined): string {
   return hasGraph(s) ? s : "";
 }
 
+/** 줄 앞의 목록 기호·순번만 뗀다. 숫자가 이어지면(전화번호 앞머리) 그대로 둔다. */
+function stripReplyMarker(line: string): string {
+  const bulleted = line.replace(/^[-*·•]\s*/, "");
+  // "1." · "2)" 같은 순번은 뗀다. "010. 5658…" 의 "010." 은 뒤가 또 숫자라 순번이 아니다.
+  const m = /^(\d{1,2})[.)]\s*(.*)$/.exec(bulleted);
+  return m && !/^\d/.test(m[2]!) ? m[2]! : bulleted;
+}
+
+/**
+ * F-015 비전 OCR 어댑터 응답을 한 줄씩 끊어 손질한다 — 모델이 가끔 붙이는 목록 기호
+ * (•·-*)와 순번("1." · "2)")을 떼고, 공백을 한 칸으로 줄이고, 코드펜스(```)와 빈 줄을 버린다.
+ *
+ * **전화번호처럼 숫자로 이어지는 줄은 순번으로 오인해 지우지 않는다** — "010. 5658. 0958"
+ * 의 "010." 을 순번으로 보고 떼면 번호 앞머리가 통째로 사라져, 뒤의 결정적 파서가
+ * 아무리 그 형식을 받아들여도 "010" 을 되살릴 수 없다. 지우고 떼기만 하고 글자는
+ * 지어내지 않는다(규칙 6).
+ */
+export function cleanVisionOcrLines(reply: string | null | undefined, max = 120): string[] {
+  return String(reply ?? "")
+    .split(/\r?\n/)
+    .map((raw) => stripReplyMarker(raw.replace(/\s+/g, " ").trim()))
+    .filter((t) => t && !t.startsWith("```"))
+    .slice(0, max);
+}
+
 const TITLE_WORDS = [
   "대표이사", "대표", "회장", "사장", "부사장", "전무", "상무", "이사", "본부장", "실장", "센터장", "부장", "차장", "과장",
   "대리", "주임", "사원", "팀장", "파트장", "매니저", "수석", "책임", "선임", "연구원", "교수", "변호사", "회계사", "변리사",

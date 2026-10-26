@@ -2,7 +2,7 @@
 // Uses Claude via the official SDK when credentials are configured; callers always have a deterministic fallback.
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { llmRateKey, tierForKind } from "@linkos/domain";
+import { cleanVisionOcrLines, llmRateKey, tierForKind } from "@linkos/domain";
 import type { z } from "zod";
 import { q } from "./db";
 import { blockLlmModel, chooseModel } from "./llmModels";
@@ -125,14 +125,8 @@ const OCR_PROMPT =
 
 export const OCR_PROMPT_VERSION = "card-ocr-1";
 
-/** 한 줄씩 끊고 목록 기호·번호를 떼어 낸다 (모델이 가끔 붙인다). */
-function linesFromReply(text: string): string[] {
-  return String(text ?? "")
-    .split(/\r?\n/)
-    .map((raw) => raw.replace(/\s+/g, " ").trim().replace(/^[-*·•]\s*/, "").replace(/^\d+[.)]\s*/, ""))
-    .filter((t) => t && !t.startsWith("```"))
-    .slice(0, 120); // capture API 의 줄 수 상한과 같게
-}
+// 한 줄씩 끊고 목록 기호·순번을 떼는 손질은 순수 함수(@linkos/domain 의 cleanVisionOcrLines)에
+// 있다 — 전화번호 앞머리("010.")를 순번으로 오인해 지우지 않도록 단위테스트로 고정했다.
 
 /**
  * 사진 한 장 → 글자 줄. 키가 없거나 실패하면 null 을 돌려주고, 호출자는 기기 내 엔진을 쓴다
@@ -178,7 +172,7 @@ export async function visionLines(opts: {
         return null;
       }
       const text = (response.content ?? []).map((b) => ("text" in b ? b.text : "")).join("\n");
-      const lines = linesFromReply(text);
+      const lines = cleanVisionOcrLines(text); // capture API 의 줄 수 상한(120)과 같다
       if (!lines.length) return null;
       // 원문(명함 글자)은 남기지 않는다 — 줄 수만 적는다
       await q("INSERT INTO ai_runs (owner_user_id, kind, model, prompt_version, source_ids, output) VALUES ($1,$2,$3,$4,$5,$6)", [

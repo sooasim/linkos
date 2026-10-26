@@ -93,6 +93,13 @@ describe("직책을 이름보다 먼저 찍은 줄", () => {
     expect(d.fullName).toBe("Jane Doe");
     expect(d.jobTitle).toBe("Director");
   });
+
+  it("직책만 있는 영문 줄에서 이름을 지어내지 않는다 ('Chief Operating Officer')", () => {
+    // 로마자 쌍의 둘째 토막이 직책이면(Officer) 이름으로 보지 않는다 — 규칙6(없는 값 생성 금지)
+    const d = draft("Acme Labs", "Chief Operating Officer", "info@acme.com");
+    expect(d.fullName).toBeUndefined();
+    expect(d.jobTitle).toBe("Chief Operating Officer");
+  });
 });
 
 describe("이름이 아닌 줄을 이름 칸에 넣지 않는다", () => {

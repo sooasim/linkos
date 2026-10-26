@@ -68,7 +68,9 @@ export function BatchImport() {
       if (!lines.length) continue;
       let job: any;
       try {
-        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine, lines }, offline: false });
+        // 결정적 Idempotency-Key(받은 사진 + 카드 번호) — 처리 중 새로고침 auto-resume 나 두 탭이
+        // 같은 사진을 다시 보내도 서버가 재생으로 받아 ocr_scans 이중 과금·중복 business_card 를 막는다.
+        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine, lines }, idempotencyKey: `batch:${item.id}:${idx}`, offline: false });
       } catch (e) {
         if (!(e instanceof ClientError) || e.status !== 0) throw e;
         // offline: 같은 결정적 파서로 기기에서 구조화한다

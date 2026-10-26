@@ -644,7 +644,9 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
         for (let k = 1; k < toks.length; k++) {
           if (hasTitleWord(toks[k]!)) continue;
           if (looksLikePersonNameStrict(toks[k]!) || looksLikeCjkName(toks[k]!)) { nameFrom = k; nameEnd = k + 1; break; }
-          if (k + 1 < toks.length && looksLikeLatinName(`${toks[k]} ${toks[k + 1]}`)) { nameFrom = k; nameEnd = k + 2; break; }
+          // 로마자 쌍은 둘째 토막도 직책이면 안 된다 — "Chief Operating Officer" 의 'Operating Officer'
+          // 를 이름으로 지어내면 규칙6 위반이다(looksLikeLatinName 은 직책 낱말을 못 거른다).
+          if (k + 1 < toks.length && !hasTitleWord(toks[k + 1]!) && looksLikeLatinName(`${toks[k]} ${toks[k + 1]}`)) { nameFrom = k; nameEnd = k + 2; break; }
         }
         if (nameFrom > 0) {
           const nameToks = toks.slice(nameFrom, nameEnd);

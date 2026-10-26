@@ -162,22 +162,18 @@ export const ocrInput = z.object({
  * 대신 IP 기준으로 조인다.
  */
 export async function ocrCardImage(ctx: Ctx, input: z.infer<typeof ocrInput>): Promise<{ lines: OcrLine[]; engine: string }> {
-  if (ctx.userId) {
-    await rateLimit(`ocr:${ctx.userId}`, 120, 3600);
-  } else {
-    /*
-     * 게스트 OCR 은 로그인 없이 쓰는 유료 외부 경로(비전 어댑터)다. per-IP 키의 ctx.ip 는
-     * X-Forwarded-For 첫 값이라(신뢰 프록시 검증 없음) 헤더를 돌려가며 IP 를 바꾸면 버킷이
-     * 매번 새로 잡혀 유료 호출이 무제한이 된다. per-IP 위에 게스트 전체 상한을 하나 더 둔다 —
-     * 넘치면 429 로 떨어지고 클라이언트(ocrServer)는 기기 내 엔진으로 폴백하므로 하드 실패가
-     * 아니다(인식이 멈추지 않는다).
-     */
-    await rateLimit(`ocr:ip:${ctx.ip}`, 20, 3600);
-    await rateLimit("ocr:guest:all", 1000, 3600);
-  }
+  // 입력을 먼저 검증한다 — 빈·과대·잘못된 요청이 조이기 버킷을 소모하지 않게(빈 바디로 버킷을 태우는 남용 방지).
   const image = Buffer.from(input.image, "base64");
   if (!image.length || image.length > OCR_MAX_BYTES) throw new ApiError(400, "invalid_image", "사진 크기가 올바르지 않습니다.");
   if (!(input.mime in OCR_MIME)) throw new ApiError(400, "invalid_image", "jpg · png · webp 만 읽을 수 있습니다.");
+  /*
+   * 유료 외부 경로라 조인다. 게스트는 per-IP(ctx.ip = X-Forwarded-For 첫 값)로 묶는다 — 신뢰 프록시
+   * 검증이 없어 헤더 로테이션으로 우회될 수 있지만, 전역 공유 상한은 한 공격자가 모든 게스트를 429 로
+   * 굶기는 레버가 되고(감사 2차에서 확인: 단일 고정창 버킷) 바이럴 교환 퍼널의 정상 트래픽도 조용히
+   * 기기 내로 떨어뜨려 넣지 않는다. 비용의 근본 해결은 clientIp 의 신뢰 프록시 처리(공용 인프라)로,
+   * 세션 밖 별도 변경으로 다룬다. (게스트 경로는 비타협 원칙 1 — 교환이 가입보다 먼저.)
+   */
+  await rateLimit(ctx.userId ? `ocr:${ctx.userId}` : `ocr:ip:${ctx.ip}`, ctx.userId ? 120 : 20, 3600);
   const { visionLines } = await import("../lib/llm");
   const read = await visionLines({ image, mime: input.mime, ownerUserId: ctx.userId ?? null, sourceId: "capture.ocr" });
   // 키가 없거나 실패하면 빈 목록 — 화면은 기기 내 엔진 결과를 그대로 쓴다

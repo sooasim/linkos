@@ -40,11 +40,14 @@ export function parseBadge(lines: OcrLine[]): BadgeExtraction {
   // 명함 파서와 같은 정리를 거친다 — 두 파서가 같은 줄을 다르게 보면 안 된다
   const clean = lines.map((l, i) => ({ ...l, text: tidyOcrText(l.text), i }));
   const channelLines = new Set(base.fields.filter((f) => ["email", "mobile", "phone", "fax", "website", "sns"].includes(f.key)).map((f) => f.sourceLine));
+  // 주소 줄은 회사 후보에서 뺀다 — 명함 파서가 주소로 잡은 줄(base.fields 에 남아 있다)이
+  // 회사 fallback(`!TITLEISH`)에 걸려 주소가 company 칸에 들어앉았다("서울특별시 강남구 …").
+  const addressLines = new Set(base.fields.filter((f) => f.key === "address").map((f) => f.sourceLine));
   let badgeType: string | null = null;
   const typeLine = clean.find((l) => BADGE_TYPES.test(l.text));
   if (typeLine) badgeType = typeLine.text;
 
-  const usable = clean.filter((l) => l.text && !channelLines.has(l.i) && l !== typeLine && !EVENT_NOISE.test(l.text));
+  const usable = clean.filter((l) => l.text && !channelLines.has(l.i) && !addressLines.has(l.i) && l !== typeLine && !EVENT_NOISE.test(l.text));
   const names = usable.filter((l) => nameLike(l.text));
   // tallest first; without boxes, the first name-like line
   names.sort((a, b) => height(b) - height(a) || a.i - b.i);

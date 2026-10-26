@@ -56,6 +56,21 @@ describe("F-014/F-144 badge OCR layout", () => {
     expect(r.badgeType).toBe("VISITOR");
     assertGrounded(r.fields, lines);
   });
+
+  it("주소 줄을 회사 칸에 넣지 않는다", () => {
+    // 명함 파서가 주소로 잡은 줄이 회사 fallback(!TITLEISH)에 걸려 company 로 들어앉던 것을 막는다
+    const lines = [
+      { text: "SPEAKER", confidence: 95, bbox: box(5, 40) },
+      { text: "김민준", confidence: 95, bbox: box(80, 70) },
+      { text: "서울특별시 강남구 테헤란로 123", confidence: 90, bbox: box(180, 24) },
+    ];
+    const r = parseBadge(lines);
+    const get = (k: string) => r.fields.find((f) => f.key === k)?.value;
+    expect(get("fullName")).toBe("김민준");
+    expect(get("company")).toBeUndefined();
+    expect(get("address")).toBe("서울특별시 강남구 테헤란로 123");
+    assertGrounded(r.fields, lines);
+  });
 });
 
 describe("F-082/F-083 transcript segments", () => {

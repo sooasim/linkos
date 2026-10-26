@@ -93,7 +93,7 @@ export function SendMyCard({ contact }: { contact: ScannedContact }) {
   return (
     <section className="surface space-y-3 p-4" aria-label="내 명함 보내기">
       <div className="flex items-center gap-2">
-        <Icon name="send" size={18} />
+        <Icon name="share" size={18} />
         <h2 className="text-[16px] font-semibold">내 명함 문자로 보내기</h2>
       </div>
       <p className="text-[13px] text-[var(--fg-mute)]">
@@ -101,7 +101,7 @@ export function SendMyCard({ contact }: { contact: ScannedContact }) {
       </p>
       <div className="flex flex-wrap gap-2">
         <button className="btn btn-signal !min-h-10 text-[14px]" disabled={busy} onClick={sendMyCard}>
-          <Icon name="send" size={16} /> 내 명함 보내기 (이미지 포함)
+          <Icon name="share" size={16} /> 내 명함 보내기 (이미지 포함)
         </button>
         {contact.phone && (
           <a className="btn btn-ghost !min-h-10 text-[14px]" href={smsHref(contact.phone, myText)}>

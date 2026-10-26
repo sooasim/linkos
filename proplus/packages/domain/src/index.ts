@@ -41,6 +41,8 @@ export * from "./mask";
 export * from "./token";
 // MFA(TOTP) 코드·복구코드 순수 핵심 (P-006 / 보안정책 §2). RFC 4226·6238 을 따른다.
 export * from "./totp";
+// 위험 로그인 판정 — 새 기기·새 지역 (P-012 / 보안정책 §2). UA 라벨은 P-005 세션 목록에도 쓰인다.
+export * from "./device";
 export * from "./rateLimit";
 export * from "./origin";
 

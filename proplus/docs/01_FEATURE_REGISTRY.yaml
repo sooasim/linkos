@@ -105,7 +105,7 @@ identity:
     name: 위험 로그인 탐지 기록
     module: identity
     priority: P1
-    status: planned
+    status: in_progress
     accept: 새 기기·새 지역 로그인을 기록하고 사용자에게 알린다
 
 # ─────────────────────────────────────────────────────────────────────────────

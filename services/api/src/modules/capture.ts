@@ -162,7 +162,19 @@ export const ocrInput = z.object({
  * 대신 IP 기준으로 조인다.
  */
 export async function ocrCardImage(ctx: Ctx, input: z.infer<typeof ocrInput>): Promise<{ lines: OcrLine[]; engine: string }> {
-  await rateLimit(ctx.userId ? `ocr:${ctx.userId}` : `ocr:ip:${ctx.ip}`, ctx.userId ? 120 : 20, 3600);
+  if (ctx.userId) {
+    await rateLimit(`ocr:${ctx.userId}`, 120, 3600);
+  } else {
+    /*
+     * 게스트 OCR 은 로그인 없이 쓰는 유료 외부 경로(비전 어댑터)다. per-IP 키의 ctx.ip 는
+     * X-Forwarded-For 첫 값이라(신뢰 프록시 검증 없음) 헤더를 돌려가며 IP 를 바꾸면 버킷이
+     * 매번 새로 잡혀 유료 호출이 무제한이 된다. per-IP 위에 게스트 전체 상한을 하나 더 둔다 —
+     * 넘치면 429 로 떨어지고 클라이언트(ocrServer)는 기기 내 엔진으로 폴백하므로 하드 실패가
+     * 아니다(인식이 멈추지 않는다).
+     */
+    await rateLimit(`ocr:ip:${ctx.ip}`, 20, 3600);
+    await rateLimit("ocr:guest:all", 1000, 3600);
+  }
   const image = Buffer.from(input.image, "base64");
   if (!image.length || image.length > OCR_MAX_BYTES) throw new ApiError(400, "invalid_image", "사진 크기가 올바르지 않습니다.");
   if (!(input.mime in OCR_MIME)) throw new ApiError(400, "invalid_image", "jpg · png · webp 만 읽을 수 있습니다.");

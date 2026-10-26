@@ -66,8 +66,7 @@ export function detResize(width: number, height: number, opts: { limitSideLen?: 
 export function autoContrast(img: RgbaImage, opts: { minSpan?: number; lowPct?: number; highPct?: number } = {}): { data: Uint8ClampedArray; applied: boolean } {
   const { width: w, height: h, data } = img;
   const n = w * h;
-  const out = new Uint8ClampedArray(n * 4);
-  for (let i = 0; i < n * 4; i++) out[i] = data[i]!;
+  // 히스토그램은 입력을 그대로 읽으므로 복사가 필요 없다 — 늘릴 때만 새 버퍼를 만든다.
   const hist = new Uint32Array(256);
   for (let p = 0, i = 0; p < n; p++, i += 4) hist[(data[i]! * 0.299 + data[i + 1]! * 0.587 + data[i + 2]! * 0.114) | 0]!++;
   const at = (frac: number) => {
@@ -80,7 +79,11 @@ export function autoContrast(img: RgbaImage, opts: { minSpan?: number; lowPct?: 
   };
   const lo = at(opts.lowPct ?? 0.02);
   const hi = at(opts.highPct ?? 0.98);
-  if (hi - lo >= (opts.minSpan ?? 140) || hi <= lo) return { data: out, applied: false };
+  if (hi - lo >= (opts.minSpan ?? 140) || hi <= lo) {
+    // 멀쩡한 사진(대부분)·단색: 전체 RGBA 복사를 버리고 입력을 그대로 돌려준다(읽기 전용으로만 쓰인다).
+    return { data: data instanceof Uint8ClampedArray ? data : Uint8ClampedArray.from(data as ArrayLike<number>), applied: false };
+  }
+  const out = new Uint8ClampedArray(n * 4);
   const scale = 255 / (hi - lo);
   for (let i = 0; i < n * 4; i += 4) {
     for (let c = 0; c < 3; c++) out[i + c] = (data[i + c]! - lo) * scale;
@@ -124,8 +127,9 @@ const rectQuad = (center: Point, ux: number, uy: number, halfW: number, halfH: n
  * 최소면적 외접 직사각형 (rotating calipers). 볼록껍질의 각 변을 축으로 삼아
  * 투영 폭·높이를 재고 면적이 가장 작은 쪽을 고른다 — OpenCV minAreaRect 와 같은 결과.
  */
-export function minAreaRect(points: Point[]): MinRect | null {
-  const hull = points.length > 4 ? convexHull(points) : points;
+export function minAreaRect(points: Point[], opts: { convex?: boolean } = {}): MinRect | null {
+  // 호출자가 이미 볼록껍질을 넘겼으면(dbBoxes → componentHull) 다시 껍질을 구하지 않는다.
+  const hull = opts.convex ? points : points.length > 4 ? convexHull(points) : points;
   if (hull.length < 2) return null;
   let best: { area: number; ux: number; uy: number; u0: number; u1: number; v0: number; v1: number } | null = null;
   for (let i = 0; i < hull.length; i++) {
@@ -247,7 +251,7 @@ export function dbBoxes(prob: ArrayLike<number>, width: number, height: number, 
   const ranked = components.sort((a, b) => b.area - a.area).slice(0, opts.maxCandidates ?? 1000);
   for (const c of ranked) {
     if (c.area < minSide * minSide) continue;
-    const rect = minAreaRect(componentHull(c));
+    const rect = minAreaRect(componentHull(c), { convex: true });
     if (!rect || Math.min(rect.width, rect.height) < minSide) continue;
     const score = boxScore(prob, width, height, rect.quad);
     if (score < boxThresh) continue;

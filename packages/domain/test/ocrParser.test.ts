@@ -78,6 +78,21 @@ describe("직책을 이름보다 먼저 찍은 줄", () => {
     expect(d.jobTitle).toBe("공인회계사/세무사");
     expect(d.company).toBe("서율회계법인");
   });
+
+  it("'이사 최원석 영업팀' — 이름 뒤 부서를 직책에 흡수하지 않는다", () => {
+    // 예전엔 jobTitle 에 "이사 최원석 영업팀" 이 통째로 들어가고 부서가 유실됐다
+    const d = draft("(주)링코스랩", "이사 최원석 영업팀", "choi@linkos.co.kr");
+    expect(d.fullName).toBe("최원석");
+    expect(d.jobTitle).toBe("이사");
+    expect(d.department).toBe("영업팀");
+  });
+
+  it("직책을 먼저 찍은 로마자 이름도 집어낸다 ('Director Jane Doe')", () => {
+    // 예전엔 영문 이름을 전혀 못 집어내 jobTitle 에 줄 전체가 들어갔다
+    const d = draft("Acme Labs", "Director Jane Doe", "jane@acme.com");
+    expect(d.fullName).toBe("Jane Doe");
+    expect(d.jobTitle).toBe("Director");
+  });
 });
 
 describe("이름이 아닌 줄을 이름 칸에 넣지 않는다", () => {

@@ -150,7 +150,15 @@ export async function ocrCanvas(
  */
 export async function tidyLines(lines: OcrLineOut[]): Promise<OcrLineOut[]> {
   const { mergeNumberRuns, mergeSpacedChars } = await import("@linkos/domain");
-  return mergeNumberRuns(mergeSpacedChars(lines)).map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox }));
+  /*
+   * 120 줄로 자른다 — /capture/cards 의 captureInput 스키마가 `lines.max(120)` 이라,
+   * 시끄러운 사진에서 검출이 수백 상자를 뱉으면(dbBoxes maxCandidates 1000) 그대로 보냈다가
+   * 400 validation_failed 로 스캔 한 장이 통째로 버려졌다. 서버 어댑터(cleanVisionOcrLines)·
+   * 게스트 경로와 같은 상한이다. 명함 한 장의 글자줄은 이보다 적다 — 넘치면 찌꺼기다.
+   */
+  return mergeNumberRuns(mergeSpacedChars(lines))
+    .slice(0, 120)
+    .map((l) => ({ text: l.text, confidence: l.confidence ?? 0, bbox: l.bbox }));
 }
 
 async function ocrOnce(canvas: HTMLCanvasElement, langs: string, onProgress?: (p: number, label: string) => void): Promise<OcrResult> {

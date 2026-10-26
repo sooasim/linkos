@@ -637,14 +637,35 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
         /*
          * 직책 낱말은 후보에서 뺀다 — "Director/대표이사" 의 '대표이사' 는 네 글자
          * 한글이라 이름 조건을 통과해, 직책이 이름 칸에 들어앉는다(실제로 걸렸다).
+         * 이름은 한글 한 토막, 한자 한 토막, 또는 로마자 두 토막("Director Jane Doe")으로 온다.
          */
-        const at = toks.findIndex((t, k) => k > 0 && !hasTitleWord(t) && looksLikePersonNameStrict(t));
-        if (at > 0) {
-          const nameValue = toks[at]!;
+        let nameFrom = -1;
+        let nameEnd = -1;
+        for (let k = 1; k < toks.length; k++) {
+          if (hasTitleWord(toks[k]!)) continue;
+          if (looksLikePersonNameStrict(toks[k]!) || looksLikeCjkName(toks[k]!)) { nameFrom = k; nameEnd = k + 1; break; }
+          if (k + 1 < toks.length && looksLikeLatinName(`${toks[k]} ${toks[k + 1]}`)) { nameFrom = k; nameEnd = k + 2; break; }
+        }
+        if (nameFrom > 0) {
+          const nameToks = toks.slice(nameFrom, nameEnd);
+          const nameValue = sliceSpanning(l.text, nameToks) ?? nameToks[0]!;
           push({ key: "fullName", value: nameValue, normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
           nameIdx = i;
-          const rest = toks.filter((_, k) => k !== at);
-          titleValue = sliceSpanning(l.text, rest) ?? toks[0]!;
+          /*
+           * 이름 뒤 토막에서 부서 꼬리말을 가른다(한글/한자만 — 영어는 'Team Leader' 가 직책의 일부).
+           * "이사 최원석 영업팀" 에서 '영업팀' 을 부서로 뺀다. 예전에는 이름만 빼고 줄 전체를
+           * 직책으로 삼아(sliceSpanning 이 이름을 가운데 끼고 줄을 덮었다) 부서가 유실됐다.
+           */
+          const after = toks.slice(nameEnd);
+          const dAt = after.findIndex((t) => /[가-힣一-鿿぀-ヿ]/.test(t) && DEPT_MARKERS.some((re) => re.test(t)));
+          if (dAt >= 0 && !deptDone) {
+            const head = after.slice(0, dAt);
+            const deptToks = head.length && DEPT_MARKERS.some((re) => re.test(head.join("") + after[dAt]!)) ? [...head, after[dAt]!] : [after[dAt]!];
+            push({ key: "department", value: sliceSpanning(l.text, deptToks) ?? after[dAt]!, normalized: null, confidence: lineConf(l) * 0.75, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+            deptDone = true;
+          }
+          // 직책은 이름 앞 토막("이사" · "Director")만 — 연속 구간이라 원문 부분문자열로 남는다(규칙6).
+          titleValue = sliceSpanning(l.text, toks.slice(0, nameFrom)) ?? toks[0]!;
         }
       }
       if (titleAt > 0) {

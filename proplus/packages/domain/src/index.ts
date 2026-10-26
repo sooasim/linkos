@@ -39,6 +39,8 @@ export * from "./completeness";
 export * from "./redact";
 export * from "./mask";
 export * from "./token";
+// MFA(TOTP) 코드·복구코드 순수 핵심 (P-006 / 보안정책 §2). RFC 4226·6238 을 따른다.
+export * from "./totp";
 export * from "./rateLimit";
 export * from "./origin";
 

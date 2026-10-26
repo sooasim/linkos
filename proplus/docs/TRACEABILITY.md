@@ -13,9 +13,9 @@
 | 우선순위 | 전체 | ✅ 검증 | ⚠️ 테스트 없음 | 🟡 진행 | ⬜ 계획 |
 |---|---|---|---|---|---|
 | P0 | 100 | 79 | 0 | 15 | 6 |
-| P1 | 50 | 18 | 0 | 17 | 15 |
+| P1 | 50 | 18 | 0 | 18 | 14 |
 | P2 | 6 | 0 | 0 | 0 | 6 |
-| 합계 | 156 | 97 | 0 | 32 | 27 |
+| 합계 | 156 | 97 | 0 | 33 | 26 |
 
 ## ⚠️ 검증 안 됨 (원장 `status: done` · 테스트 참조 없음)
 
@@ -34,7 +34,7 @@
 | P-003 | P0 | 전체 세션 무효화 | ✅ 검증 | `apps/web/src/app/api/v1/auth/logout/route.ts`, `apps/web/src/app/api/v1/me/sessions/route.ts`, `apps/web/src/components/SignOutButton.tsx`, `packages/domain/src/token.ts` +4 | `services/api/test/admin.test.ts`, `services/api/test/analytics.test.ts`, `services/api/test/booking.test.ts`, `services/api/test/catalog.test.ts` +2 |  |
 | P-004 | P0 | 로그인 rate limit | ✅ 검증 | `apps/web/src/app/api/v1/auth/request-link/route.ts`, `packages/domain/src/rateLimit.ts`, `services/api/src/modules/identity.ts`, `services/api/src/modules/linkosSso.ts` | `packages/domain/test/rateLimit.test.ts`, `services/api/test/identity.test.ts`, `services/api/test/org.test.ts` |  |
 | P-005 | P0 | 세션 목록과 개별 폐기 | 🟡 진행 | `apps/web/src/app/api/v1/auth/logout/route.ts`, `apps/web/src/app/api/v1/me/sessions/[id]/route.ts`, `apps/web/src/app/api/v1/me/sessions/route.ts`, `apps/web/src/app/app/settings/SettingsClient.tsx` +3 | — |  |
-| P-006 | P1 | MFA(TOTP) 옵션 | ⬜ 계획 | `scripts/reconcile-registry.mjs` | — |  |
+| P-006 | P1 | MFA(TOTP) 옵션 | 🟡 진행 | `packages/domain/src/index.ts`, `packages/domain/src/totp.ts`, `scripts/reconcile-registry.mjs` | `packages/domain/test/totp.test.ts` |  |
 | P-007 | P1 | 계정 복구 플로 | ⬜ 계획 | `services/api/src/modules/identity.ts` | — |  |
 | P-008 | P0 | 동의 기록 (종류별 분리) | ✅ 검증 | `apps/web/src/app/app/settings/page.tsx`, `packages/domain/src/consent.ts`, `services/api/src/modules/identity.ts` | `packages/domain/test/consent.test.ts`, `services/api/test/identity.test.ts` | N-11 |
 | P-009 | P0 | 역할 기반 권한 (개인/조직관리자/검증자/운영자) | ✅ 검증 | `apps/web/src/app/api/v1/me/route.ts`, `packages/domain/src/acl.ts`, `services/api/src/modules/identity.ts` | `packages/domain/test/acl.test.ts`, `services/api/test/identity.test.ts` |  |

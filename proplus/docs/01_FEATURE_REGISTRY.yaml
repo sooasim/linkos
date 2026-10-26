@@ -66,7 +66,7 @@ identity:
     name: MFA(TOTP) 옵션
     module: identity
     priority: P1
-    status: planned
+    status: in_progress
     accept: 활성화 시 로그인 2단계, 복구 코드 1회성
   - id: P-007
     name: 계정 복구 플로

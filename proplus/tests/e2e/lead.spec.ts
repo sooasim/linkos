@@ -48,7 +48,12 @@ test.describe("상담 요청 (공개)", () => {
     await expect(page.getByTestId("lead-error")).toBeVisible();
   });
 
-  test("마케팅 동의 없이 상담 동의만으로 제출된다", async ({ page }) => {
+  test("마케팅 동의 없이 상담 동의만으로 제출된다", async ({ page }, testInfo) => {
+    // 실제 제출(성공/레이트리밋)을 검증하는 테스트는 **한 프로젝트에서만** 돈다. rate limit 버킷이
+    // (slug, ip) 단위라 mobile·desktop 두 프로젝트가 같은 서버·같은 slug 로 제출하면 버킷을 공유해,
+    // 먼저 돈 프로젝트가 한도를 소진하면 뒤 프로젝트의 성공 기대 테스트가 429 로 깨진다(윈도 타이밍에
+    // 따라 flaky). 폼 표시 테스트는 양쪽(뷰포트) 모두 돈다 — 이들만 mobile 로 고정한다.
+    test.skip(testInfo.project.name !== "mobile", "제출 테스트는 mobile 프로젝트에서만 (rate-limit 버킷 공유 방지)");
     const res = await page.goto(`/p/${SLUG}/contact`);
     test.skip(res?.status() === 404, "시드 프로필 없음");
 
@@ -62,7 +67,9 @@ test.describe("상담 요청 (공개)", () => {
     await expect(page.getByTestId("lead-success")).toBeVisible({ timeout: 10_000 });
   });
 
-  test("P-102: 제출 응답에 연락처 원문이 돌아오지 않는다", async ({ request }) => {
+  test("P-102: 제출 응답에 연락처 원문이 돌아오지 않는다", async ({ request }, testInfo) => {
+    // 제출 테스트는 한 프로젝트에서만 (위 "마케팅 동의…" 주석의 rate-limit 버킷 공유 이유와 같다).
+    test.skip(testInfo.project.name !== "mobile", "제출 테스트는 mobile 프로젝트에서만 (rate-limit 버킷 공유 방지)");
     // 도메인을 유니크하게 — 마스킹 후에도 다른 제출과 구별돼 중복(409)으로 막히지 않는다.
     const email = `e2e@d${Date.now()}.example.com`;
     const res = await request.post(`/api/v1/public/profiles/${SLUG}/leads`, {
@@ -84,7 +91,9 @@ test.describe("상담 요청 (공개)", () => {
     expect(body).not.toContain(email);
   });
 
-  test("P-112: 같은 폼을 연속 제출하면 rate limit 에 걸린다", async ({ request }) => {
+  test("P-112: 같은 폼을 연속 제출하면 rate limit 에 걸린다", async ({ request }, testInfo) => {
+    // rate-limit 테스트는 버킷을 소진하므로 반드시 한 프로젝트에서만 (성공 기대 테스트 오염 방지).
+    test.skip(testInfo.project.name !== "mobile", "제출 테스트는 mobile 프로젝트에서만 (rate-limit 버킷 공유 방지)");
     const origin = "http://127.0.0.1:4400";
     let limited = false;
     for (let i = 0; i < 8; i++) {

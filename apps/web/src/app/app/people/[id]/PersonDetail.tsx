@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { AiLabel, Avatar, PageHeader } from "@/components/Page";
 import { ContactComms } from "@/components/ContactComms";
+import { SendMyCard } from "@/components/SendMyCard";
 import { useI18n } from "@/components/I18n";
 import { OFFLINE_MESSAGE, api, fmtDate, isQueuedOffline, relTime } from "@/lib/client";
 import { intlLocale, tf } from "@/lib/i18n";
@@ -628,6 +629,10 @@ export function PersonDetail({ id }: { id: string }) {
       </section>
 
       <ContactComms contactId={id} email={c.email} phone={c.phone} />
+
+      <div className="mt-4">
+        <SendMyCard contact={{ fullName: c.fullName, company: c.company, jobTitle: c.jobTitle, phone: c.phone, email: c.email }} />
+      </div>
 
       <section className="mt-6 scroll-mt-24" id="note">
         <h2 className="mb-2 text-[17px] font-semibold">{P.noteTitle} <span className="text-[13px] font-normal text-[var(--fg-mute)]">{P.noteNote}</span></h2>

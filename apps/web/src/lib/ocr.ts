@@ -1,5 +1,8 @@
 "use client";
 // Shared on-device OCR worker (tesseract.js). Reused across a batch (F-012) so language data loads once.
+// 인식된 줄은 파서에 넘기기 전에 tidyOcrText 로 한 번 치운다 — 모든 스캔 경로(단건·일괄·배지·게스트·내 명함)가
+// 이 한 곳을 지나므로, 사진에서 섞여 들어온 찌꺼기(글자별 공백·인쇄선 막대·메일 쉼표)가 어느 화면에서나 같은 규칙으로 정리된다.
+import { tidyOcrText } from "@linkos/domain";
 export interface OcrLineOut {
   text: string;
   confidence: number;
@@ -36,10 +39,10 @@ export async function ocrCanvas(canvas: HTMLCanvasElement, langs = "kor+eng", on
     const { data } = await worker.recognize(canvas, { rotateAuto: true }, { blocks: true, text: true });
     const lines: OcrLineOut[] = [];
     for (const b of data.blocks ?? []) for (const p of b.paragraphs) for (const l of p.lines) {
-      const text = l.text.replace(/\s+/g, " ").trim();
+      const text = tidyOcrText(l.text);
       if (text) lines.push({ text, confidence: l.confidence, bbox: l.bbox });
     }
-    if (!lines.length && data.text) for (const t of data.text.split("\n")) if (t.trim()) lines.push({ text: t.trim(), confidence: data.confidence });
+    if (!lines.length && data.text) for (const t of data.text.split("\n")) { const text = tidyOcrText(t); if (text) lines.push({ text, confidence: data.confidence }); }
     onProgress?.(1, "완료");
     return lines;
   } finally {

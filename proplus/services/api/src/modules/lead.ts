@@ -847,7 +847,11 @@ async function loadPrincipal(userId: string): Promise<Principal> {
 
   const rows = await q<{ organization_id: string; role: MemberRole; status: string }>(
     `SELECT organization_id, role,
-            CASE WHEN status = 'active' AND (ended_at IS NULL OR ended_at > now()) THEN 'active' ELSE status END AS status
+            -- P-085: status='active' 라도 ended_at 이 지났으면 읽기 시점에 효력이 없다. 그 경우 'revoked'
+            -- 로 넘긴다 — ELSE 로 떨어뜨리면 원래 'active' 가 그대로 나와 만료된 소속이 권한을 유지한다.
+            CASE WHEN status = 'active' AND (ended_at IS NULL OR ended_at > now()) THEN 'active'
+                 WHEN status = 'active' THEN 'revoked'
+                 ELSE status END AS status
        FROM memberships WHERE user_id = $1`,
     [userId],
   );

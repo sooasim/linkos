@@ -25,7 +25,10 @@ jobs:
       - name: Contract tests (04_OPENAPI paths/methods/status ↔ route handlers, 06_EVENT_CATALOG ↔ events.ts)
         run: pnpm --filter @linkos/api exec vitest run test/openapi-contract.test.ts
       - name: Unit + integration tests (domain, api against Postgres)
-        run: pnpm test
+        # @proplus/* 는 별개 DB·env 가 필요해 PROPLUS CI(.github/workflows/proplus-ci.yml)에서 돈다.
+        # 여기서 pnpm test(=-r)로 함께 돌리면 proplus 통합테스트가 LINKOS DB·env(FIELD_KEY 없음)에서
+        # 실패한다. LINKOS CI 는 @linkos/* 만 본다 (ADR-009 배포·CI 격리).
+        run: pnpm --filter "@linkos/*" test
       - name: Migration dry-run is idempotent
         run: pnpm db:migrate && pnpm db:migrate
       - name: Traceability gate (all 197 Feature IDs present)

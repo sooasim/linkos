@@ -53,7 +53,9 @@ test.describe("상담 요청 (공개)", () => {
     test.skip(res?.status() === 404, "시드 프로필 없음");
 
     await page.getByTestId("lead-name").fill("테스트 고객");
-    await page.getByTestId("lead-contact").fill(`e2e-${Date.now()}@example.com`);
+    // 중복 억제는 **마스킹된** 연락처(앞 2글자 + 도메인 전체)로 비교하므로, 도메인을 매번 다르게 해야
+    // mobile·desktop 두 프로젝트가 같은 폼을 제출해도 서로 중복(409)으로 막히지 않는다.
+    await page.getByTestId("lead-contact").fill(`e2e@d${Date.now()}.example.com`);
     await page.getByTestId("consent-service").check();
     await page.getByTestId("lead-submit").click();
 
@@ -61,12 +63,15 @@ test.describe("상담 요청 (공개)", () => {
   });
 
   test("P-102: 제출 응답에 연락처 원문이 돌아오지 않는다", async ({ request }) => {
-    const email = `e2e-${Date.now()}@example.com`;
+    // 도메인을 유니크하게 — 마스킹 후에도 다른 제출과 구별돼 중복(409)으로 막히지 않는다.
+    const email = `e2e@d${Date.now()}.example.com`;
     const res = await request.post(`/api/v1/public/profiles/${SLUG}/leads`, {
       data: {
+        // 라우트 스키마(z.strictObject)는 contactKind·contact 를 받는다 — contactChannelKind/Channel 로
+        // 보내면 unknown 키라 400 으로 거부된다 (UI 폼은 올바른 이름을 보내므로 통과한다).
         contactName: "테스트 고객",
-        contactChannelKind: "email",
-        contactChannel: email,
+        contactKind: "email",
+        contact: email,
         message: "문의합니다",
         consents: [{ purpose: "service", granted: true, policyVersion: "privacy-2026-10-22" }],
       },
@@ -85,9 +90,12 @@ test.describe("상담 요청 (공개)", () => {
     for (let i = 0; i < 8; i++) {
       const res = await request.post(`/api/v1/public/profiles/${SLUG}/leads`, {
         data: {
+          // contactKind/contact 가 맞는 키다. 또 도메인을 매번 다르게 해 **중복(409)이 아니라
+          // rate limit(429)** 에 걸리는지 보게 한다 — 같은 마스킹이면 2번째부터 중복으로 막혀 rate
+          // limit 에 닿지 못한다.
           contactName: "스팸",
-          contactChannelKind: "email",
-          contactChannel: `spam-${i}-${Date.now()}@example.com`,
+          contactKind: "email",
+          contact: `spam@d${i}-${Date.now()}.example.com`,
           consents: [{ purpose: "service", granted: true, policyVersion: "privacy-2026-10-22" }],
         },
         headers: { origin },

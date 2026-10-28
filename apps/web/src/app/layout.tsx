@@ -24,13 +24,13 @@ const inter = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_ORIGIN ?? "http://localhost:3000"),
-  title: { default: "LINKOS — Business Identity & Relationship OS", template: "%s · LINKOS" },
-  description: "만나는 순간부터 관계를 기억하고, 다음 행동과 사업 기회까지. 가입 없이 교환하는 살아있는 명함.",
+  title: { default: "LINKOS — 명함부터 관계 · 소개까지", template: "%s · LINKOS" },
+  description: "명함을 주고받으면 관계가 되고, 관계는 소개와 기회로 이어집니다. 받는 사람은 가입하지 않아도 되는 살아있는 명함.",
   applicationName: "LINKOS",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "LINKOS", statusBarStyle: "default" },
   icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },
-  openGraph: { title: "LINKOS", description: "Meet → Exchange → Remember → Act. 가입 없이 교환하는 Living Card.", type: "website" },
+  openGraph: { title: "LINKOS", description: "주고받고, 기억하고, 이어줍니다. 받는 사람은 가입하지 않아도 되는 살아있는 명함.", type: "website" },
 };
 
 export const viewport: Viewport = {

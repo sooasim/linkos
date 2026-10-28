@@ -94,5 +94,5 @@ test("app routes require login; landing is public", async ({ page }) => {
   await page.goto("/app/people");
   await expect(page).toHaveURL(/\/login/);
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Remember");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("이어줍니다");
 });

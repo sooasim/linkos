@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { expect, test } from "@playwright/test";
 import { parse } from "yaml";
-import { FEATURE_GROUPS } from "../../apps/web/src/app/_landing/features";
+import { FEATURE_GROUPS, TIERS } from "../../apps/web/src/app/_landing/features";
 import { FAQ, GUIDE } from "../../apps/web/src/app/_landing/guide";
 
 const ROOT = join(__dirname, "..", "..");
@@ -31,15 +31,26 @@ const catalogIds = new Set(FEATURE_GROUPS.flatMap((g) => g.items.flatMap((i) => 
 const guideRoutes = new Set(GUIDE.flatMap((p) => p.topics.flatMap((t) => t.routes.map((r) => r.split("?")[0]))));
 const topics = GUIDE.flatMap((p) => p.topics);
 
-test("catalog lists every Feature ID in the registry and every X-extra", () => {
+test("catalog lists every Feature ID in the registry, every X-extra and every N-ID", () => {
   const registry = parse(readFileSync(join(ROOT, "dd/LINKOS_Product_Blueprint_v1/03_FEATURE_REGISTRY.yaml"), "utf8")) as { features: { id: string }[] };
   const ids = registry.features.map((f) => f.id);
   expect(ids.length).toBe(197);
   expect(ids.filter((id) => !catalogIds.has(id))).toEqual([]);
-  const extras = [...readFileSync(join(ROOT, "docs/TRACEABILITY.md"), "utf8").matchAll(/^\| (X-\d{3}) \|/gm)].map((m) => m[1]);
-  expect(extras.length).toBeGreaterThan(0);
+  // X-00x = 원장 밖 추가 기능, N-xxx = 인적 네트워크 인텔리전스(docs/NETWORK_INTELLIGENCE.md). 둘 다 TRACEABILITY 가 출처다.
+  const extras = [...readFileSync(join(ROOT, "docs/TRACEABILITY.md"), "utf8").matchAll(/^\| ([XN]-\d{3}) \|/gm)].map((m) => m[1]);
+  expect(extras.filter((id) => id.startsWith("X-")).length).toBeGreaterThan(0);
+  expect(extras.filter((id) => id.startsWith("N-")).length).toBeGreaterThan(0);
   expect(extras.filter((id) => !catalogIds.has(id))).toEqual([]);
   expect([...catalogIds].filter((id) => !ids.includes(id) && !extras.includes(id))).toEqual([]);
+});
+
+test("catalog groups run from the most used to the least, with no tier out of order", () => {
+  const rank = FEATURE_GROUPS.map((g) => TIERS.findIndex((t) => t.key === g.tier));
+  expect(rank).not.toContain(-1);
+  expect(rank).toEqual([...rank].sort((a, b) => a - b));
+  expect(new Set(FEATURE_GROUPS.map((g) => g.tier)).size).toBe(TIERS.length);
+  // 가장 자주 쓰는 묶음이 맨 앞이다 — 교환 · 비회원 수신 · 스캔이 매일 쓰는 것에 들어가야 한다.
+  expect(FEATURE_GROUPS.slice(0, 3).map((g) => g.key)).toEqual(["exchange", "guest", "capture"]);
 });
 
 test("guide has a topic for every user-facing screen", () => {

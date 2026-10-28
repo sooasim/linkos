@@ -259,13 +259,14 @@ export function LoginForm({
         <div aria-hidden className="marks" />
         <Logo />
         <div className="my-auto">
-          <p className="eyebrow">Business Identity & Relationship OS</p>
-          <h2 className="display mt-4 text-[96px]">
-            Meet.
+          <p className="eyebrow">{L.eyebrow}</p>
+          {/* 한글은 글자폭이 넓다 — 두 언어 모두 왼쪽 칸 안에 들어가는 크기로 잡는다. */}
+          <h2 className="display mt-4 text-[72px]">
+            {L.slogan1}
             <br />
-            Exchange.
+            {L.slogan2}
             <br />
-            <em className="text-[var(--color-signal)]">Remember.</em>
+            <em className="text-[var(--color-signal)]">{L.slogan3}</em>
           </h2>
         </div>
         <p className="max-w-sm text-[15px] text-[var(--fg-mute)]">{L.tagline}</p>

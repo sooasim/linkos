@@ -41,7 +41,9 @@ jobs:
       DATABASE_URL: postgres://proplus:proplus@localhost:5432/proplus_test
       AUTH_SECRET: ci-only-secret
       # crypto.ts 가 요구하는 32바이트 base64 키. CI 전용 값이다.
-      FIELD_KEY: Y2ktb25seS1maWVsZC1rZXktMzJieXRlcy1sb25nIQ==
+      # base64 of exactly 32 bytes ("ci-only-field-key-exactly-32byte"). crypto.ts 는 32바이트를 요구한다 —
+      # 이전 값은 디코딩하면 31바이트라 모든 암호화 테스트가 터졌다.
+      FIELD_KEY: Y2ktb25seS1maWVsZC1rZXktZXhhY3RseS0zMmJ5dGU=
       STORAGE_SIGNING_KEY: ci-only-storage-key
       APP_ORIGIN: http://127.0.0.1:4400
     steps:

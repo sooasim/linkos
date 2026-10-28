@@ -533,7 +533,9 @@ describe.skipIf(!DB)("M01 Identity & Access — DB 통합", () => {
             s.userId,
             PRIVACY_POLICY,
           ]),
-        ).rejects.toThrow(/invalid input value for enum consent_purpose/);
+          // 잘못된 enum 값은 Postgres(22P02)가 거부하고 db.ts 의 q() 가 400 invalid_input 으로 매핑한다.
+          // 원문 pg 메시지가 아니라 매핑된 에러를 본다 — 모듈을 우회해도 DB 가 거부한다는 사실(N-11)은 그대로다.
+        ).rejects.toMatchObject({ status: 400, code: "invalid_input" });
       },
       20_000,
     );

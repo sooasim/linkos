@@ -1,0 +1,409 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+/* ─────────────────────────────────────────────────────────────
+   PROPLUS Design System — "Clear Proof"
+   브랜드 §7: 신뢰 · 전문성 · 현대성 · 접근성 / 고대비 · 넓은 여백 · 명료한 타이포그래피
+
+   LINKOS("Porcelain & Pastel")와 **의도적으로 다른 인상**이다 (CONTRACTS §디자인 토큰).
+   파스텔 6색 대신 차분한 중성 배경 + 단일 강조색(딥 틸) + 검증 상태 전용 의미색 3개만 쓴다.
+   의미색을 3개로 묶어 둔 이유: 상태가 늘어날 때마다 색을 더하면 "색으로 신뢰도를 읽는"
+   습관이 생기고, 그것이 N-3(단일 신뢰점수 금지)의 시각적 우회로가 된다.
+
+   하드코딩 색 금지 — 컴포넌트는 var(--*) 토큰만 쓴다. 다크 모드는 토큰 재정의로 지원한다.
+   ───────────────────────────────────────────────────────────── */
+
+@theme {
+  --font-display: var(--font-serif), "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --radius-card: 14px;
+  --radius-pill: 999px;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+  --bg: #ffffff;
+  --bg-elev: #ffffff;
+  --bg-sunk: #f4f6f8;
+  --fg: #12233f;
+  --fg-mute: #5a6b80;
+  --line: rgba(18, 35, 63, 0.1);
+  --line-strong: rgba(18, 35, 63, 0.2);
+  /* 다이어그램 09 의 PROOF 강조색과 같은 계열 */
+  --accent: #167d9a;
+  --accent-text: #0f5f76;
+  --accent-soft: #dceaf2;
+  /* 검증 상태 의미색 (보안정책 §4.1 강도 / §4.5 만료 / §4.7 분쟁) */
+  --verified: #1f7a4d;
+  --pending: #8a6a1f;
+  --caution: #9a3412;
+
+  --shadow-sm: 0 1px 2px rgba(18, 35, 63, 0.06);
+  --shadow-md: 0 1px 2px rgba(18, 35, 63, 0.05), 0 10px 28px -14px rgba(18, 35, 63, 0.18);
+
+  /* 강조색 위에 올라가는 글자색. 딥 틸(#167d9a) 위 흰 글자는 4.7:1 로 AA 를 넘는다. */
+  --accent-on: #ffffff;
+
+  color-scheme: light;
+}
+
+/* 다크 모드는 토큰만 재정의한다. 대비는 밝은 모드와 같은 기준(AA)으로 다시 계산한 값이다. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1522;
+    --bg-elev: #141f30;
+    --bg-sunk: #0a111c;
+    --fg: #e8eef6;
+    --fg-mute: #9bacc0;
+    --line: rgba(232, 238, 246, 0.1);
+    --line-strong: rgba(232, 238, 246, 0.22);
+    --accent: #4fb8d4;
+    --accent-text: #7fd0e6;
+    --accent-soft: rgba(79, 184, 212, 0.14);
+    --verified: #58c48c;
+    --pending: #d8b155;
+    --caution: #f0906f;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 28px -14px rgba(0, 0, 0, 0.7);
+
+    /* 밝은 틸 위에서는 흰 글자가 대비 미달이므로 잉크를 올린다. */
+    --accent-on: #06131f;
+
+    color-scheme: dark;
+  }
+}
+
+/* ── 기본 ─────────────────────────────────────────────────── */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 한국어 줄바꿈: 단어 중간에서 끊기지 않게 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 브랜드 §7 접근성 목표(WCAG 2.2 AA): 포커스 링은 어떤 컴포넌트에서도 지우지 않는다. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* 키보드 사용자가 공개 프로필의 긴 헤더를 건너뛸 수 있게 한다. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+.skip-link:focus {
+  left: 12px;
+  top: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── 타이포그래피 ─────────────────────────────────────────── */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.lede {
+  color: var(--fg-mute);
+  font-size: 17px;
+  line-height: 1.65;
+  max-width: 62ch;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+/* ── 면 ───────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel {
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.rule {
+  height: 1px;
+  background: var(--line);
+  border: 0;
+}
+
+/* ── 버튼 ─────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  /* 모바일 우선(브랜드 §7): 터치 타깃 최소 48px */
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  transition: background-color 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.25s var(--ease-out-quint);
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-on);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover {
+  background: var(--accent-text);
+  box-shadow: var(--shadow-md);
+}
+.btn-ghost {
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+}
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.btn-lg {
+  min-height: 54px;
+  font-size: 16px;
+  padding: 0 26px;
+}
+
+/* ── 입력 ─────────────────────────────────────────────────── */
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-size: 16px; /* iOS 자동 확대 방지 */
+}
+.field::placeholder {
+  color: var(--fg-mute);
+}
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-mute);
+  margin-bottom: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── 검증 배지 ────────────────────────────────────────────────
+   브랜드 §7: "배지 색상만으로 상태를 구분하지 말고 텍스트와 아이콘 병행".
+   그래서 .badge 는 세 가지를 **구조적으로 강제한다**:
+     1) .badge-icon  — 상태별로 모양이 다른 아이콘 자리 (비워 둘 수 없다)
+     2) .badge-label — 상태를 말로 담은 라벨 (disputed 면 "확인 필요")
+     3) 테두리 선 모양 — solid / dashed / double 로 색각 이상·흑백 인쇄에서도 구분된다
+   색은 네 번째 단서일 뿐이다.
+   ─────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 13px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--badge-line, var(--line-strong));
+  background: var(--badge-bg, var(--bg-elev));
+  text-align: left;
+}
+.badge-icon {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  color: var(--badge-fg, var(--fg));
+}
+.badge-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.badge-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--badge-fg, var(--fg));
+}
+/* 강도·범위·검증일. 배지에서 이 줄을 지우면 P-058(6필드 동시 표기)이 깨진다. */
+.badge-meta {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-mute);
+}
+
+.badge-verified {
+  --badge-fg: var(--verified);
+  --badge-bg: color-mix(in srgb, var(--verified) 8%, var(--bg-elev));
+  --badge-line: color-mix(in srgb, var(--verified) 34%, transparent);
+}
+.badge-pending {
+  --badge-fg: var(--pending);
+  --badge-bg: color-mix(in srgb, var(--pending) 8%, var(--bg-elev));
+  --badge-line: color-mix(in srgb, var(--pending) 40%, transparent);
+  border-style: dashed;
+}
+.badge-caution {
+  --badge-fg: var(--caution);
+  --badge-bg: color-mix(in srgb, var(--caution) 7%, var(--bg-elev));
+  --badge-line: color-mix(in srgb, var(--caution) 38%, transparent);
+  border-style: double;
+  border-width: 3px;
+}
+
+/* ── 배지 설명 패널 (P-069 / 브랜드 §6) ──────────────────────
+   <details>/<summary> 기반이라 JS 가 없어도 열린다. 공개 프로필에는 사용자 JS 가 없고(N-10)
+   스크립트 CSP 도 'self' 뿐이므로, 상호작용을 HTML 기본 동작으로 만드는 것이 유일하게 안전한 길이다.
+   ─────────────────────────────────────────────────────────── */
+
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-card);
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.disclosure[open] > summary .disclosure-hint-open {
+  display: inline;
+}
+.disclosure[open] > summary .disclosure-hint-closed,
+.disclosure-hint-open {
+  display: none;
+}
+.disclosure-panel {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-sunk);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg);
+  max-width: 48rem;
+}
+.disclosure-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin-top: 10px;
+}
+.disclosure-dl dt {
+  color: var(--fg-mute);
+  font-weight: 600;
+}
+.disclosure-note {
+  margin-top: 10px;
+  color: var(--fg-mute);
+  font-size: 12px;
+}
+
+/* ── 모션 / 인쇄 ──────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* 공개 프로필을 인쇄·PDF 로 넘길 때 배지 설명이 함께 남아야 한다 (브랜드 §6 "검증 상태를 숨기지 않음").
+   닫힌 <details> 의 내용은 UA 가 감추므로 ::details-content 를 다시 보이게 한다.
+   지원하지 않는 브라우저에서는 평소처럼 접힌 상태로 인쇄된다 — 점진적 향상. */
+@media print {
+  .disclosure::details-content {
+    content-visibility: visible;
+    block-size: auto;
+  }
+  .disclosure-panel {
+    background: transparent;
+  }
+  .disclosure-hint {
+    display: none;
+  }
+}

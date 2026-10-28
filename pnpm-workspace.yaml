@@ -7,6 +7,12 @@ packages:
   - "!apps/mobile"
   # SwiftUI App Clip sources (Xcode project), not a JS package
   - "!apps/ios-app-clip"
+  # PROPLUS — 별개 제품. 코드·DB·기능원장·배포가 LINKOS 와 분리돼 있다 (proplus/docs/00_DEV_STRATEGY.md §1).
+  # 같은 워크스페이스에 두는 것은 pnpm/TypeScript/Playwright/CI 러너를 공유하기 위한 것이고,
+  # @proplus/* 는 @linkos/* 를 import 하지 않는다(그 반대도 아니다).
+  - proplus/apps/*
+  - proplus/packages/*
+  - proplus/services/*
 onlyBuiltDependencies:
   - sharp
   - esbuild

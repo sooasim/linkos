@@ -1,0 +1,35 @@
+{
+  "name": "@proplus/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 4400",
+    "build": "next build",
+    "start": "next start -p 4400 --keepAliveTimeout 65000",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'web: covered by e2e (pnpm proplus:e2e)'"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter-tight": "^5.2.6",
+    "@fontsource/instrument-serif": "^5.2.6",
+    "@proplus/api": "workspace:*",
+    "@proplus/domain": "workspace:*",
+    "next": "16.4.3",
+    "pretendard": "^1.3.9",
+    "qrcode": "^1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3"
+  }
+}

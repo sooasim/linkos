@@ -26,7 +26,18 @@
     "qa": "pnpm --filter @linkos/domain exec vitest run test/qa && pnpm --filter @linkos/api exec vitest run test/qa-api.integration.test.ts",
     "matrix": "playwright test -c playwright.matrix.config.ts",
     "vault:rotate": "tsx scripts/rotate-credentials.ts",
-    "security:scan": "node scripts/security-scan.mjs"
+    "security:scan": "node scripts/security-scan.mjs",
+    "proplus:dev": "pnpm --filter @proplus/web dev",
+    "proplus:build": "pnpm --filter @proplus/web build",
+    "proplus:start": "pnpm --filter @proplus/web start",
+    "proplus:typecheck": "pnpm --filter \"@proplus/*\" typecheck",
+    "proplus:test": "pnpm --filter \"@proplus/*\" test",
+    "proplus:db:up": "docker compose -f proplus/infra/docker-compose.yml up -d db",
+    "proplus:migrate": "tsx proplus/services/api/src/migrate.ts",
+    "proplus:db:seed": "tsx proplus/db/seeds/seed.ts",
+    "proplus:e2e": "playwright test -c proplus/playwright.config.ts",
+    "proplus:worker": "tsx proplus/services/api/src/worker.ts",
+    "proplus:traceability": "node proplus/scripts/traceability.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

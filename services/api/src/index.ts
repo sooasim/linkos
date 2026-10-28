@@ -48,3 +48,4 @@ export * as shareKit from "./modules/shareKit";
 export * as cardViews from "./modules/cardViews";
 export * as assistantJobs from "./modules/assistantJobs";
 export * as auditChain from "./modules/auditChain";
+export * as proplusSso from "./modules/proplusSso";

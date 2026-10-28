@@ -1,0 +1,52 @@
+[Unit]
+# PROPLUS 화면 + /api/v1/* (Next.js standalone). 역프록시: nginx vhost proplus -> 127.0.0.1:4400
+# LINKOS(linkos-web.service, 4300)와 같은 서버에서 나란히 돈다. 프로세스·DB·설정·스토리지를
+# 공유하지 않는다 (전략 §1 "배포 격리" / §10).
+Description=PROPLUS web/API (Next.js standalone) for proplus.linkos.com
+Documentation=https://github.com/sooasim/linkos
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=proplus
+Group=proplus
+# standalone 출력의 루트. server.js 는 자기 위치 기준으로 .next/static·public 을 찾으므로
+# 워크스페이스 루트 기준 상대경로(proplus/apps/web/server.js)를 그대로 실행한다.
+# LINKOS 는 apps/web 이 루트 바로 아래라 경로가 한 단계 짧다 — 패키지 위치 차이일 뿐 같은 배치다.
+WorkingDirectory=/var/www/proplus/proplus/apps/web/.next/standalone
+EnvironmentFile=/etc/proplus/proplus.env
+# 배포 스크립트가 매 배포마다 다시 쓴다(APP_REVISION). 없어도 기동한다.
+EnvironmentFile=-/etc/proplus/revision.env
+# 포트와 바인딩 주소는 **유닛이 못 박는다**. env 파일 오타 하나로 4400 이 외부에 열리면
+# nginx 의 TLS·레이트리밋·/api/v1/metrics 차단을 전부 우회할 수 있다 (전략 §10 "루프백 전용").
+# Environment= 는 위의 EnvironmentFile= 보다 나중에 적용되므로 env 파일 값을 덮어쓴다.
+Environment=PORT=4400
+Environment=HOSTNAME=127.0.0.1
+# 시스템 node 는 v20 이고 engines 는 >=22 라 전용 런타임을 쓴다(LINKOS 와 같은 바이너리).
+ExecStart=/opt/node24/bin/node proplus/apps/web/server.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proplus-web
+
+# 하드닝 — 쓰기는 증거/업로드 저장소와 Next 런타임 캐시에만 허용한다.
+# 증거 원본을 다루는 프로세스이므로(보안정책 §3) LINKOS 와 같은 수준을 그대로 유지한다.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+# OBJECT_STORAGE_LOCAL_DIR(/var/lib/proplus/storage) + Next 의 런타임 fetch 캐시.
+# 앞의 "-" 는 경로가 아직 없어도 유닛이 기동되게 한다(최초 배포 순서 의존을 없앤다).
+ReadWritePaths=/var/lib/proplus
+ReadWritePaths=-/var/www/proplus/proplus/apps/web/.next/standalone/proplus/apps/web/.next/cache
+
+[Install]
+WantedBy=multi-user.target

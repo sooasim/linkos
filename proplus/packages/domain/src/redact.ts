@@ -65,6 +65,18 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 /**
+ * 민감 키라도 **불리언·숫자·bigint 는 가리지 않는다.**
+ *
+ * 왜: PII 는 이 저장소 스키마상 언제나 text 다(이 파일 상단 주석 — 숫자에 전화번호를 담는 경로가 없다).
+ * 그런데 키 기반 치환은 값 타입을 안 보고 민감 키면 통째로 "[redacted]" 로 바꿔서, `includedContacts`
+ * (연락처 포함 여부 플래그)·`contactCount` 같은 **불리언/숫자 메타데이터**까지 가려 버린다. 그러면
+ * 감사 로그가 "연락처를 내보냈는가"를 더 이상 말하지 못한다(P-109). 문자열·객체·배열은 그대로 가린다.
+ */
+function redactableUnderSensitiveKey(v: unknown): boolean {
+  return v != null && typeof v !== "boolean" && typeof v !== "number" && typeof v !== "bigint";
+}
+
+/**
  * 문자열 안에 섞인 연락처를 치환한다.
  *
  * 순서가 규칙이다:
@@ -146,7 +158,7 @@ function redactInner(value: unknown, seen: WeakSet<object>, depth: number): unkn
     const out: Record<string, unknown> = {};
     for (const [k, v] of value.entries()) {
       const key = String(k);
-      out[key] = isSensitiveKey(key) && v != null ? "[redacted]" : redactInner(v, seen, depth + 1);
+      out[key] = isSensitiveKey(key) && redactableUnderSensitiveKey(v) ? "[redacted]" : redactInner(v, seen, depth + 1);
     }
     return out;
   }
@@ -157,7 +169,7 @@ function redactInner(value: unknown, seen: WeakSet<object>, depth: number): unkn
 
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
-    out[k] = isSensitiveKey(k) && v != null ? "[redacted]" : redactInner(v, seen, depth + 1);
+    out[k] = isSensitiveKey(k) && redactableUnderSensitiveKey(v) ? "[redacted]" : redactInner(v, seen, depth + 1);
   }
   return out;
 }

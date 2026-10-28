@@ -9,7 +9,11 @@
  * 두 엔진 모두 사진을 기기 밖으로 보내지 않는다. 엔진마다 좋아하는 입력이 달라서
  * 전처리도 여기서 갈라 준다 — tesseract 는 명암을 늘린 회색 이미지를, PP-OCR 은
  * 자연 사진 그대로를 전제로 학습돼 있다.
+ *
+ * tesseract 가 뱉은 줄은 파서에 넘기기 전에 tidyOcrText 로 치운다(#14 통일) — 모든 스캔
+ * 경로가 이 곳을 지나므로 찌꺼기(글자별 공백·인쇄선 막대·메일 쉼표)가 어느 화면에서나 같게 정리된다.
  */
+import { tidyOcrText } from "@linkos/domain";
 export interface OcrLineOut {
   text: string;
   confidence: number;
@@ -107,10 +111,11 @@ async function ocrTesseract(canvas: HTMLCanvasElement, langs: string, onProgress
     const { data } = await worker.recognize(enhanceForOcr(canvas), { rotateAuto: true }, { blocks: true, text: true });
     const lines: OcrLineOut[] = [];
     for (const b of data.blocks ?? []) for (const p of b.paragraphs) for (const l of p.lines) {
-      const text = l.text.replace(/\s+/g, " ").trim();
+      const text = tidyOcrText(l.text);
       if (text) lines.push({ text, confidence: l.confidence, bbox: l.bbox });
     }
-    if (!lines.length && data.text) for (const t of data.text.split("\n")) if (t.trim()) lines.push({ text: t.trim(), confidence: data.confidence });
+    if (!lines.length && data.text) for (const t of data.text.split("\n")) { const text = tidyOcrText(t); if (text) lines.push({ text, confidence: data.confidence }); }
+    onProgress?.(1, "완료");
     return lines;
   } finally {
     progressCb = null;

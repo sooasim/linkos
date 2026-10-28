@@ -1,0 +1,32 @@
+# PROPLUS 로컬 개발용 Postgres  (P-180 / 전략 §10)
+#
+#   띄우기:   docker compose -f proplus/infra/docker-compose.yml up -d db
+#   마이그레이션: pnpm proplus:db:migrate   (또는 tsx proplus/services/api/src/migrate.ts)
+#
+# 웹/워커 컨테이너는 **일부러 넣지 않았다.** 로컬에서는 `pnpm --filter @proplus/web dev` 로
+# 돌리고 컨테이너는 DB 만 제공한다 — 증거 파일 스토리지가 로컬 디스크 드라이버라
+# (OBJECT_STORAGE_LOCAL_DIR) 컨테이너에 넣으면 볼륨 설정이 하나 더 늘 뿐이다.
+#
+# 포트 5433: LINKOS 의 infra/docker-compose.yml 이 5432 를 쓴다. 두 제품을 한 노트북에서
+# 동시에 띄우는 일이 흔하므로 겹치지 않게 비켜 둔다 (전략 §1 — DB 를 공유하지 않는다).
+#
+# 이미지 postgres:14: 운영 서버가 PostgreSQL 14 클러스터다(docs/DEPLOY_CKP.md).
+# 로컬만 16 으로 올리면 "로컬에선 됐는데 서버에서 문법 오류" 가 난다.
+# 필요한 확장(pgcrypto·btree_gist·pg_trgm)은 모두 contrib 에 들어 있어 공식 이미지로 충분하다
+# — LINKOS 와 달리 pgvector 를 쓰지 않는다(전략 §6: 단일 신뢰점수·임베딩 랭킹을 두지 않는다).
+services:
+  db:
+    image: postgres:14
+    container_name: proplus-db
+    environment:
+      POSTGRES_USER: proplus
+      POSTGRES_PASSWORD: proplus
+      POSTGRES_DB: proplus
+    ports: ["5433:5432"]
+    volumes: [proplus_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proplus -d proplus"]
+      interval: 5s
+      retries: 20
+volumes:
+  proplus_pgdata: {}

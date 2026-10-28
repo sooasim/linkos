@@ -30,7 +30,18 @@
     "ocr:models": "node scripts/ocr/fetch-models.mjs",
     "ocr:verify": "pnpm --filter @linkos/web exec node scripts/verify-ocr.mjs",
     "ocr:bench": "pnpm --filter @linkos/web exec tsx scripts/ocr-bench.mjs",
-    "ocr:bench:vision": "pnpm --filter @linkos/web exec tsx scripts/ocr-bench-vision.mjs"
+    "ocr:bench:vision": "pnpm --filter @linkos/web exec tsx scripts/ocr-bench-vision.mjs",
+    "proplus:dev": "pnpm --filter @proplus/web dev",
+    "proplus:build": "pnpm --filter @proplus/web build",
+    "proplus:start": "pnpm --filter @proplus/web start",
+    "proplus:typecheck": "pnpm --filter \"@proplus/*\" typecheck",
+    "proplus:test": "pnpm --filter \"@proplus/*\" test",
+    "proplus:db:up": "docker compose -f proplus/infra/docker-compose.yml up -d db",
+    "proplus:migrate": "tsx proplus/services/api/src/migrate.ts",
+    "proplus:db:seed": "tsx proplus/db/seeds/seed.ts",
+    "proplus:e2e": "playwright test -c proplus/playwright.config.ts",
+    "proplus:worker": "tsx proplus/services/api/src/worker.ts",
+    "proplus:traceability": "node proplus/scripts/traceability.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

@@ -10,7 +10,9 @@ import { FAQ, GUIDE } from "../../apps/web/src/app/_landing/guide";
 const ROOT = join(__dirname, "..", "..");
 const APP_DIR = join(ROOT, "apps/web/src/app");
 // Operator console (platform admins only, 404 for everyone else) — listed in the catalog, not in the user guide.
-const NOT_USER_FACING = new Set(["/app/admin", "/legal/privacy", "/legal/terms"]);
+// /sso/proplus is a 1st-party SSO bridge: a logged-in LINKOS user clicks "continue to PROPLUS" and is
+// redirected out — a transient handoff page, not a guided product screen (like the operator console).
+const NOT_USER_FACING = new Set(["/app/admin", "/legal/privacy", "/legal/terms", "/sso/proplus"]);
 
 function pageRoutes(dir: string): string[] {
   const out: string[] = [];
@@ -43,7 +45,9 @@ test("catalog lists every Feature ID in the registry and every X-extra", () => {
 });
 
 test("guide has a topic for every user-facing screen", () => {
-  const routes = pageRoutes(APP_DIR).filter((r) => r !== "/" && !NOT_USER_FACING.has(r));
+  // /console/** is the UI/UX v2 role-dashboard spec preview (static demo, synthetic data) in its own
+  // namespace — not an end-user product screen, so it is excluded from the how-to guide like the operator console.
+  const routes = pageRoutes(APP_DIR).filter((r) => r !== "/" && !NOT_USER_FACING.has(r) && !r.startsWith("/console"));
   expect(routes.length).toBeGreaterThan(30);
   expect(routes.filter((r) => !guideRoutes.has(r))).toEqual([]);
   expect(new Set(topics.map((t) => t.id)).size).toBe(topics.length);

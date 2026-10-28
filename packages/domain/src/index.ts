@@ -26,6 +26,7 @@ export * from "./referral";
 export * from "./imaging";
 export * from "./ppocr";
 export * from "./badge";
+export * from "./cardShare";
 export * from "./transcript";
 export * from "./offlineQueue";
 export * from "./template";

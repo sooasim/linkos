@@ -86,8 +86,15 @@ export function normalizeCompanyName(raw: string): string {
 
 export function normalizePersonName(raw: string): string {
   const s = raw.trim().replace(/\s+/g, " ");
-  // "홍 길 동" → "홍길동" (Hangul letters separated by single spaces)
-  if (/^[가-힣](\s[가-힣]){1,4}$/.test(s)) return s.replace(/\s/g, "");
+  /*
+   * OCR 은 큰 글씨 이름을 글자 단위로 끊어 놓는다. 음절마다 끊긴 "홍 길 동" 뿐
+   * 아니라 "송 예린"·"남궁 민수" 처럼 가운데만 끊긴 꼴도 나온다. 한국 사람
+   * 이름에는 공백이 들어가지 않으므로, 전부 한글이고 네 글자 이하면 붙인다.
+   * (라틴 이름 "Jane Doe" 는 공백이 뜻을 가지므로 그대로 둔다)
+   */
+  if (/^[가-힣]{1,3}(?:\s[가-힣]{1,3})+$/.test(s) && s.replace(/\s/g, "").length <= 4) {
+    return s.replace(/\s/g, "");
+  }
   return s;
 }
 

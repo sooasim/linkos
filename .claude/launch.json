@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@linkos/web", "exec", "next", "dev", "--webpack", "--port", "3000"],
+      "port": 3000
+    }
+  ]
+}

@@ -43,6 +43,7 @@ const RULES = [
 /** Reviewed exceptions (file + rule) for files where an inline allow comment is not possible/desirable. */
 const REVIEWED = [
   { file: "apps/web/src/components/Qr.tsx", rule: "xss.dangerouslySetInnerHTML", reason: "SVG generated locally by the qrcode library from the exchange URL; no user-supplied HTML" },
+  { file: "apps/web/src/app/console/icons.tsx", rule: "xss.dangerouslySetInnerHTML", reason: "ICONS is a hard-coded constant SVG-path map ported from the UI/UX v2 reference; `name` only indexes it, never user-supplied HTML" },
 ];
 
 function* walk(dir) {

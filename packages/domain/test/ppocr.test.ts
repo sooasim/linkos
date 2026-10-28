@@ -22,6 +22,8 @@ import {
   recCropQuad,
   recCropWidth,
   recPadWidth,
+  planRecBatches,
+  packRecBatch,
   sortBoxesReadingOrder,
   unclipRect,
 } from "../src";
@@ -258,6 +260,36 @@ describe("sortBoxesReadingOrder", () => {
       return { text: b.text, confidence: 0.9, bbox: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } };
     });
     expect(mergeNumberRuns(lines).map((l) => l.text)).toEqual(["홍길동", "010 5598 4392"]);
+  });
+});
+
+describe("planRecBatches / packRecBatch — 인식 배치", () => {
+  it("패딩 폭이 같은 줄끼리만 묶고, 모든 인덱스를 꼭 한 번씩 덮는다", () => {
+    const widths = [100, 400, 350, 90, 1000, 200, 150];
+    const batches = planRecBatches(widths, 3);
+    // 모든 인덱스를 정확히 한 번씩
+    expect(batches.flatMap((b) => b.indices).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    for (const b of batches) expect(b.indices.length).toBeLessThanOrEqual(3);
+    // 핵심 불변식: 한 묶음의 모든 줄은 그 묶음 폭과 '똑같은' recPadWidth 를 가진다
+    // (= 직렬 경로와 패딩이 동일 → 인식 결과가 안 바뀐다)
+    for (const b of batches) for (const i of b.indices) expect(recPadWidth(widths[i]!)).toBe(b.width);
+    // 320 미만은 모두 320 버킷(인덱스 0·3·5·6 = 폭 100·90·200·150) → maxBatch 3 이라 [0,3,5],[6]
+    const w320 = batches.filter((b) => b.width === 320).flatMap((b) => b.indices).sort((a, b) => a - b);
+    expect(w320).toEqual([0, 3, 5, 6]);
+    // 320 보다 넓은 줄은 폭이 달라 각자 혼자
+    expect(batches.find((b) => b.width === recPadWidth(1000))!.indices).toEqual([4]);
+  });
+
+  it("한 줄이면 묶음도 하나, 빈 입력은 빈 결과", () => {
+    expect(planRecBatches([500]).map((b) => b.indices)).toEqual([[0]]);
+    expect(planRecBatches([])).toEqual([]);
+  });
+
+  it("packRecBatch 는 평면을 B-major 로 이어 붙인다 (한 개면 그대로)", () => {
+    const a = new Float32Array([1, 2, 3]);
+    const b = new Float32Array([4, 5, 6]);
+    expect(packRecBatch([a])).toBe(a); // 복사 없이 그대로
+    expect([...packRecBatch([a, b])]).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
 

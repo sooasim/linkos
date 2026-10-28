@@ -24,7 +24,9 @@ import {
   mergeSpacedChars,
   normalizeDetInput,
   normalizeRecInput,
+  packRecBatch,
   parseBusinessCard,
+  planRecBatches,
   recCropQuad,
   recCropWidth,
   recPadWidth,
@@ -86,22 +88,38 @@ async function ocrLines(src) {
   const pw = Number(prob.dims[prob.dims.length - 1]);
   const ph = Number(prob.dims[prob.dims.length - 2]);
   const boxes = sortBoxesReadingOrder(dbBoxes(prob.data, pw, ph, { ratioX: src.width / pw, ratioY: src.height / ph }));
+  // ocrPaddle.ts 와 같은 배치 인식: 폭이 비슷한 줄끼리 묶어 rec.run 을 한 번에 돌린다.
+  const cropWidths = boxes.map((b) => recCropWidth(recCropQuad(b.quad)));
+  const decodedByBox = new Array(boxes.length);
+  for (const g of planRecBatches(cropWidths)) {
+    const planes = g.indices.map((bi) => {
+      const quad = recCropQuad(boxes[bi].quad);
+      const crop = warpPerspective(src, quad, recCropWidth(quad), REC_HEIGHT);
+      return normalizeRecInput({ width: recCropWidth(quad), height: REC_HEIGHT, data: crop }, g.width);
+    });
+    try {
+      const r = await rec.run({ [rec.inputNames[0]]: new ort.Tensor("float32", packRecBatch(planes), [g.indices.length, 3, REC_HEIGHT, g.width]) });
+      const L = r[rec.outputNames[0]];
+      const steps = Number(L.dims[1]);
+      const classes = Number(L.dims[2]);
+      g.indices.forEach((bi, k) => (decodedByBox[bi] = decodeCtc(L.data.subarray(k * steps * classes, (k + 1) * steps * classes), steps, classes, charset)));
+    } catch {
+      // 모델이 배치 축을 안 받으면 한 줄씩 (정확성 보장, 속도만 포기)
+      for (let k = 0; k < g.indices.length; k++) {
+        const r = await rec.run({ [rec.inputNames[0]]: new ort.Tensor("float32", planes[k], [1, 3, REC_HEIGHT, g.width]) });
+        const L = r[rec.outputNames[0]];
+        decodedByBox[g.indices[k]] = decodeCtc(L.data, Number(L.dims[1]), Number(L.dims[2]), charset);
+      }
+    }
+  }
   const lines = [];
   const dropped = [];
-  for (const box of boxes) {
-    const quad = recCropQuad(box.quad);
-    const cropW = recCropWidth(quad);
-    const padW = recPadWidth(cropW);
-    const crop = warpPerspective(src, quad, cropW, REC_HEIGHT);
-    const r = await rec.run({
-      [rec.inputNames[0]]: new ort.Tensor("float32", normalizeRecInput({ width: cropW, height: REC_HEIGHT, data: crop }, padW), [1, 3, REC_HEIGHT, padW]),
-    });
-    const L = r[rec.outputNames[0]];
-    const { text, confidence } = decodeCtc(L.data, Number(L.dims[1]), Number(L.dims[2]), charset);
+  boxes.forEach((box, bi) => {
+    const { text, confidence } = decodedByBox[bi];
     const t = text.trim();
     if (t && confidence >= REC_DROP_SCORE) lines.push({ text: t, confidence: confidence * box.score, bbox: quadBBox(box.quad) });
     else if (t) dropped.push({ text: t, confidence: +confidence.toFixed(2) });
-  }
+  });
   return { lines: mergeNumberRuns(mergeSpacedChars(lines)), dropped, boxes: boxes.length };
 }
 

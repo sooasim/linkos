@@ -28,9 +28,10 @@ import {
   mergeNumberRuns,
   mergeSpacedChars,
   normalizeRecInput,
+  packRecBatch,
+  planRecBatches,
   recCropQuad,
   recCropWidth,
-  recPadWidth,
   sortBoxesReadingOrder,
   warpPerspective,
 } from "@linkos/domain";
@@ -197,24 +198,44 @@ export async function ocrCanvasPaddle(canvas: HTMLCanvasElement, langs = "kor+en
   onProgress?.(0.5, "글자 인식 중");
   const full = ctx2d(canvas).getImageData(0, 0, canvas.width, canvas.height);
   const src = { width: canvas.width, height: canvas.height, data: full.data, channels: 4 };
-  const lines: OcrLine[] = [];
-  for (let i = 0; i < boxes.length; i++) {
-    const box = boxes[i]!;
-    const quad = recCropQuad(box.quad);
-    const cropW = recCropWidth(quad);
-    const padW = recPadWidth(cropW);
-    const crop = warpPerspective(src, quad, cropW, REC_HEIGHT);
-    const recIn = new ort.Tensor("float32", normalizeRecInput({ width: cropW, height: REC_HEIGHT, data: crop }, padW), [1, 3, REC_HEIGHT, padW]);
-    const recOut = await rec.run({ [rec.inputNames[0]!]: recIn });
-    const logits = recOut[rec.outputNames[0]!]!;
-    const steps = Number(logits.dims[1]);
-    const classes = Number(logits.dims[2]);
-    const { text, confidence } = decodeCtc(logits.data as Float32Array, steps, classes, charset);
-    const trimmed = text.trim();
-    // 검출 확신과 인식 확신을 함께 본다 — 파서의 '확인 필요' 기준이 이 값이다
-    if (trimmed && confidence >= REC_DROP_SCORE) lines.push({ text: trimmed, confidence: confidence * box.score, bbox: quadBBox(box.quad) });
-    onProgress?.(0.5 + (0.45 * (i + 1)) / boxes.length, "글자 인식 중");
+  /*
+   * 폭(recPadWidth)이 같은 줄끼리 묶어 rec.run 을 한 번에 돌린다 — 줄마다 호출하던 고정
+   * 오버헤드를 분산한다(WebGPU 에서 특히 이득). 같은 폭끼리만 묶으므로 패딩이 직렬과 똑같아
+   * 인식 결과가 바뀌지 않는다. 모델이 배치 축을 안 받으면 한 줄씩으로 떨어진다(정확성 보장).
+   */
+  const decodedByBox: ({ text: string; confidence: number } | undefined)[] = new Array(boxes.length);
+  let done = 0;
+  for (const g of planRecBatches(boxes.map((b) => recCropWidth(recCropQuad(b.quad))))) {
+    const planes = g.indices.map((bi) => {
+      const quad = recCropQuad(boxes[bi]!.quad);
+      const crop = warpPerspective(src, quad, recCropWidth(quad), REC_HEIGHT);
+      return normalizeRecInput({ width: recCropWidth(quad), height: REC_HEIGHT, data: crop }, g.width);
+    });
+    try {
+      const recOut = await rec.run({ [rec.inputNames[0]!]: new ort.Tensor("float32", packRecBatch(planes), [g.indices.length, 3, REC_HEIGHT, g.width]) });
+      const logits = recOut[rec.outputNames[0]!]!;
+      const steps = Number(logits.dims[1]);
+      const classes = Number(logits.dims[2]);
+      const data = logits.data as Float32Array;
+      g.indices.forEach((bi, k) => (decodedByBox[bi] = decodeCtc(data.subarray(k * steps * classes, (k + 1) * steps * classes), steps, classes, charset)));
+    } catch {
+      for (let k = 0; k < g.indices.length; k++) {
+        const recOut = await rec.run({ [rec.inputNames[0]!]: new ort.Tensor("float32", planes[k]!, [1, 3, REC_HEIGHT, g.width]) });
+        const logits = recOut[rec.outputNames[0]!]!;
+        decodedByBox[g.indices[k]!] = decodeCtc(logits.data as Float32Array, Number(logits.dims[1]), Number(logits.dims[2]), charset);
+      }
+    }
+    done += g.indices.length;
+    onProgress?.(0.5 + (0.45 * done) / boxes.length, "글자 인식 중");
   }
+  const lines: OcrLine[] = [];
+  boxes.forEach((box, bi) => {
+    const d = decodedByBox[bi];
+    if (!d) return;
+    const trimmed = d.text.trim();
+    // 검출 확신과 인식 확신을 함께 본다 — 파서의 '확인 필요' 기준이 이 값이다
+    if (trimmed && d.confidence >= REC_DROP_SCORE) lines.push({ text: trimmed, confidence: d.confidence * box.score, bbox: quadBBox(box.quad) });
+  });
   // 토막 잇기는 엔진과 무관한 손질이라 lib/ocr.ts 에서 한다(어떤 엔진을 써도 같게)
   return lines;
 }

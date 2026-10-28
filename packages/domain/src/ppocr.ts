@@ -340,6 +340,54 @@ export function recPadWidth(cropWidth: number): number {
   return Math.min(REC_MAX_WIDTH, Math.max(REC_BASE_WIDTH, cropWidth));
 }
 
+export interface RecBatch {
+  /** 원래 상자 차례의 인덱스 (결과를 되돌릴 때 쓴다) */
+  indices: number[];
+  /** 이 묶음을 패딩할 공통 폭 (가장 넓은 crop 의 recPadWidth) */
+  width: number;
+}
+
+/**
+ * 인식 배치 계획. **패딩 폭(recPadWidth)이 같은 줄끼리만** 묶어, 한 번의 `rec.run` 으로 여러 줄을
+ * 함께 민다. 줄마다 따로 호출하던 고정 오버헤드(텐서 업로드·디스패치)를 분산한다.
+ *
+ * 같은 폭으로만 묶는 것이 핵심이다. 서로 다른 폭을 한 묶음에 넣고 가장 넓은 폭으로 패딩하면,
+ * 짧은 줄이 직렬 경로보다 더 넓게 패딩돼 **인식 결과가 바뀐다**(측정에서 '403호'→'03호' 처럼
+ * 숫자가 바뀌고 이름이 사라졌다). recPadWidth 가 320 미만을 모두 320 으로 맞추므로, 명함의 짧은
+ * 줄(이름·직책·전화·이메일)은 대부분 320 버킷에 모여 **패딩이 직렬과 똑같이** 묶인다 →
+ * 출력은 한 글자도 안 바뀌고 호출 수만 준다. 320 보다 넓은 줄은 폭이 같은 것끼리만(대개 혼자) 돈다.
+ *
+ * 순수 함수 — 좌표만 다루고 모델을 모른다. `maxBatch` 는 PaddleOCR 기본값(6)을 따른다.
+ * 각 묶음은 원래 인덱스를 담아 배치 출력을 제자리에 되돌린다(읽는 순서 보존).
+ */
+export function planRecBatches(cropWidths: number[], maxBatch = 6): RecBatch[] {
+  const byWidth = new Map<number, number[]>();
+  cropWidths.forEach((w, i) => {
+    const pw = recPadWidth(w);
+    const bucket = byWidth.get(pw);
+    if (bucket) bucket.push(i);
+    else byWidth.set(pw, [i]);
+  });
+  const out: RecBatch[] = [];
+  for (const width of [...byWidth.keys()].sort((a, b) => a - b)) {
+    const idxs = byWidth.get(width)!;
+    for (let s = 0; s < idxs.length; s += maxBatch) out.push({ indices: idxs.slice(s, s + maxBatch), width });
+  }
+  return out;
+}
+
+/**
+ * 같은 폭으로 정규화한 B 개의 CHW 평면([3,H,W])을 배치 텐서 [B,3,H,W] 한 버퍼로 잇는다.
+ * 레이아웃이 B-major 라 순서대로 이어 붙이면 된다 — 모든 평면의 길이(3·H·W)가 같아야 한다.
+ */
+export function packRecBatch(planes: Float32Array[]): Float32Array {
+  if (planes.length === 1) return planes[0]!;
+  const per = planes[0]!.length;
+  const out = new Float32Array(per * planes.length);
+  for (let b = 0; b < planes.length; b++) out.set(planes[b]!, b * per);
+  return out;
+}
+
 /**
  * 자를 때 쓸 꼭짓점 차례. 세로로 긴 상자는 90° 돌려 가로 줄로 만든다
  * (PaddleOCR get_rotate_crop_image 의 np.rot90 과 같은 방향).

@@ -6,7 +6,7 @@ import { REVIEW_THRESHOLD, needsReview, parseBusinessCard } from "@linkos/domain
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { CardScanner, type OcrLineOut, type ScanExtra } from "@/components/CardScanner";
+import { CardScanner, type OcrEngineId, type OcrLineOut, type ScanExtra } from "@/components/CardScanner";
 import { Icon } from "@/components/Icon";
 import { CARD_KEYS, type CardKey, type ReviewedCard, ReviewFields, initialFromParsed } from "@/components/ReviewFields";
 import { ClientError, api, isQueuedOffline, uid, upload } from "@/lib/client";
@@ -31,6 +31,7 @@ export function ScanFlow() {
   const [frontLines, setFrontLines] = useState<OcrLineOut[] | null>(null);
   const [lines, setLines] = useState<{ front: OcrLineOut[]; back?: OcrLineOut[] } | null>(null);
   const [images, setImages] = useState<{ front?: Blob; back?: Blob }>({});
+  const [engine, setEngine] = useState<OcrEngineId>("tesseract.js");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -41,14 +42,16 @@ export function ScanFlow() {
     setFrontLines(null);
     setLines(null);
     setImages({});
+    setEngine("tesseract.js");
     setReviewed(null);
   };
 
-  const process = async (front: OcrLineOut[], backLines?: OcrLineOut[]) => {
+  // eng 는 인자로 받는다 — setEngine 직후에는 state 가 아직 바뀌지 않았다
+  const process = async (front: OcrLineOut[], backLines?: OcrLineOut[], eng: OcrEngineId = engine) => {
     setLines({ front, back: backLines });
     let j: any;
     try {
-      j = await api("/capture/cards", { body: { side: backLines ? "both" : "front", kind: "card", engine: "tesseract.js", lines: front, backLines }, offline: false });
+      j = await api("/capture/cards", { body: { side: backLines ? "both" : "front", kind: "card", engine: eng, lines: front, backLines }, offline: false });
     } catch (e) {
       // offline (or server unreachable): structure on device with the same deterministic parser
       if (!(e instanceof ClientError) || e.status !== 0) throw e;
@@ -62,9 +65,12 @@ export function ScanFlow() {
   };
 
   const onFront = async (l: OcrLineOut[], _p: string, extra?: ScanExtra) => {
-    if (extra) setImages((cur) => ({ ...cur, front: extra.jpeg }));
+    if (extra) {
+      setImages((cur) => ({ ...cur, front: extra.jpeg }));
+      setEngine(extra.engine);
+    }
     if (back) setFrontLines(l);
-    else await process(l);
+    else await process(l, undefined, extra?.engine);
   };
 
   const keepPhotoOffline = async (file: File) => {
@@ -100,7 +106,7 @@ export function ScanFlow() {
         // offline-created capture: OCR lines + reviewed contact committed atomically (replayable)
         const r = await api<{ contactId: string; captureId: string }>("/capture/commit", {
           idempotencyKey: uid(),
-          body: { capture: { side: lines.back ? "both" : "front", kind: "card", engine: "tesseract.js", lines: lines.front, backLines: lines.back }, contact },
+          body: { capture: { side: lines.back ? "both" : "front", kind: "card", engine, lines: lines.front, backLines: lines.back }, contact },
         });
         contactId = r.contactId;
         if (keepOriginal && images.front) await upload(`/capture/cards/${r.captureId}/images/front`, images.front, { method: "PUT" }).catch(() => undefined);
@@ -152,7 +158,7 @@ export function ScanFlow() {
             <CardScanner
               onLines={(b, _p, extra) => {
                 if (extra) setImages((cur) => ({ ...cur, back: extra.jpeg }));
-                void process(frontLines, b);
+                void process(frontLines, b, extra?.engine);
               }}
             />
             <button onClick={() => process(frontLines)} className="w-full text-[14px] text-[var(--fg-mute)] underline">뒷면 없이 진행</button>

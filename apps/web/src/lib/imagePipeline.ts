@@ -24,9 +24,12 @@ function grayOf(canvas: HTMLCanvasElement) {
   return { img, gray: rgbaToGray(img.data, canvas.width, canvas.height) };
 }
 
-/** Warp `quad` of `src` into a new upright canvas (long side ≤ maxSide). */
-export function warpToCanvas(src: HTMLCanvasElement, quad: Quad, maxSide = 1600): HTMLCanvasElement {
-  const img = ctx2d(src).getImageData(0, 0, src.width, src.height);
+/**
+ * Warp `quad` of `src` into a new upright canvas (long side ≤ maxSide).
+ * `srcImg` 를 넘기면 그걸 쓴다 — getImageData(전체 캔버스 GPU→CPU 읽기, 수 MB)를 다시 하지 않는다.
+ */
+export function warpToCanvas(src: HTMLCanvasElement, quad: Quad, maxSide = 1600, srcImg?: ImageData): HTMLCanvasElement {
+  const img = srcImg ?? ctx2d(src).getImageData(0, 0, src.width, src.height);
   const { width, height } = rectifiedSize(quad, maxSide);
   const out = warpPerspective({ width: src.width, height: src.height, data: img.data, channels: 4 }, quad, width, height);
   const c = document.createElement("canvas");
@@ -38,21 +41,23 @@ export function warpToCanvas(src: HTMLCanvasElement, quad: Quad, maxSide = 1600)
 
 /** F-010: detect the card outline and rectify it; returns the original canvas when no outline is found. */
 export function autoCorrect(canvas: HTMLCanvasElement): { canvas: HTMLCanvasElement; detection: QuadDetection | null } {
-  const { gray } = grayOf(canvas);
+  const { img, gray } = grayOf(canvas);
   const detection = detectCardQuad(gray);
   if (!detection) return { canvas, detection: null };
-  return { canvas: warpToCanvas(canvas, detection.quad), detection };
+  // grayOf 가 이미 읽어 둔 픽셀을 warp 에 넘겨 전체 캔버스 재읽기를 없앤다
+  return { canvas: warpToCanvas(canvas, detection.quad, 1600, img), detection };
 }
 
 /** F-013: one rectified canvas per card found in the photo (reading order). */
 export function splitCards(canvas: HTMLCanvasElement): { canvases: HTMLCanvasElement[]; regions: CardRegion[] } {
-  const { gray } = grayOf(canvas);
+  const { img, gray } = grayOf(canvas);
   const regions = findCardRegions(gray);
   if (regions.length <= 1) {
     const one = autoCorrect(canvas);
     return { canvases: [one.canvas], regions };
   }
-  return { canvases: regions.map((r) => warpToCanvas(canvas, r.quad)), regions };
+  // 한 번 읽은 원본 픽셀을 명함마다 재사용한다 — 예전엔 명함 수만큼 전체 캔버스를 다시 읽었다
+  return { canvases: regions.map((r) => warpToCanvas(canvas, r.quad, 1600, img)), regions };
 }
 
 /** 명암 보정: grayscale + 2–98 percentile contrast stretch (copy). */

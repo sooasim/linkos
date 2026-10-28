@@ -34,7 +34,7 @@ dd/                 원본 기획 번들 (zip, 백서 docx, 압축 해제본)
 1. **공유 1탭** `/app/exchange` → 192-bit 일회성 토큰(서버엔 해시만) + 숫자 4자리 교환 코드 생성(10분·1회성, 틀린 코드 시도 제한)
 2. **Adaptive Handoff** — OS 공유 시트 → (NFC 카드) → 단축코드 → **QR은 시간초과/실패 후 자동 표시되는 최종 폴백**
 3. **Guest Landing** `/x/{token}` 또는 `/c/{code}` — 로그인 없이 3초 카드 열람, “내 명함도 보내기”
-4. **게스트 촬영** — 사진은 기기 안에서 OCR(tesseract.js, 한/영), 서버는 텍스트만 받아 구조화 (원문 없는 값 생성 금지, 필드별 신뢰도)
+4. **게스트 촬영** — 사진에서 **글자만** 읽고(서버 비전 어댑터 → 기기 내 PP-OCRv5 → tesseract), 칸 가르기는 결정적 파서가 한다 (원문 없는 값 생성 금지, 필드별 신뢰도) → [docs/OCR_ENGINE.md](docs/OCR_ENGINE.md)
 5. **검토·동의** — 보낼 항목을 직접 체크 → 양쪽 Contact/Encounter/Relationship 생성, 발신자 화면에 SSE로 실시간 표시
 6. **Claim(교환 후)** — 이메일 OTP 또는 Google로 가입 → 게스트 초안으로 Living Card 자동 생성, 상대 명함이 내 주소록에
 
@@ -49,6 +49,7 @@ pnpm i
 cp .env.example .env              # DATABASE_URL, AUTH_SECRET 설정
 pnpm db:up                        # 또는 로컬 PostgreSQL 16 (+pgvector)
 pnpm db:migrate
+pnpm ocr:models                   # (선택) PP-OCRv5 모델 33MB — 없으면 스캔은 tesseract 로 돈다
 pnpm dev                          # http://localhost:3000
 pnpm worker                       # outbox / Google sync / 삭제 작업 (별도 터미널)
 ```
@@ -62,6 +63,7 @@ pnpm typecheck                    # 전 패키지 strict TS
 pnpm test                         # domain 단위 25 + API 통합 18 (실제 PostgreSQL)
 pnpm build && pnpm e2e            # Playwright 모바일/데스크톱 6 시나리오
 pnpm traceability --check         # 197개 Feature ID 누락 검사 (CI 게이트)
+pnpm ocr:verify                   # OCR 모델 출력 모양 ↔ 사전 길이 일치 (모델 없으면 건너뜀)
 ```
 
 ## GitHub에서 바로 실행 (Codespaces)

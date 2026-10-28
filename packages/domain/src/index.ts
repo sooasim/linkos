@@ -24,6 +24,7 @@ export * from "./strength";
 export * from "./graph";
 export * from "./referral";
 export * from "./imaging";
+export * from "./ppocr";
 export * from "./badge";
 export * from "./cardShare";
 export * from "./transcript";

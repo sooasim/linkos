@@ -53,30 +53,32 @@ export function BatchImport() {
 
   const processOne = async (item: InboxItem) => {
     const off = await import("@/lib/offline");
-    const pipe = await import("@/lib/imagePipeline");
-    const { ocrCanvas } = await import("@/lib/ocr");
+    const { readCardImages } = await import("@/lib/ocr");
     await off.updateInbox(item.id, { status: "processing", error: null });
     const blob = await off.inboxBlob(item.id);
     if (!blob) {
       await off.updateInbox(item.id, { status: "error", error: "사진 데이터를 찾을 수 없어요." });
       return;
     }
-    const base = await pipe.loadCanvas(blob);
-    const canvases = item.split ? pipe.splitCards(base).canvases : [pipe.autoCorrect(base).canvas];
+    // 촬영 화면과 똑같은 길을 쓴다 (테두리 보정 → 엔진 선택 → 빗나가면 원본 재시도)
+    const reads = await readCardImages(blob, { langs: item.langs, split: item.split });
     const cards: InboxCard[] = [];
-    for (const [idx, c] of canvases.entries()) {
-      const lines = await ocrCanvas(pipe.enhanceForOcr(c), item.langs);
+    for (const [idx, r] of reads.entries()) {
+      const { lines, engine } = r;
       if (!lines.length) continue;
       let job: any;
       try {
-        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine: "tesseract.js", lines }, offline: false });
+        // 결정적 Idempotency-Key(받은 사진 + 카드 번호) — 처리 중 새로고침 auto-resume 나 두 탭이
+        // 같은 사진을 다시 보내도 서버가 재생으로 받아 ocr_scans 이중 과금·중복 business_card 를 막는다.
+        job = await api("/capture/cards", { body: { side: "front", kind: item.kind, engine, lines }, idempotencyKey: `batch:${item.id}:${idx}`, offline: false });
       } catch (e) {
         if (!(e instanceof ClientError) || e.status !== 0) throw e;
-        const r = parseBusinessCard(lines);
-        job = { id: null, fields: r.fields.map((f) => ({ ...f, needsReview: needsReview(f) })), duplicates: [], draft: {} };
+        // offline: 같은 결정적 파서로 기기에서 구조화한다
+        const local = parseBusinessCard(lines);
+        job = { id: null, fields: local.fields.map((f) => ({ ...f, needsReview: needsReview(f) })), duplicates: [], draft: {} };
       }
-      if (item.keepOriginal && job.id) await upload(`/capture/cards/${job.id}/images/front`, await pipe.canvasToJpeg(c), { method: "PUT" }).catch(() => undefined);
-      cards.push({ idx, status: "review", thumb: pipe.thumbnail(c), lines, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
+      if (item.keepOriginal && job.id) await upload(`/capture/cards/${job.id}/images/front`, r.jpeg, { method: "PUT" }).catch(() => undefined);
+      cards.push({ idx, status: "review", thumb: r.thumb, lines, engine, captureId: job.id ?? null, fields: job.fields, duplicates: job.duplicates ?? [], draft: job.draft ?? {} });
     }
     // the photo itself is no longer needed on the device once it has been read
     await off.updateInbox(item.id, { status: "done", cards, error: cards.length ? null : "글자를 찾지 못했어요." }, { dropBlob: true });
@@ -159,7 +161,7 @@ export function BatchImport() {
     try {
       const r = f.card.captureId
         ? await api<{ contactId: string }>("/contacts", { idempotencyKey: uid(), body: contact })
-        : await api<{ contactId: string }>("/capture/commit", { idempotencyKey: uid(), body: { capture: { side: "front", kind: f.item.kind, engine: "tesseract.js", lines: f.card.lines }, contact } });
+        : await api<{ contactId: string }>("/capture/commit", { idempotencyKey: uid(), body: { capture: { side: "front", kind: f.item.kind, engine: f.card.engine ?? "tesseract.js", lines: f.card.lines }, contact } });
       await setCard(f, { status: "saved", contactId: r.contactId });
       setOpen(null);
     } catch (e) {

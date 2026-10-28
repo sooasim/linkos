@@ -262,7 +262,8 @@ export function polygonArea(poly: Point[]): number {
   return Math.abs(a) / 2;
 }
 
-function componentHull(c: Component): Point[] {
+/** Convex hull of a component's pixels (per-row extremes are enough for a convex outline). */
+export function componentHull(c: Component): Point[] {
   const pts: Point[] = [];
   for (const [y, [x0, x1]] of c.rows) {
     // pixel corners so that a 1-px wide card edge still has area
@@ -617,12 +618,25 @@ export function findCardRegions(gray: GrayImage, opts: { workSize?: number; minA
     }
     for (const box of projectionSplit(compMask, w, c, { minSize: Math.max(8, Math.round(Math.min(w, h) * 0.05)) })) pushBox(box, compMask);
   }
+  /*
+   * 읽는 순서(위→아래, 같은 줄이면 왼→오). 쌍끼리 "|Δy|>rowTol 이면 Y, 아니면 X" 로 비교하면
+   * 이행성이 깨져(A·B 같은 줄, B·C 같은 줄인데 A·C 는 다른 줄) Array.sort 가 뒤섞는다 —
+   * ppocr.ts 의 sortBoxesReadingOrder 와 같은 결함이었다. (세로 중심)으로 안정 정렬한 뒤
+   * 한 방향으로 훑어 줄로 묶는다. 입력 순서와 무관하게 결정적이다.
+   */
   const rowTol = 0.25 * h / scale;
-  regions.sort((a, b) => {
-    const ay = (a.bbox.minY + a.bbox.maxY) / 2;
-    const by = (b.bbox.minY + b.bbox.maxY) / 2;
-    if (Math.abs(ay - by) > rowTol) return ay - by;
-    return a.bbox.minX - b.bbox.minX;
-  });
-  return regions.slice(0, opts.maxCards ?? 12);
+  const withC = regions.map((r) => ({ r, cy: (r.bbox.minY + r.bbox.maxY) / 2, cx: r.bbox.minX }));
+  withC.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+  const rows: { base: number; items: typeof withC }[] = [];
+  for (const it of withC) {
+    const row = rows[rows.length - 1];
+    if (row && it.cy - row.base <= rowTol) row.items.push(it);
+    else rows.push({ base: it.cy, items: [it] });
+  }
+  const ordered: CardRegion[] = [];
+  for (const row of rows) {
+    row.items.sort((a, b) => a.cx - b.cx);
+    for (const it of row.items) ordered.push(it.r);
+  }
+  return ordered.slice(0, opts.maxCards ?? 12);
 }

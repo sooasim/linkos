@@ -2,13 +2,13 @@
 // Uses Claude via the official SDK when credentials are configured; callers always have a deterministic fallback.
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { llmRateKey, tierForKind } from "@linkos/domain";
+import { cleanVisionOcrLines, llmRateKey, tierForKind } from "@linkos/domain";
 import type { z } from "zod";
-import { q } from "./db";
+import { pool, q } from "./db";
 import { blockLlmModel, chooseModel } from "./llmModels";
 import { log } from "./platform";
 import { recordCost } from "./metering";
-import { tryConsume } from "../modules/billing";
+import { consume, tryConsume } from "../modules/billing";
 
 // 모델을 여기서 고정하지 않는다. 호출 종류(kind)마다 티어가 있고(packages/domain/src/llmRouting.ts),
 // 티어를 만족하는 가장 싼 모델을 런타임에 고른다 — ./llmModels.ts 참고.
@@ -105,6 +105,136 @@ export async function structured<S extends z.ZodType>(
       return null;
     }
   }
+  return null;
+}
+
+// ---------------------------------------------------------------- 사진에서 글자 읽기 (F-015 외부 OCR 어댑터)
+
+/*
+ * 모델에게 **보이는 글자만** 묻는다. "이 사람의 직책은?" 을 물으면 안 보이는 것도 채워
+ * 넣으므로, 글자만 받아 와서 칸 가르기는 결정적 파서(parseBusinessCard)가 한다.
+ * 그래야 저장되는 모든 값이 원문의 부분 문자열로 남는다(CLAUDE.md 규칙 6·12).
+ */
+const OCR_PROMPT =
+  "이 이미지는 명함입니다. 보이는 글자를 그대로 줄 단위로 옮겨 적으세요.\n" +
+  "규칙:\n" +
+  "1. 보이지 않는 정보는 절대 쓰지 마세요. 추측·보완·번역·요약을 하지 마세요.\n" +
+  "2. 줄마다 한 줄씩, 인쇄된 순서대로 적으세요.\n" +
+  "3. 설명·머리말·번호·따옴표를 붙이지 마세요. 글자만 적으세요.\n" +
+  "4. 읽을 수 없는 부분은 그 줄을 건너뛰세요.\n";
+
+export const OCR_PROMPT_VERSION = "card-ocr-1";
+
+// 한 줄씩 끊고 목록 기호·순번을 떼는 손질은 순수 함수(@linkos/domain 의 cleanVisionOcrLines)에
+// 있다 — 전화번호 앞머리("010.")를 순번으로 오인해 지우지 않도록 단위테스트로 고정했다.
+
+/**
+ * 사진 한 장 → 글자 줄. 키가 없거나 실패하면 null 을 돌려주고, 호출자는 기기 내 엔진을 쓴다
+ * (이 경로가 막혀도 명함 인식이 멈추지 않는다).
+ */
+export async function visionLines(opts: {
+  image: Buffer;
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  ownerUserId: string | null;
+  sourceId: string;
+}): Promise<{ lines: string[]; model: string } | null> {
+  if (!llmEnabled()) return null;
+  /*
+   * F-192 쿼터 — 성공했을 때만 실제로 깎는다. 미리 한 번 당겨 쓰되(over quota 면 기기 내로
+   * 폴백), 거절·실패·빈 결과·시간초과면 되돌린다. 안 그러면 외부가 느리거나 막혔을 때
+   * ai_call 만 깎이고 결과는 못 받아, consume 과 recordCost(성공 때만 기록)가 어긋난다.
+   */
+  let consumed = false;
+  if (opts.ownerUserId) {
+    const ok = await tryConsume(opts.ownerUserId, "ai_calls").catch(() => null); // null = 과금 조회 실패 → 막지 않되 깎지도 않음
+    if (ok === false) {
+      log("info", "llm.quota_exhausted", { kind: "card_ocr" });
+      return null;
+    }
+    consumed = ok === true;
+  }
+  const refund = async () => {
+    if (consumed && opts.ownerUserId) await consume(pool(), opts.ownerUserId, "ai_calls", -1).catch(() => undefined);
+  };
+  const tier = tierForKind("card_ocr");
+  let choice = await chooseModel(anthropic(), tier);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await anthropic().messages.create(
+        {
+          model: choice.model,
+          /*
+           * 넉넉히 준다. 1024 로 두면 모델이 thinking 에 예산을 다 써서 글자 출력이 통째로
+           * 비는 사진이 나온다(측정 묶음 13장 중 2장이 그랬다). 옮겨 적기에 추론은 필요 없다.
+           */
+          max_tokens: 4096,
+          thinking: { type: "between_tools" },
+          system: SYSTEM_GUARD,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "image", source: { type: "base64", media_type: opts.mime, data: opts.image.toString("base64") } },
+                { type: "text", text: OCR_PROMPT },
+              ],
+            },
+          ],
+        },
+        /*
+         * 클라이언트는 25s(apps/web lib/ocr.ts SERVER_BUDGET_MS)에 요청을 끊는다. 서버 호출을
+         * 그 안에 묶어, 클라가 포기한 뒤에도 SDK 기본값(60s × 2회 재시도)으로 버려질 작업을
+         * 계속 돌리며 과금하는 것을 막는다. 실패하면 기기 내 엔진으로 자연히 떨어진다.
+         */
+        { timeout: 20_000, maxRetries: 0 },
+      );
+      if (response.stop_reason === "refusal") {
+        log("warn", "llm.no_output", { kind: "card_ocr", model: choice.model, stop: response.stop_reason });
+        await refund();
+        return null;
+      }
+      const text = (response.content ?? []).map((b) => ("text" in b ? b.text : "")).join("\n");
+      const lines = cleanVisionOcrLines(text); // capture API 의 줄 수 상한(120)과 같다
+      /*
+       * max_tokens 로 잘리면 마지막 줄이 글자 중간에서 끊겼을 수 있다(전화·이메일이 반만
+       * 적힌다). 잘린 줄을 온전한 값으로 저장하지 않도록 그 줄은 버린다 — 남은 줄이 없으면
+       * 기기 내 엔진으로 폴백한다.
+       */
+      if (response.stop_reason === "max_tokens" && lines.length) {
+        lines.pop();
+        log("warn", "llm.ocr_truncated", { kind: "card_ocr", model: response.model, kept: lines.length });
+      }
+      if (!lines.length) {
+        await refund();
+        return null;
+      }
+      // 원문(명함 글자)은 남기지 않는다 — 줄 수만 적는다
+      await q("INSERT INTO ai_runs (owner_user_id, kind, model, prompt_version, source_ids, output) VALUES ($1,$2,$3,$4,$5,$6)", [
+        opts.ownerUserId,
+        "card_ocr",
+        response.model,
+        OCR_PROMPT_VERSION,
+        [opts.sourceId],
+        JSON.stringify({ lines: lines.length, tier }),
+      ]);
+      const usage = response.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const base = { userId: opts.ownerUserId, jobType: "llm" as const, jobId: "card_ocr", provider: response.model };
+      await recordCost(null, { ...base, rateKey: llmRateKey(response.model, "input"), units: usage?.input_tokens ?? 0 });
+      await recordCost(null, { ...base, rateKey: llmRateKey(response.model, "output"), units: usage?.output_tokens ?? 0 });
+      return { lines, model: response.model };
+    } catch (e) {
+      if (attempt === 0 && isModelUnavailable(e)) {
+        blockLlmModel(choice.model);
+        choice = await chooseModel(anthropic(), tier);
+        continue;
+      }
+      if (e instanceof Anthropic.APIError) log("warn", "llm.api_error", { kind: "card_ocr", model: choice.model, status: e.status });
+      else log("warn", "llm.failed", { kind: "card_ocr", model: choice.model, error: (e as Error).message });
+      await refund();
+      return null;
+    }
+  }
+  await refund();
   return null;
 }
 

@@ -3,7 +3,7 @@
 // 저장은 /events/{id}/leads (Idempotency-Key). F-150 오프라인 모드: 네트워크가 없으면 암호화 outbox 에 보관 후 재전송.
 import { REVIEW_THRESHOLD, parseBadge } from "@linkos/domain";
 import { useState } from "react";
-import { CardScanner, type OcrLineOut } from "./CardScanner";
+import { CardScanner, type OcrEngineId, type OcrLineOut, type ScanExtra } from "./CardScanner";
 import { Icon } from "./Icon";
 import { CARD_KEYS, type CardKey, type ReviewedCard, ReviewFields, initialFromParsed } from "./ReviewFields";
 import { api, isQueuedOffline, uid } from "@/lib/client";
@@ -21,10 +21,13 @@ export function BadgeLeadScanner({ eventId, onSaved }: { eventId: string; onSave
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const onLines = (l: OcrLineOut[]) => {
+  const [engine, setEngine] = useState<OcrEngineId>("tesseract.js");
+
+  const onLines = (l: OcrLineOut[], _p: string, extra?: ScanExtra) => {
     const r = parseBadge(l);
     const { card, conf } = initialFromParsed(r.fields);
     setLines(l);
+    if (extra) setEngine(extra.engine);
     setBadgeType(r.badgeType);
     setInitial(card);
     setConf(conf);
@@ -33,6 +36,7 @@ export function BadgeLeadScanner({ eventId, onSaved }: { eventId: string; onSave
 
   const reset = () => {
     setLines(null);
+    setEngine("tesseract.js");
     setBadgeType(null);
     setInitial(empty());
     setStage("scan");
@@ -44,7 +48,7 @@ export function BadgeLeadScanner({ eventId, onSaved }: { eventId: string; onSave
     setMsg(null);
     const c = reviewed.card;
     const body = {
-      capture: lines ? { side: "front", kind: "badge", engine: "tesseract.js", lines } : null,
+      capture: lines ? { side: "front", kind: "badge", engine, lines } : null,
       contact: {
         ...Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v || null])),
         fullName: c.fullName,

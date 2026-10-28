@@ -1,5 +1,13 @@
 # LINKOS 배포 런북 — linkos.ckp.kr
 
+> **⚠️ 2026-10-22 확인: 지금 돌고 있는 것은 아래 systemd 배포가 아니다.**
+>
+> `ssh ckp` 는 `1.234.82.36` 으로 가고, 거기에는 `/var/www/linkos` 도 `linkos-web.service` 도
+> `/etc/linkos` 도 없다. 실제로 서비스하는 것은 **Docker compose 스택**이다 →
+> [아래 "실제 배포 (Docker)"](#실제-배포-docker). 이 문서의 나머지(systemd·`/var/www/linkos`·
+> `deploy-ckp.sh`·GitHub Actions 자동배포)는 다른 호스트(`1.234.5.14`)를 전제로 쓴 것이고,
+> 지금 운영 중인 호스트에는 해당하지 않는다. 둘 중 무엇을 정본으로 할지 정해야 한다.
+
 운영 중인 **공용 서버**(cafe24 `1.234.5.14`, hostname `ckp24.cafe24.com`)에 LINKOS 를 올린 기록이다.
 이 서버에는 ckp.kr·pt·link·woori·kakao·pay·bu 등 **다른 사이트가 이미 돌고 있다.** 아래 전제를 깨지 말 것.
 
@@ -31,6 +39,116 @@ curl -s https://linkos.ckp.kr/api/v1/health
 # {"status":"ok","db":"ok","migrations":18,"version":"1.0.0","revision":"06a1819",
 #  "ai":{"enabled":true,"models":{"cheap":"claude-haiku-5-5","standard":"claude-sonnet-5-5","deep":"claude-opus-5-5"}}}
 ```
+
+## 실제 배포 (Docker)
+
+2026-10-22 에 `ssh ckp` 로 확인한 지금의 운영 형태다.
+
+| 항목 | 값 |
+|---|---|
+| 호스트 | `1.234.82.36` (`ssh ckp`, root, RAM 32GB / 디스크 여유 180GB) |
+| 소스 | `/opt/linkos` — **git 체크아웃이 아니다.** 개발 기계에서 트리를 복사해 둔 것(소유자 uid 197609) |
+| 스택 | docker compose 프로젝트 `infra` → `infra-web-1`(127.0.0.1:4300→3000) · `infra-worker-1` · `infra-db-1`(pgvector pg16) |
+| 설정 | `/opt/linkos/.env` — **지금은 컨테이너에 전달되지 않고 있다** (아래 경고) |
+| 공개 주소 | https://linkos.ckp.kr (Cloudflare → nginx → 127.0.0.1:4300) |
+
+재배포(소스를 갈아 끼운 뒤):
+
+```bash
+cd /opt/linkos && docker compose --env-file .env \
+  -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -d --build
+```
+
+이미지 빌드가 F-015 OCR 모델 33MB 를 내려받아 `public/` 에 넣는다(`scripts/ocr/fetch-models.mjs`,
+sha256 확인). 받지 못해도 빌드는 계속되고, 모델이 없으면 스캔이 tesseract 로 돈다 →
+[docs/OCR_ENGINE.md](OCR_ENGINE.md). 배포 뒤 확인:
+
+```bash
+curl -sI https://linkos.ckp.kr/models/ocr/ch_PP-OCRv5_det_mobile.onnx | head -3   # 200 이어야 PP-OCRv5 가 쓰인다
+```
+
+빌드가 성공한 뒤에만 컨테이너가 교체되므로, 중간에 실패하면 이전 컨테이너가 계속 서비스한다.
+롤백은 `infra-web:rollback-<타임스탬프>` 태그와 `/opt/linkos-src-<타임스탬프>.tgz` 로 한다
+(배포 직전에 만들어 두는 것이 관례다).
+
+소스를 넣는 방법은 git 이 아니라 tarball 이다 — 개발 기계에서:
+
+```bash
+git archive --format=tar.gz -o /tmp/linkos-deploy.tgz <커밋>
+scp /tmp/linkos-deploy.tgz ckp:/tmp/
+ssh ckp 'tar xzf /tmp/linkos-deploy.tgz -C /opt/linkos'   # .env 는 추적 대상이 아니라 보존된다
+```
+
+> **⚠️ `--env-file .env` 없이 올리면 안 된다.**
+>
+> `infra/docker-compose.yml` 은 로컬 실행용이라 `APP_ORIGIN=http://localhost:3000`,
+> `AUTH_SECRET=change-me-local-only`, `OTP_DEV_ECHO=1` 이라는 개발 기본값을 갖고 있다.
+> 2026-10-22 에 `docker compose … up --dry-run` 이 "컨테이너 교체 없음" 으로 나온 것으로
+> 보아 **지금 떠 있는 스택이 바로 그 기본값으로 돌고 있다.** `OTP_DEV_ECHO=1` + SMTP 미설정이면
+> `/api/v1/auth/otp` 응답에 로그인 코드가 그대로 담긴다
+> (`services/api/src/modules/identity.ts:74`) — 누구나 남의 메일 주소로 로그인할 수 있다.
+> `infra/docker-compose.prod.yml` 이 이 세 값을 못 박고, 값이 없으면 compose 가 뜨지 않게 한다.
+>
+> 고치는 순간 `AUTH_SECRET` 이 바뀌므로 **기존 로그인 세션은 모두 끊긴다.** 의도된 결과다.
+
+### 🔴 nginx 공용 CSP 가 명함 인식을 막는다 (2026-10-24)
+
+"사진 인식이 35% 에서 멈춘다" 의 원인이다. 운영 응답에는 `Content-Security-Policy` 가
+**두 개** 내려온다 — 앱이 보내는 것(`apps/web/next.config.ts`)과
+`/etc/nginx/snippets/ckp-security.conf` 가 붙이는 공용 정책. 브라우저는 CSP 가 여러 개면
+**교집합**을 강제하므로 공용 쪽이 빠뜨린 것이 전부 금지된다.
+
+```bash
+curl -skI --resolve linkos.ckp.kr:443:127.0.0.1 https://linkos.ckp.kr/app/scan | grep -ci '^content-security-policy'
+# 2  ← nginx 가 하나 더 붙인다 (컨테이너 직접 조회는 1)
+```
+
+공용 정책의 `script-src` 에 **`'wasm-unsafe-eval'` 이 없다** → WebAssembly 가 통째로
+막힌다 → tesseract.js 도 PP-OCRv5 도 못 돈다. 진행률 0.35 는 "언어 데이터 불러오는 중"
+이 끝나는 지점이라 거기서 굳는다. `connect-src` 에 tessdata·jsDelivr 가 없어 언어 데이터도
+못 받고, `camera=()` 가 앱의 `camera=(self)` 를 덮어 카메라 권한도 함께 막힌다.
+
+고치는 방법은 linkos vhost 에서 그 include 를 빼는 것이다. 앱이 이미 완전한 보안 헤더
+묶음을 보내고 있어, 빼면 오히려 대부분 더 엄격해진다.
+
+| 헤더 | 앱(Next) | 공용 스니펫 | include 제거 시 |
+|---|---|---|---|
+| CSP `script-src` | `'wasm-unsafe-eval'` 있음 | 없음 | **OCR 이 돌게 된다** |
+| CSP `connect-src` | jsDelivr·tessdata 허용 | `'self'` + CF 만 | tesseract 폴백이 살아난다 |
+| CSP `frame-ancestors` | `'none'` | `'self'` | 더 엄격 |
+| CSP `img-src` | `'self' data: blob:` | `https:` 전부 | 더 엄격 |
+| `X-Frame-Options` | `DENY` | `SAMEORIGIN` | 더 엄격 |
+| `Permissions-Policy` | `camera=(self), microphone=(self), geolocation=()` | `camera=(), microphone=(), geolocation=(self)` | 카메라·마이크 허용(제품 기능), 위치는 더 엄격 |
+| `Strict-Transport-Security` | `63072000; includeSubDomains; preload` | `31536000; includeSubDomains` | 더 강함 |
+| `X-Content-Type-Options`·`Referrer-Policy` | 동일 | 동일 | 변화 없음 |
+
+```bash
+ssh ckp 'cp /etc/nginx/sites-available/linkos-kr{,.bak} \
+  && sed -i "s|^\( *\)include snippets/ckp-security.conf;|\1# 보안 헤더는 앱이 직접 보낸다 — 공용 CSP 를 함께 붙이면 교집합 때문에 WebAssembly(OCR)가 막힌다\n\1# include snippets/ckp-security.conf;|" /etc/nginx/sites-available/linkos-kr \
+  && nginx -t && systemctl reload nginx'
+```
+
+다른 사이트가 쓰는 `snippets/ckp-security.conf` 자체는 건드리지 않는다. 적용 뒤:
+
+```bash
+curl -sI https://linkos.ckp.kr/app/scan | grep -ci '^content-security-policy'   # 1 이어야 한다
+```
+
+앱 쪽은 이 상황에서도 영원히 기다리지 않게 고쳐 두었다 — 시작 전에 WebAssembly 를
+컴파일해 보고 막혀 있으면 "기기 내 인식을 쓸 수 없다" 고 바로 알린다(`lib/ocr.ts`).
+즉 nginx 를 안 고치면 **인식이 안 되는 것은 그대로이고, 멈춘 채 기다리지만 않는다.**
+
+아직 남은 것(확인만 하고 손대지 않았다):
+
+- `infra/docker-compose.yml` 의 `environment` 블록이 넘기는 키는 9개뿐이다 —
+  `ANTHROPIC_*`·`OBJECT_STORAGE_*`·`APPLE_*`·`CLAMAV_*`·`STT_*` 는 `.env` 에 있어도
+  컨테이너에 닿지 않는다. 그래서 헬스체크 응답에 `ai` 항목이 아예 없다(AI 가 꺼져 있다).
+  `env_file: [../.env]` 를 prod 오버레이에 넣으면 한 번에 해결되지만,
+  `CLAMAV_REQUIRED` 처럼 켜지는 순간 업로드를 막는 값이 있어 값을 확인한 뒤에 해야 한다.
+- `infra-worker-1` 이 계속 `unhealthy` 다. Dockerfile 의 `HEALTHCHECK` 가 `/api/v1/health` 를
+  때리는데 워커는 웹 서버를 띄우지 않는다 — 워커에는 헬스체크를 두지 않거나 다른 검사를 써야 한다.
+- `revision` 이 `null` 이다. `APP_REVISION` 을 빌드 인자로 넣으면 지금 떠 있는 빌드가
+  어느 커밋인지 헬스체크로 확인할 수 있다.
 
 ## 자동 배포 (GitHub Actions)
 

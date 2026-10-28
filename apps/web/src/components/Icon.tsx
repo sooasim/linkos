@@ -55,18 +55,23 @@ export function Icon({ name, size = 20, strokeWidth = 1.7, ...rest }: { name: Ic
   );
 }
 
+/**
+ * 심볼: 한글 ㄹ(링코스) 모양으로 꺾이는 소개 경로 — 왼쪽 위 점이 나, 오른쪽 아래 점이 만나려는 사람,
+ * 그 사이를 꺾어 가는 선이 사람을 거쳐 가는 길이다. 기하도형만 써서 그린 오리지널 마크(CLAUDE.md §5).
+ */
 export function Logo({ className = "", mono = false }: { className?: string; mono?: boolean }) {
   return (
     <span className={`inline-flex items-center gap-2 font-semibold tracking-tight ${className}`}>
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
         <defs>
-          <linearGradient id="lk-g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#8f7bff" />
-            <stop offset="1" stopColor="#f08fb4" />
+          <linearGradient id="lk-g" x1="8" y1="6" x2="26" y2="27" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="var(--color-iris-2)" />
+            <stop offset="1" stopColor="var(--accent-2)" />
           </linearGradient>
         </defs>
-        <rect x="3" y="8" width="17" height="12" rx="3.5" fill="none" stroke="currentColor" strokeWidth="2.2" transform="rotate(-12 11.5 14)" />
-        <rect x="12" y="12" width="17" height="12" rx="3.5" fill={mono ? "currentColor" : "url(#lk-g)"} stroke={mono ? "currentColor" : "url(#lk-g)"} strokeWidth="2.2" transform="rotate(8 20.5 18)" />
+        <path d="M10 8.5h12.5v7.5H10v7.5h12.5" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="10" cy="8.5" r="3.2" fill="currentColor" />
+        <circle cx="22.5" cy="23.5" r="3.5" fill={mono ? "currentColor" : "url(#lk-g)"} />
       </svg>
       <span className="text-[17px] leading-none">LINKOS</span>
     </span>

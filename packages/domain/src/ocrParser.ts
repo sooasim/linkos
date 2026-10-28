@@ -139,6 +139,13 @@ export function tidyOcrText(text: string | null | undefined): string {
   // ②-1 메일 주소 안의 쉼표는 점을 잘못 읽은 것이다 ("ha,joo@…")
   if (s.includes("@")) {
     s = s.split(" ").map((t) => (t.includes("@") ? t.replace(/,/g, ".") : t)).join(" ");
+    /*
+     * ②-2 이메일 라벨이 값에 딱 눌어붙은 꼴을 뗀다("E-maildshin3@…" → "dshin3@…"). OCR 이
+     * 라벨과 주소 사이 공백을 흘리면 '.'·'-' 가 로컬파트 글자라 한 토막으로 붙는다. **여러 글자
+     * 라벨만** 뗀다 — 단일 'E.' 는 실제 'e.성@' 이니셜과 구별이 안 돼 건드리지 않는다(규칙6:
+     * 틀리게 고치지 않는다). 지우기만 하므로 값은 원문의 부분문자열로 남는다(assertGrounded).
+     */
+    s = s.replace(/^(?:e-?mail|email|이메일|메일)[.\-]?(?=[A-Za-z0-9._%+-]+@)/i, "");
   }
   const hasGraph = (x: string) => /[\p{L}\p{N}]/u.test(x);
   // 한자·가나 줄도 아래 정리를 거치게 한다 — "李建国 此" 같은 찌꺼기가 붙는다

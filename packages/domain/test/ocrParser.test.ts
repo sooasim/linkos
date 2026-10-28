@@ -36,6 +36,17 @@ describe("tidyOcrText — 사진에서 섞여 들어온 찌꺼기", () => {
     expect(tidyOcrText("Email ha,joo@shinkwang.co.kr")).toBe("Email ha.joo@shinkwang.co.kr");
   });
 
+  it("값에 눌어붙은 여러 글자 이메일 라벨만 뗀다 (단일 'E.'·실제 이니셜은 보존)", () => {
+    // 글자 사이 공백을 OCR 이 흘려 라벨이 로컬파트에 붙은 꼴 — 떼어도 값은 원문 부분문자열
+    expect(tidyOcrText("E-maildshin3@medicalcom.co.kr")).toBe("dshin3@medicalcom.co.kr");
+    expect(tidyOcrText("email.hong@acme.com")).toBe("hong@acme.com");
+    // 규칙6 안전: 단일 'E.' 는 실제 'e.성@' 이니셜과 구별이 안 돼 건드리지 않는다
+    expect(tidyOcrText("E.cainone@naver.com")).toBe("E.cainone@naver.com");
+    expect(tidyOcrText("e.smith@acme.com")).toBe("e.smith@acme.com");
+    // 공백으로 떨어진 라벨은 파서가 이미 처리하므로 tidy 는 그대로 둔다
+    expect(tidyOcrText("Email hong@acme.com")).toBe("Email hong@acme.com");
+  });
+
   it("멀쩡한 줄은 건드리지 않는다", () => {
     expect(tidyOcrText("홍길동 대표이사")).toBe("홍길동 대표이사");
     expect(tidyOcrText("M. 010-1234-5678")).toBe("M. 010-1234-5678");

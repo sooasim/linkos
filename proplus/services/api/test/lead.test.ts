@@ -123,7 +123,11 @@ describe.skipIf(!DB)("M07 Lead & CRM (통합 · Postgres 필요)", () => {
     slug: string,
     opts: { contact?: string; kind?: "email" | "phone"; consents?: ConsentInput[]; ip?: string; message?: string } = {},
   ): Promise<{ id: string; contact: string; created: Awaited<ReturnType<typeof lead.createLead>> }> {
-    const contact = opts.contact ?? `guest-${randomUUID()}@example.test`;
+    // P-112 중복 억제는 **마스킹된** 연락처(maskEmail: 앞 2글자 + 도메인 전체)로 비교한다. 그래서
+    // `guest-<uuid>@example.test` 는 전부 `gu***@example.test` 로 접혀, 같은 프로필에 두 번 넣으면
+    // 서로 다른 게스트인데도 duplicate_lead 로 막힌다. 실제 서로 다른 메일은 앞 글자·도메인이 달라
+    // 충돌하지 않으므로, 테스트 연락처도 **도메인을 매번 다르게** 해 마스킹 후에도 구별되게 한다.
+    const contact = opts.contact ?? `guest@u${randomUUID().replace(/-/g, "")}.example.test`;
     const created = await lead.createLead(ctxFor(null, opts.ip ?? "127.0.0.1"), slug, {
       contactName: "박고객",
       contactKind: opts.kind ?? "email",

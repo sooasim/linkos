@@ -10,7 +10,9 @@ import { FAQ, GUIDE } from "../../apps/web/src/app/_landing/guide";
 const ROOT = join(__dirname, "..", "..");
 const APP_DIR = join(ROOT, "apps/web/src/app");
 // Operator console (platform admins only, 404 for everyone else) — listed in the catalog, not in the user guide.
-const NOT_USER_FACING = new Set(["/app/admin", "/legal/privacy", "/legal/terms"]);
+// /sso/proplus is a 1st-party SSO bridge: a logged-in LINKOS user clicks "continue to PROPLUS" and is
+// redirected out — a transient handoff page, not a guided product screen (like the operator console).
+const NOT_USER_FACING = new Set(["/app/admin", "/legal/privacy", "/legal/terms", "/sso/proplus"]);
 
 function pageRoutes(dir: string): string[] {
   const out: string[] = [];

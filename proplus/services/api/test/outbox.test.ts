@@ -295,6 +295,13 @@ describe.skipIf(!DB)("플랫폼 outbox (통합 · Postgres 필요)", () => {
         const leadId = await makeLeadRow(prof.id);
         const correlationId = trackCorrelation(randomUUID());
 
+        // 앞선 테스트 파일들이 남긴 미처리 outbox 이벤트가 relayOutbox 의 LIMIT 배치(occurred_at 오름차순)를
+        // 채우면, 바로 뒤에 넣는 이 이벤트가 밀려 소비되지 않는다(그래서 알림이 0 이었다). 먼저 비운다.
+        // 실패해 next_attempt_at 이 미래로 밀린 이벤트는 다시 선택되지 않으므로 루프는 곧 0 으로 끝난다.
+        for (let i = 0; i < 20 && (await relayOutbox()) > 0; i++) {
+          /* drain pre-existing pending events so this test's event is within the batch */
+        }
+
         const eventId = await tx((c) =>
           enqueue(c, {
             eventType: "lead.created",

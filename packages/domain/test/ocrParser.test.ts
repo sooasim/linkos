@@ -62,7 +62,8 @@ describe("tidyOcrText — 사진에서 섞여 들어온 찌꺼기", () => {
 
   it("파서가 정리를 스스로 한다 — 호출자가 미리 손댈 필요가 없다", () => {
     const d = draft("( 주 ) 그 린 코 스 메 틱", "최 민 서", "| 영업지원팀", "|", "M. 010-1234-5678");
-    expect(d.fullName).toBe("최민서");
+    // 이름 value 는 원문 공백형으로 grounded 하게 남기고(정규화형 "최민서" 는 field.normalized 에 있다)
+    expect(d.fullName).toBe("최 민 서");
     expect(d.company).toBe("(주) 그린코스메틱");
     expect(d.department).toBe("영업지원팀");
     expect(d.mobile).toBe("010-1234-5678");
@@ -339,6 +340,18 @@ describe("지어내지 않는다", () => {
     ];
     const r = parseBusinessCard(lines);
     expect(() => assertGrounded(r.fields, lines)).not.toThrow();
+  });
+
+  it("공백으로 벌려 쓴 이름은 값은 원문대로, 정규화만 붙인다 (S-060)", () => {
+    // tidyOcrText 가 음절을 합쳐도("홍 길 동"→"홍길동") 저장 value 는 원문 공백형이라 grounded 다
+    const lines = [{ text: "홍 길 동" }, { text: "hong@x.kr" }];
+    const r = parseBusinessCard(lines);
+    const n = r.fields.find((f) => f.key === "fullName")!;
+    expect(n.value).toBe("홍 길 동");
+    expect(n.normalized).toBe("홍길동");
+    expect(() => assertGrounded(r.fields, lines)).not.toThrow();
+    // 시나리오 불변식(e-ocr.spec.ts): 값은 공백만 접은 원문의 부분문자열
+    for (const f of r.fields) expect(lines.some((l) => l.text.replace(/\s+/g, " ").includes(f.value))).toBe(true);
   });
 });
 

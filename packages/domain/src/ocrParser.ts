@@ -449,6 +449,16 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
     if (!fields.some((x) => x.key === f.key && x.value === f.value)) fields.push(f);
   };
 
+  /*
+   * tidyOcrText 가 음절 사이 공백을 합치면("홍 길 동" → "홍길동") 저장 value 가 원문의 부분문자열이
+   * 아니게 된다(S-060). 이름 value 는 원문의 공백형을 쓰고 정규화만 합친 형으로 둔다 —
+   * 지우고 붙이는 것뿐이라 '지어내지 않는다' 규칙은 그대로다. pick 이 원문에 있으면 그대로 쓴다.
+   */
+  const groundName = (pick: string, i: number): string => {
+    const raw = (lines[i]?.text ?? "").replace(/\s+/g, " ").trim();
+    return raw.includes(pick) ? pick : raw.replace(/\s/g, "") === pick ? raw : pick;
+  };
+
   clean.forEach((l, i) => {
     if (!l.text) return;
     const conf = lineConf(l);
@@ -609,7 +619,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
        */
       const namePart = parts.find((p) => !hasTitleWord(p) && looksLikeAnyName(p));
       if (namePart && nameIdx < 0) {
-        push({ key: "fullName", value: namePart, normalized: normalizePersonName(namePart), confidence: lineConf(l) * 0.85, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+        push({ key: "fullName", value: groundName(namePart, i), normalized: normalizePersonName(namePart), confidence: lineConf(l) * 0.85, provenance: "ocr", sourceLine: i, bbox: l.bbox });
         nameIdx = i;
         // Rule 6: the title must be a literal slice of the line — never re-join separated parts
         // ("Jane Doe, CEO, Founder" → "CEO, Founder", not "CEO Founder").
@@ -658,7 +668,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
         if (nameFrom > 0) {
           const nameToks = toks.slice(nameFrom, nameEnd);
           const nameValue = sliceSpanning(l.text, nameToks) ?? nameToks[0]!;
-          push({ key: "fullName", value: nameValue, normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+          push({ key: "fullName", value: groundName(nameValue, i), normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
           nameIdx = i;
           /*
            * 이름 뒤 토막에서 부서 꼬리말을 가른다(한글/한자만 — 영어는 'Team Leader' 가 직책의 일부).
@@ -714,7 +724,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
         if (nameEnd > 0) {
           const nameToks = toks.slice(nameFrom, nameEnd);
           const nameValue = sliceSpanning(l.text, nameToks) ?? nameToks[0]!;
-          push({ key: "fullName", value: nameValue, normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
+          push({ key: "fullName", value: groundName(nameValue, i), normalized: normalizePersonName(nameValue), confidence: lineConf(l) * 0.8, provenance: "ocr", sourceLine: i, bbox: l.bbox });
           nameIdx = i;
         }
         let deptAt = -1;
@@ -852,7 +862,7 @@ export function parseBusinessCard(lines: OcrLine[]): ExtractionResult {
       const korean = looksLikeKoreanName(chosen.pick);
       push({
         key: "fullName",
-        value: chosen.pick,
+        value: groundName(chosen.pick, chosen.i),
         normalized: normalizePersonName(chosen.pick),
         confidence: lineConf(chosen.l) * (korean ? 0.85 : 0.7) * (nameCands.length > 1 ? 0.85 : 1),
         provenance: "ocr",
@@ -965,7 +975,10 @@ export function toDraft(fields: ExtractedField[]): Partial<Record<FieldKey, stri
 export function assertGrounded(fields: ExtractedField[], lines: OcrLine[]): void {
   for (const f of fields) {
     if (f.provenance !== "ocr") continue;
-    const src = tidyOcrText(lines[f.sourceLine]?.text);
-    if (!src.includes(f.value)) throw new Error(`ungrounded field ${f.key}`);
+    const raw = lines[f.sourceLine]?.text ?? "";
+    // 값은 정리본(tidyOcrText) 또는 공백만 접은 원문 중 하나의 부분문자열이면 된다 — 둘 다
+    // 입력에서 온 것이라 '지어내지 않는다' 가 성립한다. 이름처럼 원문 공백형을 그대로 쓴 값
+    // ("홍 길 동")은 정리본("홍길동")엔 없지만 원문엔 있으므로 grounded 다(S-060).
+    if (!tidyOcrText(raw).includes(f.value) && !raw.replace(/\s+/g, " ").trim().includes(f.value)) throw new Error(`ungrounded field ${f.key}`);
   }
 }

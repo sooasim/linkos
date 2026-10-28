@@ -33,7 +33,7 @@ const M = {
   "F-012": ["T", "/app/scan/import", "/capture/cards", "BatchImport.tsx (암호화 온디바이스 큐)", "tests/e2e/batch-import.spec.ts", "200장 상한·암호화 큐 적재·새로고침 재개를 브라우저에서 검증. 기기 OCR 엔진은 CDN 언어 데이터가 필요해 e2e 에서 제외(파서는 S-051~S-062). 페이지가 열려 있을 때만 진행"],
   "F-013": ["T", "/app/scan", "", "packages/domain/src/imaging.ts", "packages/domain/test/imaging.test.ts", "한 장에 여러 명함 분할"],
   "F-014": ["T", "/app/events/[id]", "/events/{id}/leads", "packages/domain/src/badge.ts", "services/api/test/track-c.integration.test.ts, packages/domain/test/track-c.test.ts, tests/scenarios/k-capture-files.spec.ts", "배지 파서 → 행사 리드(단일 트랜잭션)"],
-  "F-015": ["I", "/app/scan (언어 선택)", "/capture/parse", "tesseract.js kor/jpn/chi_sim + parser", `${UT}, ${S("S-051~S-054")}`, "구조화 파서는 4개 언어 자동테스트; 기기 OCR 엔진 자체는 실기기 수동 검증"],
+  "F-015": ["I", "/app/scan (언어 선택)", "/capture/parse", "lib/ocr.ts (PP-OCRv5 ONNX → tesseract.js 폴백), packages/domain/src/ppocr.ts, parser", `${UT}, packages/domain/test/ppocr.test.ts, ${S("S-051~S-054")}`, "엔진 전·후처리(DB 후처리·CTC)는 단위테스트 29항목 + `pnpm ocr:verify`(모델↔사전 일치). 구조화 파서는 4개 언어 자동테스트. 브라우저에서의 실촬영 인식은 실기기 수동 검증"],
   "F-016": ["T", "/app/scan", "/capture/cards, /capture/parse", "domain/ocrParser", `${UT}, ${IT}`, "규칙 기반 구조화(원문 외 값 생성 금지)"],
   "F-017": ["T", "ReviewFields", "/capture/cards", "domain/ocrParser", UT, "필드별 confidence + bbox"],
   "F-018": ["T", "ReviewFields", "", "domain.needsReview", UT, ""],

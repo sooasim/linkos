@@ -4,10 +4,10 @@
 // 원본 보관(F-019)은 사용자가 명시적으로 켠 경우에만 상위 화면이 업로드한다.
 import { type Locale, SCANNER_MESSAGES, fmt } from "@linkos/domain";
 import { useRef, useState } from "react";
-import type { OcrLineOut } from "@/lib/ocr";
+import type { OcrEngineId, OcrLineOut } from "@/lib/ocr";
 import { Icon } from "./Icon";
 
-export type { OcrLineOut } from "@/lib/ocr";
+export type { OcrEngineId, OcrLineOut } from "@/lib/ocr";
 
 export const OCR_LANGS = [
   { v: "kor+eng", label: "한국어·영어" },
@@ -20,20 +20,19 @@ export interface ScanExtra {
   jpeg: Blob;
   corrected: boolean;
   confidence: number | null;
+  /** 실제로 글자를 읽은 엔진 — capture API 에 그대로 올린다 */
+  engine: OcrEngineId;
 }
 
-/** Pipeline: EXIF-orient → detect card quad → perspective warp → contrast stretch → OCR. */
+/**
+ * 촬영/선택한 사진 한 장을 읽는다 — 실제 절차는 `@/lib/ocr` 의 `readCardImage` 에 있다.
+ * 사진첩 일괄 가져오기(F-012)도 같은 함수를 쓴다. 인식을 좋게 하는 일은 그 한 곳에서 한다.
+ */
 export async function runOcr(file: Blob, onProgress: (p: number, label: string) => void, langs = "kor+eng", opts: { autoCorrect?: boolean; locale?: Locale } = {}): Promise<{ lines: OcrLineOut[]; extra: ScanExtra; preview: string }> {
   const t = SCANNER_MESSAGES[opts.locale ?? "ko"];
-  onProgress(0.03, t.findingEdges);
-  const pipe = await import("@/lib/imagePipeline");
-  const { ocrCanvas } = await import("@/lib/ocr");
-  const base = await pipe.loadCanvas(file);
-  const fixed = opts.autoCorrect === false ? { canvas: base, detection: null } : pipe.autoCorrect(base);
-  onProgress(0.1, fixed.detection ? t.perspectiveDone : t.enhancing);
-  const jpeg = await pipe.canvasToJpeg(fixed.canvas);
-  const lines = await ocrCanvas(pipe.enhanceForOcr(fixed.canvas), langs, onProgress);
-  return { lines, preview: URL.createObjectURL(jpeg), extra: { jpeg, corrected: !!fixed.detection, confidence: fixed.detection?.confidence ?? null } };
+  const { readCardImage } = await import("@/lib/ocr");
+  const r = await readCardImage(file, { langs, autoCorrect: opts.autoCorrect, onProgress, labels: t });
+  return { lines: r.lines, preview: URL.createObjectURL(r.jpeg), extra: { jpeg: r.jpeg, corrected: r.corrected, confidence: r.detectionConfidence, engine: r.engine } };
 }
 
 export function CardScanner({
@@ -73,8 +72,11 @@ export function CardScanner({
       setCorrected(r.extra.corrected);
       if (!r.lines.length) throw new Error("empty");
       onLines(r.lines, r.preview, r.extra);
-    } catch {
-      if (typeof navigator !== "undefined" && navigator.onLine === false && onOfflinePhoto) {
+    } catch (e) {
+      // WebAssembly 가 막힌 경우는 사진을 다시 찍어도 소용없다 — 다른 말을 해 줘야 한다
+      if ((e as { code?: string } | null)?.code === "wasm_blocked") {
+        setError(t.noWasm);
+      } else if (typeof navigator !== "undefined" && navigator.onLine === false && onOfflinePhoto) {
         onOfflinePhoto(file);
       } else {
         setError(kind === "badge" ? t.readFailedBadge : t.readFailedCard);

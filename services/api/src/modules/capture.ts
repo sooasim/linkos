@@ -138,6 +138,50 @@ export async function commitCapture(ctx: Ctx, input: CommitInput) {
   return { ...out, eventId, duplicates: dups.filter((d) => d.contactId !== out.contactId) };
 }
 
+// ---------- F-015 서버 OCR 어댑터 (사진 → 글자줄) ----------
+
+/** 명함 한 장의 상한. 기기에서 보정·축소해 보내므로 이보다 커질 일이 없다. */
+const OCR_MAX_BYTES = 6 * 1024 * 1024;
+const OCR_MIME = { "image/jpeg": true, "image/png": true, "image/webp": true } as const;
+
+export const ocrInput = z.object({
+  mime: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  /** base64 (data: 접두사 없이) */
+  image: z.string().max(Math.ceil((OCR_MAX_BYTES * 4) / 3) + 1024),
+});
+
+/**
+ * POST /capture/ocr — 사진에서 글자줄만 읽어 돌려준다. **저장하지 않는다.**
+ *
+ * 기기 내 엔진(PP-OCRv5)이 못 읽는 명함이 있어서 둔 갈래다. 모델은 보이는 글자만
+ * 옮겨 적고, 칸 가르기는 /capture/cards 의 결정적 파서가 한다 — 저장되는 값은
+ * 여전히 원문의 부분 문자열이다(규칙 6).
+ *
+ * 사진은 이 요청에서만 쓰이고 어디에도 쓰지 않는다(원본 보관은 F-019 의 별도 동작이다).
+ * 로그인 없이도 쓸 수 있어야 한다 — 게스트가 링크에서 명함을 찍는 길이 그렇다(F-055).
+ * 대신 IP 기준으로 조인다.
+ */
+export async function ocrCardImage(ctx: Ctx, input: z.infer<typeof ocrInput>): Promise<{ lines: OcrLine[]; engine: string }> {
+  // 입력을 먼저 검증한다 — 빈·과대·잘못된 요청이 조이기 버킷을 소모하지 않게(빈 바디로 버킷을 태우는 남용 방지).
+  const image = Buffer.from(input.image, "base64");
+  if (!image.length || image.length > OCR_MAX_BYTES) throw new ApiError(400, "invalid_image", "사진 크기가 올바르지 않습니다.");
+  if (!(input.mime in OCR_MIME)) throw new ApiError(400, "invalid_image", "jpg · png · webp 만 읽을 수 있습니다.");
+  /*
+   * 유료 외부 경로라 조인다. 게스트는 per-IP(ctx.ip = X-Forwarded-For 첫 값)로 묶는다 — 신뢰 프록시
+   * 검증이 없어 헤더 로테이션으로 우회될 수 있지만, 전역 공유 상한은 한 공격자가 모든 게스트를 429 로
+   * 굶기는 레버가 되고(감사 2차에서 확인: 단일 고정창 버킷) 바이럴 교환 퍼널의 정상 트래픽도 조용히
+   * 기기 내로 떨어뜨려 넣지 않는다. 비용의 근본 해결은 clientIp 의 신뢰 프록시 처리(공용 인프라)로,
+   * 세션 밖 별도 변경으로 다룬다. (게스트 경로는 비타협 원칙 1 — 교환이 가입보다 먼저.)
+   */
+  await rateLimit(ctx.userId ? `ocr:${ctx.userId}` : `ocr:ip:${ctx.ip}`, ctx.userId ? 120 : 20, 3600);
+  const { visionLines } = await import("../lib/llm");
+  const read = await visionLines({ image, mime: input.mime, ownerUserId: ctx.userId ?? null, sourceId: "capture.ocr" });
+  // 키가 없거나 실패하면 빈 목록 — 화면은 기기 내 엔진 결과를 그대로 쓴다
+  if (!read) return { lines: [], engine: "" };
+  // 분석 이벤트는 따로 남기지 않는다 — ai_runs 와 cost 에 이미 기록된다(원문은 남기지 않는다)
+  return { lines: read.lines.map((text) => ({ text, confidence: 0.9 })), engine: `vision:${read.model}` };
+}
+
 export async function getCaptureJob(ctx: Ctx, id: string) {
   if (!ctx.userId) throw unauthorized();
   const r = await one<any>("SELECT id, contact_id, raw_ocr, structured_data, confidence, captured_at FROM business_cards WHERE id=$1 AND captured_by=$2", [id, ctx.userId], pool());

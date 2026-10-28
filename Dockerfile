@@ -13,6 +13,9 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
+# F-015 기기 내 OCR 모델(33MB) — 저장소에 담지 않으므로 이미지 빌드 때 받아 public/ 에 둔다.
+# 실패해도 빌드를 멈추지 않는다: 모델이 없으면 스캔이 tesseract 로 돈다(apps/web/src/lib/ocr.ts).
+RUN node scripts/ocr/fetch-models.mjs || echo "!! OCR 모델을 받지 못했다 — 이 이미지는 tesseract 로만 읽는다"
 RUN pnpm --filter @linkos/web build
 
 FROM base AS runtime

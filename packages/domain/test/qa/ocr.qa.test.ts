@@ -1,10 +1,11 @@
 // QA (generated): F-015~F-018 OCR parser · F-014 badge parser — CLAUDE.md rule 6 "AI는 사실 필드를 지어내지 않는다".
 // 2,000 synthetic business cards (ko/en/ja/zh, noisy confidences, mixed layouts, junk lines, odd whitespace)
-// + 400 badges. Invariants: never throws, every extracted value is a substring of its (whitespace-collapsed)
-// source line, confidence ∈ [0,1], provenance = ocr, and clean emails/phones are always recovered verbatim.
+// + 400 badges. Invariants: never throws, every extracted value is a substring of its source line as the
+// parser sees it (tidyOcrText — deletions and joins only), confidence ∈ [0,1], provenance = ocr, and clean
+// emails/phones are always recovered verbatim.
 import { describe, expect, it } from "vitest";
-import { type OcrLine, assertGrounded, normalizeEmail, parseBadge, parseBusinessCard } from "../../src";
-import { type Rng, cases, collapse } from "./_gen";
+import { type OcrLine, assertGrounded, normalizeEmail, parseBadge, parseBusinessCard, tidyOcrText } from "../../src";
+import { type Rng, cases } from "./_gen";
 
 type Lang = "ko" | "en" | "ja" | "zh";
 
@@ -137,7 +138,7 @@ describe("QA · OCR business-card parser (2,000 generated cards)", () => {
     const res = parseBusinessCard(c.lines);
     expect(["ko", "en", "ja", "zh", "mixed"]).toContain(res.language);
     for (const f of res.fields) {
-      const src = collapse(c.lines[f.sourceLine]?.text ?? "");
+      const src = tidyOcrText(c.lines[f.sourceLine]?.text ?? "");
       expect(f.value.length, `${f.key} empty`).toBeGreaterThan(0);
       // rule 6: the value must literally exist in the OCR source line (no joined/re-ordered fragments)
       expect(src.includes(f.value), `${f.key}="${f.value}" not in "${src}"`).toBe(true);
@@ -158,7 +159,7 @@ describe("QA · OCR business-card parser (2,000 generated cards)", () => {
     const phones = res.fields.filter((f) => ["phone", "mobile", "fax"].includes(f.key)).map((f) => f.value);
     for (const p of c.cleanPhones) expect(phones.some((v) => v.includes(p) || p.includes(v)), `phone ${p} missing in ${JSON.stringify(phones)}`).toBe(true);
     // unassigned lines are real input lines
-    for (const u of res.unassigned) expect(collapse(c.lines[u.line]!.text)).toBe(u.text);
+    for (const u of res.unassigned) expect(tidyOcrText(c.lines[u.line]!.text)).toBe(u.text);
   });
 
   it.each([
@@ -205,7 +206,7 @@ describe("QA · badge parser (400 generated badges)", () => {
   it.each(BADGES)("badge #$i is grounded", ({ c }) => {
     const res = parseBadge(c);
     for (const f of res.fields) {
-      expect(collapse(c[f.sourceLine]!.text).includes(f.value), `${f.key}=${f.value}`).toBe(true);
+      expect(tidyOcrText(c[f.sourceLine]!.text).includes(f.value), `${f.key}=${f.value}`).toBe(true);
       expect(f.confidence).toBeGreaterThanOrEqual(0);
       expect(f.confidence).toBeLessThanOrEqual(1);
     }

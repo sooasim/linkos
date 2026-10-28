@@ -103,10 +103,13 @@ export async function consume(db: Db, userId: string, metric: Metric, n = 1): Pr
   const enforce = process.env.BILLING_ENFORCEMENT !== "off";
   const cap = enforce ? limit : null;
   if (cap !== null && n > cap) throw over(0);
+  // GREATEST(0, …): 음수 델타(환불, 예: visionLines 의 ai_calls 되돌리기)가 기간 경계에서 새 기간에
+  // 음수 행을 만들거나 카운터를 0 아래로 떨어뜨리지 않게 막는다. 양수 소비에는 영향이 없다.
+  // UPDATE·WHERE 는 EXCLUDED 대신 $5 를 직접 쓴다 — VALUES 를 clamp 하면 EXCLUDED 도 0 이 돼 감소가 지워진다.
   const row = await one<{ count: number }>(
-    `INSERT INTO usage_counters (subject_type, subject_id, metric, period, count) VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (subject_type, subject_id, metric, period) DO UPDATE SET count = usage_counters.count + EXCLUDED.count, updated_at = now()
-     WHERE $6::int IS NULL OR usage_counters.count + EXCLUDED.count <= $6::int
+    `INSERT INTO usage_counters (subject_type, subject_id, metric, period, count) VALUES ($1,$2,$3,$4,GREATEST(0,$5))
+     ON CONFLICT (subject_type, subject_id, metric, period) DO UPDATE SET count = GREATEST(0, usage_counters.count + $5::int), updated_at = now()
+     WHERE $6::int IS NULL OR usage_counters.count + $5::int <= $6::int
      RETURNING count`,
     [r.subject.type, r.subject.id, metric, period, n, cap],
     db,

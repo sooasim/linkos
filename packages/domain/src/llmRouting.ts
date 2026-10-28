@@ -62,6 +62,9 @@ export const LLM_KIND_TIER: Record<string, LlmTier> = {
   translate: "standard", // 프로필 번역 — 오역이 그대로 명함에 박힌다
   adaptive_card: "standard", // 상대별 Living Card 구성
   meeting_extract: "standard", // 긴 전사 → 할 일/결정 추출
+  // 사진에서 글자 옮겨 적기 — 한 글자만 틀려도 번호·메일이 못 쓰는 값이 된다.
+  // 모델은 **보이는 글자만** 옮기고 칸 가르기는 결정적 파서가 한다(규칙 6·12).
+  card_ocr: "standard",
 };
 
 /** 등록되지 않은 kind 는 안전한 쪽(standard)으로 떨어뜨린다. */

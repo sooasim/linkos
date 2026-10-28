@@ -7,10 +7,11 @@
  * 한쪽만 고치면 같은 명함을 다르게 읽게 되므로 둘을 함께 손본다.
  */
 import { describe, expect, it } from "vitest";
-import { assertGrounded, parseBusinessCard, tidyOcrText, toDraft } from "../src/ocrParser";
+import { assertGrounded, cleanVisionOcrLines, parseBusinessCard, tidyOcrText, toDraft } from "../src/ocrParser";
 
+// 정리(tidyOcrText)는 파서가 스스로 한다 — 사진에서 나온 줄을 손대지 않고 그대로 넣는다
 const draft = (...texts: string[]) => {
-  const lines = texts.map((t) => ({ text: tidyOcrText(t) })).filter((l) => l.text);
+  const lines = texts.map((t) => ({ text: t }));
   const r = parseBusinessCard(lines);
   assertGrounded(r.fields, lines);
   return toDraft(r.fields);
@@ -40,6 +41,87 @@ describe("tidyOcrText — 사진에서 섞여 들어온 찌꺼기", () => {
     expect(tidyOcrText("M. 010-1234-5678")).toBe("M. 010-1234-5678");
     expect(tidyOcrText("Jane Doe, CEO")).toBe("Jane Doe, CEO");
     expect(tidyOcrText("이 사람은 담당자")).toBe("이 사람은 담당자");
+  });
+
+  it("가운데 막대는 칸을 나누는 구분자다 — 지우지 않는다", () => {
+    expect(tidyOcrText("Maria Smith | Engineering Dept. | Director")).toBe("Maria Smith | Engineering Dept. | Director");
+    expect(tidyOcrText("홍길동 | 마케팅팀 | 팀장")).toBe("홍길동 | 마케팅팀 | 팀장");
+    expect(tidyOcrText("| 杨强 · 총괄 |")).toBe("杨强 · 총괄");
+  });
+
+  it("파서가 정리를 스스로 한다 — 호출자가 미리 손댈 필요가 없다", () => {
+    const d = draft("( 주 ) 그 린 코 스 메 틱", "최 민 서", "| 영업지원팀", "|", "M. 010-1234-5678");
+    expect(d.fullName).toBe("최민서");
+    expect(d.company).toBe("(주) 그린코스메틱");
+    expect(d.department).toBe("영업지원팀");
+    expect(d.mobile).toBe("010-1234-5678");
+  });
+});
+
+describe("직책을 이름보다 먼저 찍은 줄", () => {
+  it("'이사 최원석' 에서 이름을 집어낸다", () => {
+    const d = draft("SAE JEUN CONST.CO.,LTD.", "이사 최원석", "H.P:010-4927-1175");
+    expect(d.fullName).toBe("최원석");
+    expect(d.jobTitle).toBe("이사");
+  });
+
+  it("직책 낱말을 이름으로 보지 않는다", () => {
+    // 'Director/대표이사' 의 대표이사는 네 글자 한글이라 이름 조건을 통과해 버린다
+    const d = draft("(주)티브랜딩", "정승호", "Director/대표이사");
+    expect(d.fullName).toBe("정승호");
+    expect(d.jobTitle).toBe("Director/대표이사");
+  });
+
+  it("두 쪽이 다 자격증이면 이름을 만들지 않는다", () => {
+    const d = draft("서율회계법인", "공인회계사/세무사", "Tel. 02-735-2425");
+    expect(d.fullName).toBeUndefined();
+    expect(d.jobTitle).toBe("공인회계사/세무사");
+    expect(d.company).toBe("서율회계법인");
+  });
+
+  it("'이사 최원석 영업팀' — 이름 뒤 부서를 직책에 흡수하지 않는다", () => {
+    // 예전엔 jobTitle 에 "이사 최원석 영업팀" 이 통째로 들어가고 부서가 유실됐다
+    const d = draft("(주)링코스랩", "이사 최원석 영업팀", "choi@linkos.co.kr");
+    expect(d.fullName).toBe("최원석");
+    expect(d.jobTitle).toBe("이사");
+    expect(d.department).toBe("영업팀");
+  });
+
+  it("직책을 먼저 찍은 로마자 이름도 집어낸다 ('Director Jane Doe')", () => {
+    // 예전엔 영문 이름을 전혀 못 집어내 jobTitle 에 줄 전체가 들어갔다
+    const d = draft("Acme Labs", "Director Jane Doe", "jane@acme.com");
+    expect(d.fullName).toBe("Jane Doe");
+    expect(d.jobTitle).toBe("Director");
+  });
+
+  it("직책만 있는 영문 줄에서 이름을 지어내지 않는다 ('Chief Operating Officer')", () => {
+    // 로마자 쌍의 둘째 토막이 직책이면(Officer) 이름으로 보지 않는다 — 규칙6(없는 값 생성 금지)
+    const d = draft("Acme Labs", "Chief Operating Officer", "info@acme.com");
+    expect(d.fullName).toBeUndefined();
+    expect(d.jobTitle).toBe("Chief Operating Officer");
+  });
+});
+
+describe("이름이 아닌 줄을 이름 칸에 넣지 않는다", () => {
+  it("업무 낱말이 섞인 영문 두 낱말은 사람 이름이 아니다", () => {
+    const d = draft("Medical Community", "MCOM", "dshin3@medicalcom.co.kr");
+    expect(d.fullName).toBeUndefined();
+  });
+
+  it("보통의 영문 이름은 그대로 잡는다", () => {
+    const d = draft("Acme Labs", "Jane Doe", "jane@acme.com");
+    expect(d.fullName).toBe("Jane Doe");
+  });
+
+  it("조사로 끝나는 문구 조각은 회사가 아니다", () => {
+    const d = draft("건강컨설팅의", "유선영", "yoosonia@gmail.com");
+    expect(d.company).not.toBe("건강컨설팅의");
+    expect(d.fullName).toBe("유선영");
+  });
+
+  it("쉼표가 든 줄은 부서가 아니다 (주소 조각)", () => {
+    const d = draft("Kim Seong Kwang", "Incheon, Korea", "as817@hanmail.net");
+    expect(d.department).not.toBe("Incheon, Korea");
   });
 });
 
@@ -155,13 +237,78 @@ describe("OCR 이 읽었는데 분류가 놓치던 것들", () => {
     expect(d.jobTitle).toBe("팀장");
   });
 
-  it("꼬리말 없는 영문 부서도 되찾는다", () => {
+  /*
+   * 예전에는 '남은 짧은 줄' 을 부서로 보아 "Global Sourcing" 을 되찾았다.
+   * 실제로 찍은 명함 13장으로 재 보니 그 갈래가 아홉 장에서 틀렸다 —
+   * 태그라인·로마자 이름·한자 상호·모임 이름, 심지어 사람 이름까지 부서가 됐다.
+   * 틀린 부서는 연락처에 그대로 박히므로 빈 부서보다 나쁘다. 추측을 그만뒀다.
+   * 나머지 칸은 그대로 잡혀야 한다.
+   */
+  it("꼬리말 없는 줄은 부서로 추측하지 않는다", () => {
     const d = draft("Northgate Beauty Ltd", "Oliver Hartley", "Category Manager", "Global Sourcing",
       "Mobile +44 7700 900123");
     expect(d.company).toBe("Northgate Beauty Ltd");
     expect(d.fullName).toBe("Oliver Hartley");
     expect(d.jobTitle).toBe("Category Manager");
-    expect(d.department).toBe("Global Sourcing");
+    expect(d.department).toBeUndefined();
+  });
+
+  it("꼬리말이 있으면 부서를 잡는다", () => {
+    const d = draft("한빛솔루션", "김수민", "해외영업팀", "과장", "010-2345-6789");
+    expect(d.department).toBe("해외영업팀");
+    expect(d.fullName).toBe("김수민");
+  });
+
+  it("이름은 직책 줄 옆을 먼저 본다 (지점 이름에 뺏기지 않는다)", () => {
+    const d = draft("차돌삼합 진대감", "선릉점", "대표", "박제인", "M 010.4741.1177");
+    expect(d.fullName).toBe("박제인");
+    expect(d.company).toBe("차돌삼합 진대감");
+  });
+
+  it("이름 줄에 로마자 표기가 구분자로 붙어도 한글 이름을 집는다", () => {
+    const d = draft("orner studio", "이수진 | SU JIN LEE", "Space Design Director", "010-3229-4983");
+    expect(d.fullName).toBe("이수진");
+  });
+
+  it("로마자 병기는 회사가 아니다 (이름 옆 줄이어도)", () => {
+    const d = draft("SOULRISE", "대표이사 · CEO", "윤종석", "JONGSEOK YOON", "010-7788-3313");
+    expect(d.fullName).toBe("윤종석");
+    expect(d.company).toBe("SOULRISE");
+  });
+
+  it("세 글자 한글 상호는 이름 옆에 있어도 회사로 잡는다", () => {
+    const d = draft("BNi PROMISE", "건강컨설팅의 프로", "유선영", "암웨이", "yoosonia@gmail.com");
+    expect(d.fullName).toBe("유선영");
+    expect(d.company).toBe("암웨이");
+  });
+
+  it("두 글자 한글 상호도 회사다", () => {
+    const d = draft("이동준 대표변호사", "mobile 010. 5658. 0958", "www.yulamlaw.com", "율암");
+    expect(d.company).toBe("율암");
+    expect(d.fullName).toBe("이동준");
+  });
+
+  it("구분자 뒤에 공백을 둔 번호도 잡는다", () => {
+    const d = draft("이동준 대표변호사", "mobile 010. 5658. 0958", "tel 02. 6959. 2558 | fax 02. 567. 2038");
+    expect(d.mobile).toBe("010. 5658. 0958");
+    expect(d.phone).toBe("02. 6959. 2558");
+    expect(d.fax).toBe("02. 567. 2038");
+  });
+
+  it("라벨 뒤에 지역번호 괄호가 열려도 팩스로 본다", () => {
+    const d = draft("세전건설", "이사 최원석", "TEL : (031)206-5067", "FAX : (031)205-6376");
+    expect(d.fax).toBe("031)205-6376");
+  });
+
+  it("직책 뒤에 오는 부서도 잡는다", () => {
+    const d = draft("한성자동차(주)", "임승관 부장", "Sales Senior | 서초 전시장 영업팀");
+    expect(d.department).toBe("서초 전시장 영업팀");
+    expect(d.fullName).toBe("임승관");
+  });
+
+  it("로마자로 적은 한국 주소도 주소다", () => {
+    const d = draft("Kim Seong Kwang", "Team Leader", "14, 443, Anaji-ro, Gyeyang-gu,", "M. +82 10 2934 7976");
+    expect(d.address).toBe("14, 443, Anaji-ro, Gyeyang-gu,");
   });
 
   it("한자 이름 뒤 한 글자 찌꺼기는 버린다", () => {
@@ -181,5 +328,41 @@ describe("지어내지 않는다", () => {
     ];
     const r = parseBusinessCard(lines);
     expect(() => assertGrounded(r.fields, lines)).not.toThrow();
+  });
+});
+
+// F-015 비전 OCR 어댑터 응답 손질 — 목록 기호·순번은 떼되 전화번호는 건드리지 않는다.
+describe("cleanVisionOcrLines — 비전 응답 손질", () => {
+  it("모델이 붙인 목록 기호·순번을 뗀다", () => {
+    expect(cleanVisionOcrLines("1. 홍길동\n2) 영업팀\n- (주)링코스랩\n• 서울시 강남구")).toEqual([
+      "홍길동",
+      "영업팀",
+      "(주)링코스랩",
+      "서울시 강남구",
+    ]);
+  });
+
+  it("점으로 끊어 적은 전화번호를 순번으로 오인해 지우지 않는다", () => {
+    // "010." 을 순번으로 보고 떼면 "010" 이 사라져 뒤의 파서가 되살릴 수 없다
+    expect(cleanVisionOcrLines("010. 5658. 0958\n02. 1234. 5678")).toEqual(["010. 5658. 0958", "02. 1234. 5678"]);
+  });
+
+  it("점·괄호가 든 번호도 그대로 둔다", () => {
+    expect(cleanVisionOcrLines("(02) 1234-5678\n1588-1234\n010-5658-0958")).toEqual(["(02) 1234-5678", "1588-1234", "010-5658-0958"]);
+  });
+
+  it("코드펜스·빈 줄을 버리고 공백을 한 칸으로 줄인다", () => {
+    expect(cleanVisionOcrLines("```\n최  민서\n\n```json\n  대표이사  ")).toEqual(["최 민서", "대표이사"]);
+  });
+
+  it("줄 수 상한(기본 120)을 지킨다", () => {
+    const many = Array.from({ length: 200 }, (_, i) => `줄${i}`).join("\n");
+    expect(cleanVisionOcrLines(many)).toHaveLength(120);
+  });
+
+  it("빈 입력·널은 빈 목록", () => {
+    expect(cleanVisionOcrLines("")).toEqual([]);
+    expect(cleanVisionOcrLines(null)).toEqual([]);
+    expect(cleanVisionOcrLines(undefined)).toEqual([]);
   });
 });

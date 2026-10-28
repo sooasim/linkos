@@ -89,7 +89,11 @@ fi
 rm -rf "$STANDALONE/.next/static" "$STANDALONE/public"
 mkdir -p "$STANDALONE/.next"
 cp -r "$APP_DIR/$WEB_PKG_DIR/.next/static" "$STANDALONE/.next/static"
-cp -r "$APP_DIR/$WEB_PKG_DIR/public" "$STANDALONE/public"
+# public/ 은 선택이다 — proplus 웹앱은 정적 자산 디렉터리가 없다(LINKOS 와 달리). 있으면 복사하고
+# 없으면 건너뛴다. 없는데 cp 를 강행하면 "No such file or directory" 로 배포가 멈춘다.
+if [ -d "$APP_DIR/$WEB_PKG_DIR/public" ]; then
+  cp -r "$APP_DIR/$WEB_PKG_DIR/public" "$STANDALONE/public"
+fi
 
 log "마이그레이션"
 # proplus DB 전용 러너. advisory lock 727275 를 쓴다(LINKOS 는 727274) — 두 배포가 겹쳐도
